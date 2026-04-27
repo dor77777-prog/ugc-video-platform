@@ -97,7 +97,7 @@ visual_prompt_english — חוק חדש וחשוב
 ⚠ **חשוב מאוד**: אם הקטגוריה מאפשרת או דורשת גיוון — **תגוון**! אל תיכלא בלולאה של "אותה דמות באותו מקום באותו pose". במקרים מתאימים תכלול mirror selfie, close-up of hands, POV phone shot, over-shoulder angle, etc.
 
 ═══════════════════════════════════════════
-מילון POSES וזוויות (השתמש בעברית של הסצנה לא, באנגלית של ה-prompt)
+מילון POSES וזוויות (כתוב באנגלית בתוך visual_prompt_english)
 ═══════════════════════════════════════════
 
 - **mirror selfie**: "Mirror selfie, the person holds phone at chest height, arm extended slightly, phone visible in frame, eye contact through the mirror reflection."
@@ -107,6 +107,46 @@ visual_prompt_english — חוק חדש וחשוב
 - **wide / establishing**: "Wide eye-level shot showing the whole environment with the person centered."
 - **top-down**: "Top-down camera angle looking at the product on a surface, hands entering frame."
 - **before/after split**: "Before/After comparison framed as two stacked phone-vertical shots."
+
+═══════════════════════════════════════════
+מילון MOOD (פראזות קצרות שמייעלות את הוויזואל)
+═══════════════════════════════════════════
+
+תוסיף 1-2 פראזות mood קצרות לכל visual_prompt_english:
+- "soft, airy morning light"
+- "warm cafe afternoon mood"
+- "moody, intimate evening light"
+- "high-energy gym sweat aesthetic"
+- "calm post-meditation glow"
+- "sun-bleached editorial vibe"
+- "casual confident energy"
+- "messy real-life Tuesday morning"
+- "golden-hour kitchen counter glow"
+- "documentary-style candid"
+
+═══════════════════════════════════════════
+דוגמאות לויזואל פרומפט מצוין (סגנון מומלץ — אל תעתיק מילה במילה)
+═══════════════════════════════════════════
+
+✅ דוגמה לסקינקייר — מראת אמבטיה, mirror selfie:
+"Sun-lit Tel Aviv apartment bathroom, mirror selfie at the vanity. Person holds phone at chest height, arm extended slightly, phone visible in frame. Soft morning daylight from a side window. Loose oatmeal robe. Skin glowing, no makeup. Casual confident energy."
+
+✅ דוגמה לאופנה — outfit חדש בקפה:
+"Outdoor seating at a Tel Aviv café, golden-hour sun. The person leans on a wooden table with a coffee glass in front of her. Outfit: relaxed cream linen blazer over a black tee, vintage straight jeans, gold chain. Phone-camera 9:16, candid 'taken by a friend' angle from across the table."
+
+✅ דוגמה לפיטנס — חדר כושר אחרי אימון:
+"Industrial urban gym, mid-afternoon. Wide eye-level shot, the person stands by a rubber-floor mat. Black sleeveless tank, leggings, slight sweat sheen. Dumbbells out of focus behind. Documentary-style candid, real-person imperfect, no glamour."
+
+✅ דוגמה לטק — שולחן עבודה, תסכול קל לפני הפתרון:
+"Home desk, late morning. Over-the-shoulder shot, looking at a laptop screen full of tabs. Person's hand on the desk, the product visible next to the keyboard, held naturally. Warm window light. Casual oversized hoodie. Documentary-style, slightly messy real-life mood."
+
+✅ דוגמה לקטגוריה wellness/sleep — חדר שינה ערב:
+"Soft warm bedside lamp light. Mid-shot of the person sitting on the edge of the bed. Pajamas, hair down, calm post-shower expression. Product on the nightstand in the foreground. Moody intimate evening light, blurred bedroom in the background. Documentary-style 9:16."
+
+❌ אנטי־דוגמה (דברים שלא לכתוב):
+- "A 28-year-old woman with brown hair wearing..." (אל תתאר את הדמות — היא תוזרק מתמונת הרפרנס)
+- "Beautiful UGC Israeli ad with high quality..." (סופרלטיבים סתמיים)
+- "She is happy" (סתמי, בלי קונטקסט)
 
 ═══════════════════════════════════════════
 איכות פלט — בדיקה עצמית

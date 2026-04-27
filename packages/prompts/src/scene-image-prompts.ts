@@ -1,20 +1,16 @@
 // Prompt builder for gpt-image-2 scene generation.
 //
-// New architecture (2026-04-28): every scene is generated independently from
-// the avatar reference. We don't pass the previous scene as a reference image,
-// because empirically that caused identity drift to compound across scenes.
-// Instead:
-//   - Avatar image (always Image 1) is the single source of truth for who
-//     the character is. Same reference is used for every scene → consistent
+// Architecture:
+//   - Avatar image (Image 1) is the single source of truth for who the
+//     character is. Same reference is reused for every scene → consistent
 //     identity by construction.
-//   - The scene description (text-only) carries setting/lighting/outfit
-//     continuity hints (the LLM already writes "same kitchen as scene 1,
-//     same warm evening lamp light, same outfit").
+//   - LLM-written brief carries setting / action / outfit / mood.
 //   - Product image (Image 2 when present) keeps the packaging accurate.
 //
-// One builder for all scenes — there's no longer a meaningful difference
-// between scene 0 and scene N>0 because each is anchored to the avatar
-// directly.
+// Style of the prompt itself: opening line is a vivid one-shot description
+// in the style of awesome-gpt-image-2 / awesome-gpt-image-2-prompts. We
+// don't load up the model with a paragraph of bullet rules before saying
+// what we want — we tell it what we want first, then add constraints.
 
 export interface SceneImagePromptInput {
   productName: string;
@@ -30,79 +26,77 @@ export interface SceneImagePromptInput {
   productPresent?: boolean;
 }
 
-const ASPECT_HINT: Record<SceneImagePromptInput['aspectRatio'], string> = {
-  '9:16': 'vertical 9:16',
-  '1:1': 'square 1:1',
-  '16:9': 'horizontal 16:9',
+const ASPECT_OPENER: Record<SceneImagePromptInput['aspectRatio'], string> = {
+  '9:16': 'A realistic vertical smartphone photo',
+  '1:1': 'A realistic square smartphone photo',
+  '16:9': 'A realistic horizontal cinematic photo',
 };
 
-// Detect framing cues in the LLM-written brief and add explicit composition
-// instructions. Without this, gpt-image-2 might say "selfie" but render a
-// third-person shot of the person standing still.
-function detectFramingHints(brief: string): string[] {
-  const hints: string[] = [];
+// Detect framing cues in the LLM-written brief and add an explicit composition
+// directive. Without this, gpt-image-2 might say "selfie" but render a
+// third-person shot of someone standing still.
+function detectFramingHint(brief: string): string | null {
   if (/(mirror selfie|in the mirror|mirror reflection)/i.test(brief)) {
-    hints.push(
-      'FRAMING: This is a MIRROR SELFIE. The person stands in front of a mirror and HOLDS THEIR PHONE at chest height with arm slightly extended. The phone is clearly visible in their hand. The view is the reflection — we see the person looking at the mirror with the phone visible.',
-    );
-  } else if (/\bselfie\b/i.test(brief)) {
-    hints.push(
-      "FRAMING: This is a SELFIE shot. The person HOLDS THEIR PHONE at arm's length with the camera pointed at themselves. The arm holding the phone is visible at the bottom or edge of the frame. They look directly into the camera, slight upward angle.",
-    );
-  } else if (/(\bpov\b|point of view|close[- ]up of (my|her|his) hands?)/i.test(brief)) {
-    hints.push(
-      "FRAMING: This is a first-person POV shot. The camera is held by the person, looking down at their own hands and the action. We don't see the person's face — we see what they see.",
-    );
-  } else if (/over[- ]?the[- ]?shoulder|over the shoulder/i.test(brief)) {
-    hints.push(
-      'FRAMING: Over-the-shoulder shot — the camera sits behind the person, looking at the hands / product / screen.',
-    );
+    return 'Framing: MIRROR SELFIE — the person stands in front of a mirror and holds their phone at chest height, arm slightly extended; the phone is clearly visible in their hand; the view is the reflection (we see them looking at the mirror with the phone visible).';
   }
-  return hints;
+  if (/\bselfie\b/i.test(brief)) {
+    return "Framing: SELFIE — the person holds their phone at arm's length with the camera pointed at themselves; the phone-holding arm is visible at the edge of the frame; eye contact with the camera, slight upward angle.";
+  }
+  if (/(\bpov\b|point of view|close[- ]up of (my|her|his) hands?)/i.test(brief)) {
+    return "Framing: first-person POV — camera held by the person, looking down at their own hands and the action; we don't see the person's face, we see what they see.";
+  }
+  if (/over[- ]?the[- ]?shoulder|over the shoulder/i.test(brief)) {
+    return 'Framing: over-the-shoulder — the camera sits behind the person, looking at the hands / product / screen.';
+  }
+  if (/\bclose[- ]?up\b/i.test(brief)) {
+    return 'Framing: close-up — tight crop on the action (face, hands, or product); shallow depth of field, intimate feel.';
+  }
+  return null;
 }
 
 export function buildScenePrompt(input: SceneImagePromptInput): string {
-  const aspect = ASPECT_HINT[input.aspectRatio];
+  const opener = ASPECT_OPENER[input.aspectRatio];
   const productPresent = input.productPresent ?? true;
-  const framingHints = detectFramingHints(input.sceneVisualBrief);
+  const framingHint = detectFramingHint(input.sceneVisualBrief);
 
   if (input.avatarPresent) {
-    // Avatar is Image 1; product (if present) is Image 2.
-    const lines: (string | null)[] = [
-      `Edit Image 1 (the AVATAR) to show this exact same person in a new scene.`,
+    // Open with the punchy framing line, then layer constraints.
+    return [
+      `${opener} of the EXACT person from Image 1, in this scene:`,
       ``,
-      `IDENTITY (most important rule):`,
-      `- The person in the result is the EXACT person from Image 1. Same face, eyes, skin tone, hair color, hair style, age.`,
-      `- If the scene description below mentions any character traits (age, gender, hair color, skin tone), IGNORE THOSE — Image 1 is the only source of truth for who the person is.`,
-      `- Do NOT generate a different person.`,
-      ``,
-      ...framingHints.map((h) => h),
-      framingHints.length > 0 ? '' : null,
-      `Scene (use ONLY for setting, action, composition — ignore any character details):`,
       input.sceneVisualBrief,
       ``,
-      productPresent
-        ? `Image 2 = the PRODUCT. Keep its packaging, label, color, and shape exactly. Visible in the frame, held or placed naturally.`
-        : `(No product image — describe the product if the brief calls for it.)`,
+      framingHint ?? '',
       ``,
-      `Style: ${aspect} candid UGC phone video, photorealistic, natural daylight, real-person imperfect, no text, no logos, no watermark.`,
-    ];
-    return lines.filter((l) => l !== null).join('\n');
+      `IDENTITY LOCK (most important):`,
+      `- Use Image 1 as the ground truth for the person — same face, eyes, skin tone, hair color, hair style, age.`,
+      `- If the scene description above mentions any character traits (age, gender, hair color, skin tone), IGNORE them. Image 1 is the only source of truth.`,
+      `- Do NOT generate a different person.`,
+      ``,
+      productPresent
+        ? `Image 2 = the PRODUCT. Keep its packaging, label, color, and shape exactly accurate. The product is in the frame, held or placed naturally — not pasted in.`
+        : `(No product image is provided — describe the product naturally if the brief calls for it. No on-image text.)`,
+      ``,
+      `Style: candid UGC phone-camera aesthetic, photorealistic, natural daylight, real-person imperfect (no glamour, no studio polish, no airbrush), no on-image text, no logos, no watermark.`,
+    ]
+      .filter((l) => l !== '')
+      .join('\n');
   }
 
-  // No avatar — fall back to a fully descriptive prompt.
+  // No avatar — describe the scene fully and let the model design the person.
   return [
-    `Generate a candid UGC phone-video scene.`,
+    `${opener} showing this scene:`,
     ``,
-    `Scene: ${input.sceneVisualBrief}`,
+    input.sceneVisualBrief,
     ``,
+    framingHint ?? '',
     productPresent
       ? `Image 1 = the PRODUCT. Keep its packaging, label, color, and shape exactly. Visible in the frame, held or placed naturally.`
       : '',
-    `Style: ${aspect} photorealistic, natural daylight, real-person imperfect, no text, no logos, no watermark.`,
+    `Style: candid UGC phone-camera aesthetic, photorealistic, natural daylight, real-person imperfect, no on-image text, no logos, no watermark.`,
     input.productName ? `Product: ${input.productName}.` : '',
   ]
-    .filter(Boolean)
+    .filter((l) => l && l !== '')
     .join('\n');
 }
 
