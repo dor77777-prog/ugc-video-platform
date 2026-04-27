@@ -9,6 +9,10 @@ export interface ProductInput {
   durationSeconds: number;
   price?: string | null;
   currency?: string | null;
+  // The avatar the user already picked (from step 2). When present, the LLM
+  // writes visual_prompt_english consistent with this person — no description
+  // mismatch downstream when gpt-image-2 generates the actual scene image.
+  avatarDescription?: string | null;
 }
 
 // Snake_case shape returned by the LLM (matches SCRIPT_JSON_SCHEMA).
@@ -139,6 +143,14 @@ function buildUserPrompt(p: ProductInput): string {
     'תיאור המוצר:',
     p.description,
     '',
+    p.avatarDescription
+      ? [
+          'דמות הקריינות שכבר נבחרה (חובה לכל visual_prompt_english):',
+          `${p.avatarDescription}.`,
+          'בכל visual_prompt_english שתפיק — תאר את הדמות הזו ורק אותה (גיל, מראה, צבע שיער, גוון עור). אל תמציא דמויות אחרות. בסצנות 2+ כתב במפורש "same person from scene 1, same hair, same skin tone".',
+          '',
+        ].join('\n')
+      : null,
     'הפק עכשיו את 6 התסריטים בפורמט ה-JSON המבוקש.',
   ].filter(Boolean);
   return lines.join('\n');

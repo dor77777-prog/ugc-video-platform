@@ -8,6 +8,7 @@ import { getOrCreateAppUser } from '@/lib/auth/sync-user';
 import { generateScripts, LlmConfigError, type GeneratedScript } from '@/lib/llm/scripts';
 import { recordApiCall } from '@/lib/usage/log';
 import { priceOpenAiText } from '@/lib/usage/pricing';
+import { findAvatar, describeAvatar } from '@/lib/avatars/catalog';
 
 const GEN_COST_CREDITS = 1;
 
@@ -40,6 +41,9 @@ export async function generateScriptsAction(
   let generated: GeneratedScript[];
   let usage: { model: string; inputTokens: number; outputTokens: number; durationMs: number } | null = null;
   try {
+    const selectedAvatar = findAvatar(
+      typeof data.selectedAvatarId === 'string' ? data.selectedAvatarId : null,
+    );
     const result = await generateScripts({
       productName: project.productName ?? 'מוצר ללא שם',
       description: typeof data.description === 'string' ? data.description : '',
@@ -48,6 +52,7 @@ export async function generateScriptsAction(
       durationSeconds: typeof data.durationSeconds === 'number' ? data.durationSeconds : 15,
       price: typeof data.price === 'string' ? data.price : null,
       currency: typeof data.currency === 'string' ? data.currency : null,
+      avatarDescription: selectedAvatar ? describeAvatar(selectedAvatar) : null,
     });
     generated = result.scripts;
     usage = result.usage;
