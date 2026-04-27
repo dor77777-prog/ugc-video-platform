@@ -1,9 +1,10 @@
 // Prompt builders for gpt-image-2 scene generation.
 // The continuity strategy follows OpenAI's docs section 6.4 (Children's Book —
-// Character Consistency): the previous scene's image is passed in as Image 1
-// (anchor), the product image as Image 2 (reference), and the prompt instructs
-// the model to keep the character/style/lighting from Image 1 while advancing
-// the narrative.
+// Character Consistency) and section 5.2 (Virtual Try-On — identity lock).
+//
+// Convention: when an avatar is selected, we ALWAYS pass it as Image 1 (the
+// model anchors most strongly on the first input). Previous-scene image (when
+// present) and product image follow as Image 2 / Image 3.
 
 export interface SceneImagePromptInput {
   productName: string;
@@ -35,21 +36,31 @@ const STYLE_BASE = [
   'No on-image text, no captions, no logos, no watermarks (the product label may stay visible).',
 ].join(' ');
 
-// Scene 0: no previous scene to anchor on. Inputs (in order):
-//   [avatar?, product?]
-// The avatar (when provided) is the identity anchor for the entire ad. The
-// product image is the appearance reference.
+// IDENTITY block — borrowed from OpenAI's own Virtual Try-On example (section
+// 5.2). This is the language the model responds to most strongly when we want
+// it to preserve a face from a reference image.
+function identityLock(image: 'avatar' | 'previous' | 'both'): string {
+  const subject = image === 'avatar' ? 'avatar reference' : image === 'previous' ? 'previous scene' : 'avatar reference and previous scene';
+  return [
+    `IDENTITY (CRITICAL — do not violate):`,
+    `- The character in this image must be THE EXACT SAME PERSON as the ${subject}.`,
+    `- Do NOT change their face, facial features, skin tone, body shape, hair color, hair style, eye color, or identity in any way.`,
+    `- Preserve their exact likeness, expression style, and proportions.`,
+    `- You may change pose, body framing, outfit (only if the scene brief calls for it), and surroundings — but the face must be unmistakably the same person.`,
+    `- If the generated face is even slightly different from the reference, the result is wrong. Re-generate with the reference face if needed.`,
+  ].join('\n');
+}
+
+// Scene 0 — inputs in order: [avatar?, product?].
 export function buildFirstScenePrompt(input: SceneImagePromptInput): string {
-  // Build "Image 1 / Image 2" labels based on which references are passed.
   const labels: string[] = [];
   if (input.avatarPresent) {
     labels.push(
-      `**Image ${labels.length + 1}** = the avatar reference. The character in the scene must match this person closely — same face, same approximate age, same hair, same skin tone, same general look. ${input.avatarDescription ? `Descriptor: ${input.avatarDescription}.` : ''}`,
+      `**Image ${labels.length + 1}** = the AVATAR reference. This is the locked identity for the entire ad — every scene must show this same person.${input.avatarDescription ? ` Descriptor: ${input.avatarDescription}.` : ''}`,
     );
   }
-  // (Product image label, when applicable.)
   labels.push(
-    `**Image ${labels.length + 1}** = the product reference photo. Its packaging, label, color, and shape must remain visually accurate.`,
+    `**Image ${labels.length + 1}** = the PRODUCT reference photo. Its packaging, label, color, and shape must remain visually accurate; the product is the hero of the frame.`,
   );
 
   return [
@@ -61,33 +72,40 @@ export function buildFirstScenePrompt(input: SceneImagePromptInput): string {
     `**Image inputs:**`,
     ...labels.map((l) => `- ${l}`),
     ``,
+    input.avatarPresent ? identityLock('avatar') : '',
+    ``,
     `**Scene brief:** ${input.sceneVisualBrief}`,
     ``,
     `**Style:** ${STYLE_BASE}`,
     `**Composition:** ${ASPECT_HINTS[input.aspectRatio]}`,
-    `**Continuity note:** This is the first scene — establish the main character clearly (their face, hair, outfit, surroundings) so the next scenes can preserve them. ${input.avatarPresent ? 'Treat the avatar reference as the canonical identity.' : 'The character feels Israeli / Mediterranean unless the brief says otherwise.'}`,
     ``,
-    `Do NOT change the product appearance, packaging, or label. Do NOT add extra text in the image. Do NOT redraw the avatar's face — preserve it.`,
+    `**Continuity note:** This is the first scene of the ad. Establish the surroundings (location, lighting, time of day) clearly so subsequent scenes can echo them. ${input.avatarPresent ? 'The avatar IS the canonical character — preserve their face exactly.' : ''}`,
+    ``,
+    `Do NOT change the product appearance, packaging, or label. Do NOT add extra text in the image.`,
   ]
     .filter(Boolean)
     .join('\n');
 }
 
-// Scenes 1..N. Inputs (in order):
-//   [previousSceneImage, avatar?, product?]
-// Image 1 (previous scene) is the strongest continuity anchor. Avatar (if
-// provided) reinforces face/identity. Product preserves packaging fidelity.
+// Scenes 1..N — inputs in order: [avatar?, previousSceneImage, product?].
+// Avatar is Image 1 (when present) — most influential — so the face stays
+// consistent. Previous scene is Image 2, providing setting/lighting continuity.
 export function buildContinuationScenePrompt(input: SceneImagePromptInput): string {
-  const labels: string[] = [
-    `**Image 1** = the previous scene of this exact ad. Treat it as the visual anchor.`,
-  ];
+  const labels: string[] = [];
+  let n = 0;
   if (input.avatarPresent) {
+    n++;
     labels.push(
-      `**Image ${labels.length + 1}** = the avatar reference. The face/identity in the new scene must match this person and Image 1.`,
+      `**Image ${n}** = the AVATAR reference (the locked identity for the whole ad).${input.avatarDescription ? ` Descriptor: ${input.avatarDescription}.` : ''}`,
     );
   }
+  n++;
   labels.push(
-    `**Image ${labels.length + 1}** = the product reference photo. Packaging, label, color, and shape must remain visually accurate.`,
+    `**Image ${n}** = the PREVIOUS scene of this exact ad. Mirror its setting, lighting, color temperature, and outfit (unless the new beat explicitly changes the outfit or location).`,
+  );
+  n++;
+  labels.push(
+    `**Image ${n}** = the PRODUCT reference photo. Packaging, label, color, and shape must remain visually accurate.`,
   );
 
   return [
@@ -96,28 +114,22 @@ export function buildContinuationScenePrompt(input: SceneImagePromptInput): stri
     `**Image inputs:**`,
     ...labels.map((l) => `- ${l}`),
     ``,
-    `**Goal:** Continue the same story to the next narrative beat without breaking visual continuity.`,
+    input.avatarPresent ? identityLock('both') : identityLock('previous'),
     ``,
-    `**Hard continuity rules from Image 1 (the previous scene):**`,
-    `- Same person / character (same gender, age, ethnicity, body type, hair, skin tone, expression style).`,
+    `**Scene continuity (from the previous scene):**`,
     `- Same outfit and accessories unless the new beat explicitly changes them.`,
     `- Same lighting direction, color temperature, and time of day.`,
-    `- Same location category (kitchen → kitchen counter → kitchen island is fine; kitchen → beach is NOT — only allow location changes if the brief explicitly demands one).`,
-    input.avatarPresent
-      ? `- Cross-check the face with the avatar reference image — both must agree.`
-      : '',
+    `- Same location category (kitchen → kitchen counter is fine; kitchen → beach is NOT, unless the brief explicitly demands a location change).`,
     ``,
     `**Hard rules from the product reference:**`,
     `- Product packaging, label, color, and shape remain visually accurate.`,
-    `- The product is held / placed naturally in the scene (not pasted in).`,
+    `- The product is held or placed naturally in the scene (not pasted in).`,
     ``,
     `**Scene brief (the new beat):** ${input.sceneVisualBrief}`,
     ``,
     `**Style:** ${STYLE_BASE}`,
     `**Composition:** ${ASPECT_HINTS[input.aspectRatio]}`,
     ``,
-    `Do NOT redesign the character. Do NOT change the product appearance. Do NOT add extra text in the image. The result must read as the next moment in the same ad, captured by the same phone, in the same scene.`,
-  ]
-    .filter(Boolean)
-    .join('\n');
+    `Do NOT redesign the character. Do NOT change the product appearance. Do NOT add extra text in the image. The result must read as the next moment in the same ad, captured by the same phone, in the same scene, with the same person.`,
+  ].join('\n');
 }
