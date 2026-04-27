@@ -13,6 +13,11 @@ export interface ProductInput {
   // writes visual_prompt_english consistent with this person — no description
   // mismatch downstream when gpt-image-2 generates the actual scene image.
   avatarDescription?: string | null;
+  // Product category id (e.g. "skincare", "fashion", "fitness"). Drives the
+  // category-specific guidance the system prompt looks for.
+  categoryId?: string | null;
+  categoryLabel?: string | null;
+  categoryGuidance?: string | null;
 }
 
 // Snake_case shape returned by the LLM (matches SCRIPT_JSON_SCHEMA).
@@ -143,11 +148,19 @@ function buildUserPrompt(p: ProductInput): string {
     'תיאור המוצר:',
     p.description,
     '',
+    p.categoryLabel || p.categoryGuidance
+      ? [
+          `קטגוריה: ${p.categoryLabel ?? p.categoryId ?? 'unknown'}`,
+          p.categoryGuidance ? `הנחיות per-category: ${p.categoryGuidance}` : null,
+          '',
+        ]
+          .filter(Boolean)
+          .join('\n')
+      : null,
     p.avatarDescription
       ? [
-          'דמות הקריינות שכבר נבחרה (חובה לכל visual_prompt_english):',
-          `${p.avatarDescription}.`,
-          'בכל visual_prompt_english שתפיק — תאר את הדמות הזו ורק אותה (גיל, מראה, צבע שיער, גוון עור). אל תמציא דמויות אחרות. בסצנות 2+ כתב במפורש "same person from scene 1, same hair, same skin tone".',
+          `דמות הקריינות שכבר נבחרה: ${p.avatarDescription}.`,
+          '⚠ אל תכתוב את תיאור הדמות בתוך visual_prompt_english — תמונת הרפרנס תטופל ע"י ה-image model. ב-visual_prompt_english תכתוב רק setting / action / camera framing / lighting / outfit (אם רלוונטי).',
           '',
         ].join('\n')
       : null,

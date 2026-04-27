@@ -12,6 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { Stepper } from '@/components/wizard/stepper';
 import { ProgressBar } from '@/components/ui/progress-bar';
 import { ElapsedTimer } from '@/components/ui/elapsed-timer';
+import { CATEGORIES, guessCategory, type ProductCategoryId } from '@/lib/categories';
 import { cn } from '@/lib/utils';
 import { createProjectAction } from './actions';
 
@@ -50,6 +51,7 @@ export default function NewProjectWizard() {
   const [durationSeconds, setDurationSeconds] = useState(15);
   const [backgroundMusic, setBackgroundMusic] = useState(true);
   const [captions, setCaptions] = useState(true);
+  const [category, setCategory] = useState<ProductCategoryId>('other');
 
   const handleExtract = async () => {
     if (!url.trim()) return;
@@ -80,6 +82,7 @@ export default function NewProjectWizard() {
       setDescription(result.data.description);
       setHeroImageUrl(result.data.heroImageUrl ?? '');
       setAdditionalImages(result.data.images.slice(1, 6));
+      setCategory(guessCategory({ name: result.data.productName, description: result.data.description }));
     } catch (err) {
       setScrapeError(`שגיאה: ${(err as Error).message}`);
     } finally {
@@ -98,6 +101,7 @@ export default function NewProjectWizard() {
     additionalImages.forEach((img) => fd.append('additionalImages', img));
     fd.set('aspectRatio', aspectRatio);
     fd.set('durationSeconds', String(durationSeconds));
+    fd.set('category', category);
     if (backgroundMusic) fd.set('backgroundMusic', 'on');
     if (captions) fd.set('captions', 'on');
     if (scrapeResult) fd.set('rawScrape', JSON.stringify(scrapeResult));
@@ -261,6 +265,26 @@ export default function NewProjectWizard() {
           </div>
 
           <AdditionalImages images={additionalImages} setImages={setAdditionalImages} />
+
+          {/* Category — drives how the LLM writes scenes per product type */}
+          <Field label="קטגוריית מוצר *" htmlFor="category">
+            <select
+              id="category"
+              value={category}
+              onChange={(e) => setCategory(e.target.value as ProductCategoryId)}
+              className="flex h-11 w-full rounded-md border border-input bg-card px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
+            >
+              {CATEGORIES.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.labelHebrew}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-muted-foreground mt-1">
+              קובע איך ה-AI יבחר מקומות, פוזות, outfits לסצנות. סקינקייר ↔ מטבח ↔ אופנה →
+              סצנות שונות לגמרי.
+            </p>
+          </Field>
 
           {/* Aspect ratio + duration */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

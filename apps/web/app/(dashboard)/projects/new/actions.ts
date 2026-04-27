@@ -18,6 +18,7 @@ const inputSchema = z.object({
   durationSeconds: z.coerce.number().int().min(5).max(120).default(15),
   backgroundMusic: z.boolean().default(true),
   captions: z.boolean().default(true),
+  category: z.string().default('other'),
   // Raw scraper output preserved verbatim for audit / regeneration.
   rawScrape: z.unknown().optional(),
 });
@@ -49,6 +50,7 @@ export async function createProjectAction(
     durationSeconds: String(formData.get('durationSeconds') ?? '15'),
     backgroundMusic: formData.get('backgroundMusic') === 'on',
     captions: formData.get('captions') === 'on',
+    category: String(formData.get('category') ?? 'other'),
     rawScrape: formData.get('rawScrape')
       ? JSON.parse(String(formData.get('rawScrape')))
       : undefined,
@@ -76,6 +78,7 @@ export async function createProjectAction(
         durationSeconds: d.durationSeconds,
         backgroundMusic: d.backgroundMusic,
         captions: d.captions,
+        category: d.category,
         rawScrape: d.rawScrape ?? null,
       },
     },

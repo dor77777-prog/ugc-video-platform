@@ -9,6 +9,7 @@ import { generateScripts, LlmConfigError, type GeneratedScript } from '@/lib/llm
 import { recordApiCall } from '@/lib/usage/log';
 import { priceOpenAiText } from '@/lib/usage/pricing';
 import { findAvatar, describeAvatar } from '@/lib/avatars/catalog';
+import { findCategory, categoryGuidance, type ProductCategoryId } from '@/lib/categories';
 
 const GEN_COST_CREDITS = 1;
 
@@ -44,6 +45,8 @@ export async function generateScriptsAction(
     const selectedAvatar = findAvatar(
       typeof data.selectedAvatarId === 'string' ? data.selectedAvatarId : null,
     );
+    const categoryId = (typeof data.category === 'string' ? data.category : null) as ProductCategoryId | null;
+    const category = findCategory(categoryId);
     const result = await generateScripts({
       productName: project.productName ?? 'מוצר ללא שם',
       description: typeof data.description === 'string' ? data.description : '',
@@ -53,6 +56,9 @@ export async function generateScriptsAction(
       price: typeof data.price === 'string' ? data.price : null,
       currency: typeof data.currency === 'string' ? data.currency : null,
       avatarDescription: selectedAvatar ? describeAvatar(selectedAvatar) : null,
+      categoryId,
+      categoryLabel: category?.labelEnglish ?? null,
+      categoryGuidance: categoryGuidance(categoryId),
     });
     generated = result.scripts;
     usage = result.usage;
