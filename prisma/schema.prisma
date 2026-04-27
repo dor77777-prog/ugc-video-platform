@@ -131,6 +131,14 @@ model Scene {
   textHebrew          String
   textHebrewTts       String?
   visualPromptEnglish String
+
+  // Generated scene-image (gpt-image-2). Empty until the user clicks "Create".
+  imageUrl              String?
+  imagePromptUsed       String?  // Full prompt sent to gpt-image-2 (user-edited base + continuity wrapper).
+  imageGeneratedAt      DateTime?
+  imageGenerationCount  Int      @default(0)
+  imageProvider         String?
+
   durationSeconds     Int
   sceneType           SceneType @default(other)
 

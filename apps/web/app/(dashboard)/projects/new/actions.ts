@@ -81,5 +81,5 @@ export async function createProjectAction(
     },
   });
 
-  redirect(`/projects/${project.id}/scripts`);
+  redirect(`/projects/${project.id}/avatar`);
 }
