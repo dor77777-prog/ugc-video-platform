@@ -43,10 +43,12 @@ export async function generateSceneImage(input: SceneImageInput): Promise<SceneI
 
   const openai = new OpenAI({ apiKey });
   const model = process.env.OPENAI_IMAGE_MODEL || 'gpt-image-2';
-  const quality: ImageQuality = input.quality ?? 'medium';
-  const size = SIZES[input.promptInput.aspectRatio];
-
   const isFirstScene = input.previousSceneImageUrl == null || input.promptInput.sceneOrder === 0;
+  // Scene 0 uses high quality so the identity gets locked in cleanly — that
+  // image then becomes the anchor for every subsequent scene. Scenes 1+ stay
+  // at medium since they inherit identity from scene 0 + the avatar.
+  const quality: ImageQuality = input.quality ?? (isFirstScene ? 'high' : 'medium');
+  const size = SIZES[input.promptInput.aspectRatio];
   const prompt = isFirstScene
     ? buildFirstScenePrompt(input.promptInput)
     : buildContinuationScenePrompt(input.promptInput);
