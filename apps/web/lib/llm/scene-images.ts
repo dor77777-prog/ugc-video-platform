@@ -30,6 +30,7 @@ export interface SceneImageResult {
   model: string;
   quality: ImageQuality;
   size: string;
+  durationMs: number;
 }
 
 export async function generateSceneImage(input: SceneImageInput): Promise<SceneImageResult> {
@@ -62,6 +63,7 @@ export async function generateSceneImage(input: SceneImageInput): Promise<SceneI
     referenceFiles.push(await urlToFile(input.productImageUrl, 'product.png'));
   }
 
+  const startedAt = Date.now();
   let result;
   if (referenceFiles.length === 0) {
     // No reference at all (no product image, no previous scene) — pure text-to-image.
@@ -80,6 +82,7 @@ export async function generateSceneImage(input: SceneImageInput): Promise<SceneI
       quality,
     });
   }
+  const durationMs = Date.now() - startedAt;
 
   const b64 = result.data?.[0]?.b64_json;
   if (!b64) throw new Error('Image API returned no base64 data');
@@ -90,6 +93,7 @@ export async function generateSceneImage(input: SceneImageInput): Promise<SceneI
     model,
     quality,
     size,
+    durationMs,
   };
 }
 

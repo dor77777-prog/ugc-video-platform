@@ -6,6 +6,8 @@ import { ProjectStatus, ScriptAngle, SceneType } from '@prisma/client';
 import { prisma } from '@/lib/db';
 import { getOrCreateAppUser } from '@/lib/auth/sync-user';
 import { generateScripts, LlmConfigError, type GeneratedScript } from '@/lib/llm/scripts';
+import { recordApiCall } from '@/lib/usage/log';
+import { priceOpenAiText } from '@/lib/usage/pricing';
 
 const GEN_COST_CREDITS = 1;
 
@@ -36,8 +38,9 @@ export async function generateScriptsAction(
   const data = (project.productData as Record<string, unknown> | null) ?? {};
 
   let generated: GeneratedScript[];
+  let usage: { model: string; inputTokens: number; outputTokens: number; durationMs: number } | null = null;
   try {
-    generated = await generateScripts({
+    const result = await generateScripts({
       productName: project.productName ?? 'מוצר ללא שם',
       description: typeof data.description === 'string' ? data.description : '',
       brand: typeof data.brand === 'string' ? data.brand : null,
@@ -46,12 +49,40 @@ export async function generateScriptsAction(
       price: typeof data.price === 'string' ? data.price : null,
       currency: typeof data.currency === 'string' ? data.currency : null,
     });
+    generated = result.scripts;
+    usage = result.usage;
   } catch (err) {
+    // Log the failed call so admin/usage shows it.
+    await recordApiCall({
+      provider: 'openai',
+      operation: 'script_gen',
+      model: process.env.OPENAI_SCRIPT_MODEL || 'gpt-5.4-mini',
+      costUsd: 0,
+      success: false,
+      errorMessage: (err as Error).message,
+      userId: dbUser.id,
+      projectId,
+    });
     if (err instanceof LlmConfigError) {
       return { error: err.message };
     }
     return { error: `יצירת התסריטים נכשלה: ${(err as Error).message}` };
   }
+
+  // Successful call — log with computed cost.
+  await recordApiCall({
+    provider: 'openai',
+    operation: 'script_gen',
+    model: usage.model,
+    costUsd: priceOpenAiText(usage.model, usage.inputTokens, usage.outputTokens),
+    inputTokens: usage.inputTokens,
+    outputTokens: usage.outputTokens,
+    units: generated.length,
+    durationMs: usage.durationMs,
+    success: true,
+    userId: dbUser.id,
+    projectId,
+  });
 
   // Persist atomically: clear existing scripts (and their scenes via cascade),
   // create the new 6, decrement credits, mark project status.

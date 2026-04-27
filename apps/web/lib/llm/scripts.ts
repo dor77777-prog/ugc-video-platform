@@ -62,7 +62,17 @@ export class LlmConfigError extends Error {
   }
 }
 
-export async function generateScripts(input: ProductInput): Promise<GeneratedScript[]> {
+export interface ScriptGenerationOutput {
+  scripts: GeneratedScript[];
+  usage: {
+    model: string;
+    inputTokens: number;
+    outputTokens: number;
+    durationMs: number;
+  };
+}
+
+export async function generateScripts(input: ProductInput): Promise<ScriptGenerationOutput> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     throw new LlmConfigError(
@@ -75,6 +85,7 @@ export async function generateScripts(input: ProductInput): Promise<GeneratedScr
 
   const userPrompt = buildUserPrompt(input);
 
+  const startedAt = Date.now();
   const response = await openai.chat.completions.create({
     model,
     messages: [
@@ -90,6 +101,7 @@ export async function generateScripts(input: ProductInput): Promise<GeneratedScr
       },
     },
   });
+  const durationMs = Date.now() - startedAt;
 
   const content = response.choices[0]?.message?.content;
   if (!content) throw new Error('LLM returned an empty response');
@@ -105,7 +117,15 @@ export async function generateScripts(input: ProductInput): Promise<GeneratedScr
     throw new Error('LLM returned no scripts');
   }
 
-  return parsed.scripts.map(toGenerated);
+  return {
+    scripts: parsed.scripts.map(toGenerated),
+    usage: {
+      model,
+      inputTokens: response.usage?.prompt_tokens ?? 0,
+      outputTokens: response.usage?.completion_tokens ?? 0,
+      durationMs,
+    },
+  };
 }
 
 function buildUserPrompt(p: ProductInput): string {

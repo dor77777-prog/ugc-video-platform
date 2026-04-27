@@ -79,8 +79,37 @@ model User {
 
   projects   Project[]
   renderJobs RenderJob[]
+  apiCalls   ApiCall[]
 
   @@index([role])
+}
+
+// One row per outbound call to a paid provider (OpenAI, ElevenLabs, Kling, etc).
+// Used by /admin/usage for cost tracking and per-provider breakdowns.
+model ApiCall {
+  id            String   @id @default(cuid())
+  provider      String
+  operation     String
+  model         String?
+  costUsd       Float    @default(0)
+  inputTokens   Int?
+  outputTokens  Int?
+  units         Int?
+  durationMs    Int?
+  success       Boolean  @default(true)
+  errorMessage  String?
+
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  projectId String?
+
+  createdAt DateTime @default(now())
+
+  @@index([provider, createdAt])
+  @@index([operation, createdAt])
+  @@index([createdAt])
+  @@index([userId])
+  @@index([projectId])
 }
 
 model Project {

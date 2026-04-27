@@ -10,7 +10,7 @@ const NAV = [
   { href: '/admin/projects', label: 'פרויקטים', icon: FolderIcon },
   { href: '/admin/renders', label: 'ג׳ובי רינדור', icon: PlayIcon },
   { href: '/admin/queue', label: 'תור (BullMQ)', icon: QueueIcon },
-  { href: '/admin/costs', label: 'עלויות', icon: DollarIcon },
+  { href: '/admin/costs', label: 'עלויות + API', icon: DollarIcon },
 ];
 
 export function AdminSidebar() {

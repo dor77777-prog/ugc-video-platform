@@ -8,6 +8,8 @@ import { describeAvatar } from '@/lib/avatars/catalog';
 import { generateSceneImage, type AspectRatio } from '@/lib/llm/scene-images';
 import { LlmConfigError } from '@/lib/llm/scripts';
 import { getStorage } from '@/lib/storage';
+import { recordApiCall } from '@/lib/usage/log';
+import { priceOpenAiImage } from '@/lib/usage/pricing';
 
 const COST_PER_SCENE_IMAGE = 1;
 
@@ -95,9 +97,32 @@ export async function generateSceneImageAction(
       quality: 'medium',
     });
   } catch (err) {
+    await recordApiCall({
+      provider: 'openai',
+      operation: 'image_gen',
+      model: process.env.OPENAI_IMAGE_MODEL || 'gpt-image-2',
+      costUsd: 0,
+      success: false,
+      errorMessage: (err as Error).message,
+      userId: dbUser.id,
+      projectId: project.id,
+    });
     if (err instanceof LlmConfigError) return { error: err.message };
     return { error: `יצירת התמונה נכשלה: ${(err as Error).message}` };
   }
+
+  // Log successful image-gen call with cost computed from quality + size.
+  await recordApiCall({
+    provider: 'openai',
+    operation: 'image_gen',
+    model: result.model,
+    costUsd: priceOpenAiImage(result.model, result.quality, result.size),
+    units: 1,
+    durationMs: result.durationMs,
+    success: true,
+    userId: dbUser.id,
+    projectId: project.id,
+  });
 
   // Persist the image to storage.
   const storage = await getStorage();
