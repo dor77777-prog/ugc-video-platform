@@ -1,7 +1,8 @@
-// Static avatar catalog — 16 profiles spanning gender, age range, and look.
-// Image URLs point to randomuser.me, a free portrait API used widely for demos
-// (commercial-use friendly, no key needed). When we wire HeyGen we'll replace
-// this with a DB-backed catalog pulled from their API.
+// Static avatar catalog — 16 distinct AI-generated Israeli portraits.
+// The image files are produced by scripts/generate-avatar-portraits.ts (one-time
+// gpt-image-2 generation) and saved to apps/web/public/avatars/{id}.png.
+// gpt-image-2 preserves identity reliably when references are AI-generated
+// (unlike real-people stock photos, where its safety policies cause drift).
 
 export type AvatarGender = 'male' | 'female';
 export type AvatarAgeRange = '20-25' | '25-30' | '30-40' | '40-50' | '50+';
@@ -17,32 +18,29 @@ export interface AvatarProfile {
   region: string; // descriptor used by the prompt builder
 }
 
-// randomuser.me serves consistent portraits via /api/portraits/{gender}/{n}.jpg.
-// Pinned indices keep the catalog stable across reloads.
-const port = (gender: 'men' | 'women', n: number) =>
-  `https://randomuser.me/api/portraits/${gender}/${n}.jpg`;
+const local = (id: string) => `/avatars/${id}.png`;
 
 export const AVATAR_CATALOG: AvatarProfile[] = [
   // Female · 20-30
-  { id: 'noa', name: 'נועה', gender: 'female', ageRange: '20-25', style: 'casual', region: 'Tel Aviv', imageUrl: port('women', 44) },
-  { id: 'shira', name: 'שירה', gender: 'female', ageRange: '20-25', style: 'sporty', region: 'Tel Aviv', imageUrl: port('women', 65) },
-  { id: 'tamar', name: 'תמר', gender: 'female', ageRange: '25-30', style: 'casual', region: 'Tel Aviv', imageUrl: port('women', 12) },
-  { id: 'maya', name: 'מאיה', gender: 'female', ageRange: '25-30', style: 'lifestyle', region: 'Haifa', imageUrl: port('women', 33) },
+  { id: 'noa', name: 'נועה', gender: 'female', ageRange: '20-25', style: 'casual', region: 'Tel Aviv', imageUrl: local('noa') },
+  { id: 'shira', name: 'שירה', gender: 'female', ageRange: '20-25', style: 'sporty', region: 'Tel Aviv', imageUrl: local('shira') },
+  { id: 'tamar', name: 'תמר', gender: 'female', ageRange: '25-30', style: 'casual', region: 'Tel Aviv', imageUrl: local('tamar') },
+  { id: 'maya', name: 'מאיה', gender: 'female', ageRange: '25-30', style: 'lifestyle', region: 'Haifa', imageUrl: local('maya') },
   // Female · 30-50
-  { id: 'liat', name: 'ליאת', gender: 'female', ageRange: '30-40', style: 'professional', region: 'Tel Aviv', imageUrl: port('women', 79) },
-  { id: 'ortal', name: 'אורטל', gender: 'female', ageRange: '30-40', style: 'casual', region: 'Ramat Gan', imageUrl: port('women', 22) },
-  { id: 'einat', name: 'עינת', gender: 'female', ageRange: '40-50', style: 'professional', region: 'Tel Aviv', imageUrl: port('women', 50) },
-  { id: 'galit', name: 'גלית', gender: 'female', ageRange: '50+', style: 'lifestyle', region: 'Jerusalem', imageUrl: port('women', 90) },
+  { id: 'liat', name: 'ליאת', gender: 'female', ageRange: '30-40', style: 'professional', region: 'Tel Aviv', imageUrl: local('liat') },
+  { id: 'ortal', name: 'אורטל', gender: 'female', ageRange: '30-40', style: 'casual', region: 'Ramat Gan', imageUrl: local('ortal') },
+  { id: 'einat', name: 'עינת', gender: 'female', ageRange: '40-50', style: 'professional', region: 'Tel Aviv', imageUrl: local('einat') },
+  { id: 'galit', name: 'גלית', gender: 'female', ageRange: '50+', style: 'lifestyle', region: 'Jerusalem', imageUrl: local('galit') },
   // Male · 20-30
-  { id: 'yoav', name: 'יואב', gender: 'male', ageRange: '20-25', style: 'casual', region: 'Tel Aviv', imageUrl: port('men', 32) },
-  { id: 'omri', name: 'עומרי', gender: 'male', ageRange: '20-25', style: 'sporty', region: 'Tel Aviv', imageUrl: port('men', 11) },
-  { id: 'ron', name: 'רון', gender: 'male', ageRange: '25-30', style: 'casual', region: 'Tel Aviv', imageUrl: port('men', 56) },
-  { id: 'ido', name: 'עידו', gender: 'male', ageRange: '25-30', style: 'lifestyle', region: 'Haifa', imageUrl: port('men', 78) },
+  { id: 'yoav', name: 'יואב', gender: 'male', ageRange: '20-25', style: 'casual', region: 'Tel Aviv', imageUrl: local('yoav') },
+  { id: 'omri', name: 'עומרי', gender: 'male', ageRange: '20-25', style: 'sporty', region: 'Tel Aviv', imageUrl: local('omri') },
+  { id: 'ron', name: 'רון', gender: 'male', ageRange: '25-30', style: 'casual', region: 'Tel Aviv', imageUrl: local('ron') },
+  { id: 'ido', name: 'עידו', gender: 'male', ageRange: '25-30', style: 'lifestyle', region: 'Haifa', imageUrl: local('ido') },
   // Male · 30-50
-  { id: 'eran', name: 'ערן', gender: 'male', ageRange: '30-40', style: 'professional', region: 'Tel Aviv', imageUrl: port('men', 41) },
-  { id: 'avi', name: 'אבי', gender: 'male', ageRange: '30-40', style: 'casual', region: 'Ramat Gan', imageUrl: port('men', 27) },
-  { id: 'gil', name: 'גיל', gender: 'male', ageRange: '40-50', style: 'professional', region: 'Tel Aviv', imageUrl: port('men', 64) },
-  { id: 'moshe', name: 'משה', gender: 'male', ageRange: '50+', style: 'lifestyle', region: 'Jerusalem', imageUrl: port('men', 83) },
+  { id: 'eran', name: 'ערן', gender: 'male', ageRange: '30-40', style: 'professional', region: 'Tel Aviv', imageUrl: local('eran') },
+  { id: 'avi', name: 'אבי', gender: 'male', ageRange: '30-40', style: 'casual', region: 'Ramat Gan', imageUrl: local('avi') },
+  { id: 'gil', name: 'גיל', gender: 'male', ageRange: '40-50', style: 'professional', region: 'Tel Aviv', imageUrl: local('gil') },
+  { id: 'moshe', name: 'משה', gender: 'male', ageRange: '50+', style: 'lifestyle', region: 'Jerusalem', imageUrl: local('moshe') },
 ];
 
 export function findAvatar(id: string | null | undefined): AvatarProfile | null {
