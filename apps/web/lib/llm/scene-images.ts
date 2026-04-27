@@ -1,9 +1,5 @@
 import OpenAI, { toFile } from 'openai';
-import {
-  buildFirstScenePrompt,
-  buildContinuationScenePrompt,
-  type SceneImagePromptInput,
-} from '@ugc-video/prompts';
+import { buildScenePrompt, type SceneImagePromptInput } from '@ugc-video/prompts';
 import { LlmConfigError } from './scripts';
 
 export type ImageQuality = 'low' | 'medium' | 'high';
@@ -18,8 +14,8 @@ const SIZES: Record<AspectRatio, `${number}x${number}`> = {
 };
 
 export interface SceneImageInput {
-  productImageUrl: string | null; // hero image URL from step 1
-  previousSceneImageUrl: string | null; // null for scene 0
+  productImageUrl: string | null; // hero image URL from step 1 (optional)
+  avatarImageUrl: string | null;  // selected avatar from step 2 (the identity anchor)
   promptInput: SceneImagePromptInput;
   quality?: ImageQuality;
 }
@@ -33,6 +29,12 @@ export interface SceneImageResult {
   durationMs: number;
 }
 
+// Architecture: every scene is generated independently from the avatar
+// reference. We do NOT pass the previous scene as a reference image — that
+// approach caused identity drift to compound. Instead, we trust:
+//   1. The avatar image (Image 1) for the character — same source ref for all scenes.
+//   2. The LLM-written scene description for setting/lighting continuity.
+//   3. The product image (Image 2 when present) for product fidelity.
 export async function generateSceneImage(input: SceneImageInput): Promise<SceneImageResult> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
@@ -43,23 +45,16 @@ export async function generateSceneImage(input: SceneImageInput): Promise<SceneI
 
   const openai = new OpenAI({ apiKey });
   const model = process.env.OPENAI_IMAGE_MODEL || 'gpt-image-2';
-  const isFirstScene = input.previousSceneImageUrl == null || input.promptInput.sceneOrder === 0;
-  // Scene 0 uses high quality so the identity gets locked in cleanly — that
-  // image then becomes the anchor for every subsequent scene. Scenes 1+ stay
-  // at medium since they inherit identity from scene 0 + the avatar.
-  const quality: ImageQuality = input.quality ?? (isFirstScene ? 'high' : 'medium');
+  const quality: ImageQuality = input.quality ?? 'high';
   const size = SIZES[input.promptInput.aspectRatio];
-  const prompt = isFirstScene
-    ? buildFirstScenePrompt(input.promptInput)
-    : buildContinuationScenePrompt(input.promptInput);
+  const prompt = buildScenePrompt(input.promptInput);
 
-  // Fetch + convert reference URLs to File objects for the SDK's images.edit.
-  // For scene 0: only the product image (if available).
-  // For scene N: [previousScene, product] — order matters because the prompt
-  // refers to "Image 1" / "Image 2".
+  // References in the order the prompt refers to:
+  //   Image 1 = avatar (when present)
+  //   Image 2 = product (when present)
   const referenceFiles: Awaited<ReturnType<typeof toFile>>[] = [];
-  if (!isFirstScene && input.previousSceneImageUrl) {
-    referenceFiles.push(await urlToFile(input.previousSceneImageUrl, 'previous-scene.png'));
+  if (input.avatarImageUrl) {
+    referenceFiles.push(await urlToFile(input.avatarImageUrl, 'avatar.png'));
   }
   if (input.productImageUrl) {
     referenceFiles.push(await urlToFile(input.productImageUrl, 'product.png'));
@@ -68,7 +63,7 @@ export async function generateSceneImage(input: SceneImageInput): Promise<SceneI
   const startedAt = Date.now();
   let result;
   if (referenceFiles.length === 0) {
-    // No reference at all (no product image, no previous scene) — pure text-to-image.
+    // No reference images — pure text-to-image.
     result = await openai.images.generate({
       model,
       prompt,

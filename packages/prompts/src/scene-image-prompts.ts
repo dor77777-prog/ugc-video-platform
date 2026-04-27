@@ -1,13 +1,20 @@
-// Prompt builders for gpt-image-2 scene generation.
+// Prompt builder for gpt-image-2 scene generation.
 //
-// Empirically, gpt-image-2 preserves identity best when the prompt is:
-//   1. SHORT (long instructions get diluted)
-//   2. Framed as "EDIT this image" (not "generate a new scene")
-//   3. Lists the bare minimum face features to preserve
+// New architecture (2026-04-28): every scene is generated independently from
+// the avatar reference. We don't pass the previous scene as a reference image,
+// because empirically that caused identity drift to compound across scenes.
+// Instead:
+//   - Avatar image (always Image 1) is the single source of truth for who
+//     the character is. Same reference is used for every scene → consistent
+//     identity by construction.
+//   - The scene description (text-only) carries setting/lighting/outfit
+//     continuity hints (the LLM already writes "same kitchen as scene 1,
+//     same warm evening lamp light, same outfit").
+//   - Product image (Image 2 when present) keeps the packaging accurate.
 //
-// We borrow this style from the cookbook section 5.2 (Virtual Try-On), where
-// the model holds identity perfectly across major edits to the surrounding
-// scene. Convention: avatar is always Image 1 (most influential slot).
+// One builder for all scenes — there's no longer a meaningful difference
+// between scene 0 and scene N>0 because each is anchored to the avatar
+// directly.
 
 export interface SceneImagePromptInput {
   productName: string;
@@ -20,6 +27,7 @@ export interface SceneImagePromptInput {
   aspectRatio: '9:16' | '1:1' | '16:9';
   avatarDescription?: string;
   avatarPresent?: boolean;
+  productPresent?: boolean;
 }
 
 const ASPECT_HINT: Record<SceneImagePromptInput['aspectRatio'], string> = {
@@ -28,38 +36,40 @@ const ASPECT_HINT: Record<SceneImagePromptInput['aspectRatio'], string> = {
   '16:9': 'horizontal 16:9',
 };
 
-// Scene 0 — references in order: [avatar?, product?]. Avatar is the identity
-// anchor; the product is the visual reference. Frame as an edit operation.
-export function buildFirstScenePrompt(input: SceneImagePromptInput): string {
+export function buildScenePrompt(input: SceneImagePromptInput): string {
   const aspect = ASPECT_HINT[input.aspectRatio];
+  const productPresent = input.productPresent ?? true;
 
   if (input.avatarPresent) {
-    // Edit-style framing: take the avatar's face and place it in this scene.
+    // Avatar is Image 1; product (if present) is Image 2.
     return [
       `Edit Image 1 (the AVATAR) to show this exact same person in a new scene.`,
       ``,
       `IDENTITY (most important rule):`,
       `- The person in the result is the EXACT person from Image 1. Same face, eyes, skin tone, hair color, hair style, age.`,
-      `- If the scene description below mentions any character traits (age, gender, hair color, skin tone), IGNORE THOSE — they're outdated. Image 1 is the only source of truth for who the person is.`,
+      `- If the scene description below mentions any character traits (age, gender, hair color, skin tone), IGNORE THOSE — Image 1 is the only source of truth for who the person is.`,
       `- Do NOT generate a different person.`,
       ``,
       `Scene (use ONLY for setting, action, composition — ignore any character details):`,
       input.sceneVisualBrief,
       ``,
-      `Image 2 = the PRODUCT. Keep its packaging, label, color, and shape exactly. Visible in the frame, held or placed naturally.`,
+      productPresent
+        ? `Image 2 = the PRODUCT. Keep its packaging, label, color, and shape exactly. Visible in the frame, held or placed naturally.`
+        : `(No product image is provided for this scene — describe the product naturally if the brief calls for it, but no on-image text or logos.)`,
       ``,
       `Style: ${aspect} candid UGC phone video, photorealistic, natural daylight, real-person imperfect, no text, no logos, no watermark.`,
     ].join('\n');
   }
 
-  // No avatar — fall back to a generic, descriptive prompt.
+  // No avatar — fall back to a fully descriptive prompt.
   return [
     `Generate a candid UGC phone-video scene.`,
     ``,
     `Scene: ${input.sceneVisualBrief}`,
     ``,
-    `Image 1 = the PRODUCT. Keep its packaging, label, color, and shape exactly. Visible in the frame, held or placed naturally.`,
-    ``,
+    productPresent
+      ? `Image 1 = the PRODUCT. Keep its packaging, label, color, and shape exactly. Visible in the frame, held or placed naturally.`
+      : '',
     `Style: ${aspect} photorealistic, natural daylight, real-person imperfect, no text, no logos, no watermark.`,
     input.productName ? `Product: ${input.productName}.` : '',
   ]
@@ -67,41 +77,6 @@ export function buildFirstScenePrompt(input: SceneImagePromptInput): string {
     .join('\n');
 }
 
-// Scenes 1..N — references in order: [avatar?, previousScene, product?].
-// Same edit-style framing.
-export function buildContinuationScenePrompt(input: SceneImagePromptInput): string {
-  const aspect = ASPECT_HINT[input.aspectRatio];
-
-  if (input.avatarPresent) {
-    // Image 1 = avatar (identity), Image 2 = previous scene (continuity), Image 3 = product.
-    return [
-      `Continue the same UGC ad to the next beat.`,
-      ``,
-      `IDENTITY (most important rule):`,
-      `- The person is the EXACT person from Image 1 (AVATAR) and Image 2 (PREVIOUS SCENE). Same face, eyes, skin tone, hair color, hair style.`,
-      `- If the next-beat description below mentions any character traits (age, gender, hair color, skin tone), IGNORE THOSE — Image 1 is the only source of truth for who the person is.`,
-      `- Do NOT generate a different person.`,
-      ``,
-      `Next beat (use ONLY for setting, action, composition — ignore any character details):`,
-      input.sceneVisualBrief,
-      ``,
-      `Image 3 = the PRODUCT. Keep its packaging, label, color, and shape exactly.`,
-      `Mirror Image 2's lighting, color temperature, time of day, and outfit (unless the new beat explicitly changes the outfit).`,
-      ``,
-      `Style: ${aspect} candid UGC phone video, photorealistic, no text, no logos, no watermark.`,
-    ].join('\n');
-  }
-
-  // No avatar — anchor purely on previous scene.
-  return [
-    `Continue the same UGC ad. The character and setting are the same as Image 1 (PREVIOUS SCENE).`,
-    ``,
-    `Next beat: ${input.sceneVisualBrief}`,
-    ``,
-    `Image 2 = the PRODUCT. Keep its packaging, label, color, and shape exactly.`,
-    ``,
-    `DO NOT redesign the character. Mirror the lighting, color temperature, time of day, and outfit from Image 1.`,
-    ``,
-    `Style: ${aspect} candid UGC phone video, photorealistic, no text, no logos, no watermark.`,
-  ].join('\n');
-}
+// Backwards-compatible aliases — both old names map to the new single builder.
+export const buildFirstScenePrompt = buildScenePrompt;
+export const buildContinuationScenePrompt = buildScenePrompt;

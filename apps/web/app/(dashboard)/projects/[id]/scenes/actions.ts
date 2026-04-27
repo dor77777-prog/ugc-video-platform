@@ -64,15 +64,6 @@ export async function generateSceneImageAction(
   const aspectRatio = (typeof data.aspectRatio === 'string' ? data.aspectRatio : '9:16') as AspectRatio;
   const selectedAvatar = findAvatar(typeof data.selectedAvatarId === 'string' ? data.selectedAvatarId : null);
 
-  // Previous-scene image URL (relative URLs are absolutized by the SDK helper).
-  let previousSceneImageUrl: string | null = null;
-  if (scene.sceneOrder > 0) {
-    const prev = await prisma.scene.findFirst({
-      where: { scriptId: scene.scriptId, sceneOrder: scene.sceneOrder - 1 },
-    });
-    previousSceneImageUrl = prev?.imageUrl ?? null;
-  }
-
   // Total scenes in this script for "Scene N of M" framing.
   const totalScenes = await prisma.scene.count({ where: { scriptId: scene.scriptId } });
 
@@ -80,7 +71,6 @@ export async function generateSceneImageAction(
   try {
     result = await generateSceneImage({
       productImageUrl: heroImageUrl,
-      previousSceneImageUrl,
       avatarImageUrl: selectedAvatar?.imageUrl ?? null,
       promptInput: {
         productName: project.productName ?? 'Product',
@@ -92,6 +82,7 @@ export async function generateSceneImageAction(
         sceneType: scene.sceneType,
         aspectRatio,
         avatarPresent: !!selectedAvatar,
+        productPresent: !!heroImageUrl,
         avatarDescription: selectedAvatar ? describeAvatar(selectedAvatar) : '',
       },
       quality: 'medium',
