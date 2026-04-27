@@ -1,6 +1,7 @@
 'use client';
 
 import { useActionState, useState, useTransition } from 'react';
+import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -14,6 +15,113 @@ import {
   type GenerateSceneImageState,
 } from './actions';
 
+const SCENE_TYPE_LABEL: Record<string, string> = {
+  hook: 'הוק',
+  problem: 'בעיה',
+  product_demo: 'הדגמת מוצר',
+  benefit: 'תועלת',
+  cta: 'קריאה לפעולה',
+  other: 'אחר',
+};
+
+interface SceneInfo {
+  id: string;
+  sceneOrder: number;
+  hasImage: boolean;
+}
+
+// Top-of-page button. Generates every scene that doesn't have an image yet,
+// sequentially (safer for OpenAI rate limits than firing all in parallel).
+// router.refresh() between iterations lets the user see scenes appear one by
+// one as the loop progresses.
+export function GenerateAllButton({
+  scenes,
+  creditsBalance,
+}: {
+  scenes: SceneInfo[];
+  creditsBalance: number;
+}) {
+  const router = useRouter();
+  const [pending, startPending] = useTransition();
+  const [progress, setProgress] = useState<{ done: number; total: number; failed: number }>({
+    done: 0,
+    total: 0,
+    failed: 0,
+  });
+  const [error, setError] = useState<string | null>(null);
+
+  const queue = scenes.filter((s) => !s.hasImage);
+  const allDone = scenes.length > 0 && queue.length === 0;
+
+  if (allDone) return null;
+
+  const cost = queue.length;
+  const canRun = creditsBalance >= cost;
+
+  const run = () => {
+    if (!canRun) return;
+    setError(null);
+    setProgress({ done: 0, total: queue.length, failed: 0 });
+    startPending(async () => {
+      let done = 0;
+      let failed = 0;
+      for (const s of queue) {
+        try {
+          const fd = new FormData();
+          const result = await generateSceneImageAction(s.id, undefined, fd);
+          if (result?.error) {
+            failed++;
+            // Stop on credits exhaustion; keep going on other transient errors.
+            if (result.needsCredits) {
+              setError(result.error);
+              setProgress({ done, total: queue.length, failed });
+              return;
+            }
+          } else {
+            done++;
+          }
+        } catch (err) {
+          failed++;
+          setError(`שגיאה: ${(err as Error).message}`);
+        }
+        setProgress({ done, total: queue.length, failed });
+        // Re-fetch the scenes from the server so the UI updates between iterations.
+        router.refresh();
+      }
+    });
+  };
+
+  return (
+    <Card className="border-primary/40 bg-primary/[0.04]">
+      <CardContent className="p-5 flex flex-col md:flex-row items-start md:items-center gap-4 justify-between">
+        <div className="space-y-1 flex-1">
+          <div className="text-base font-semibold">
+            {pending ? 'יוצר את כל הסצנות…' : 'צור את כל הסצנות בלחיצה אחת'}
+          </div>
+          <div className="text-xs text-muted-foreground">
+            {pending
+              ? `${progress.done + progress.failed} מתוך ${progress.total} ${progress.failed > 0 ? `(${progress.failed} נכשלו) ` : ''}— הסצנות מופיעות בהדרגה למטה`
+              : `${queue.length} סצנות חסרות. ${queue.length} קרדיטים סך הכל. (יש לך ${creditsBalance})`}
+          </div>
+          {pending && (
+            <div className="pt-2">
+              <ProgressBar variant="primary" />
+            </div>
+          )}
+          {error && (
+            <div className="text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded-md p-2 mt-2">
+              {error}
+            </div>
+          )}
+        </div>
+        <Button onClick={run} disabled={pending || !canRun} size="lg">
+          {pending ? 'מייצר…' : `✨ צור ${queue.length} סצנות`}
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
 interface SceneCardProps {
   sceneId: string;
   sceneOrder: number;
@@ -24,18 +132,7 @@ interface SceneCardProps {
   durationSeconds: number;
   imageUrl: string | null;
   imageGenerationCount: number;
-  // Locked = previous scene doesn't have an image yet.
-  locked: boolean;
 }
-
-const SCENE_TYPE_LABEL: Record<string, string> = {
-  hook: 'הוק',
-  problem: 'בעיה',
-  product_demo: 'הדגמת מוצר',
-  benefit: 'תועלת',
-  cta: 'קריאה לפעולה',
-  other: 'אחר',
-};
 
 export function SceneCard(props: SceneCardProps) {
   const action = generateSceneImageAction.bind(null, props.sceneId);
@@ -60,7 +157,7 @@ export function SceneCard(props: SceneCardProps) {
   };
 
   return (
-    <Card className={cn(props.locked && 'opacity-60', hasImage && 'border-accent/40')}>
+    <Card className={cn(hasImage && 'border-accent/40')}>
       <CardContent className="p-5 space-y-4">
         {/* Header row */}
         <div className="flex items-start justify-between gap-3">
@@ -72,9 +169,7 @@ export function SceneCard(props: SceneCardProps) {
               {SCENE_TYPE_LABEL[props.sceneType] ?? props.sceneType}
             </Badge>
           </div>
-          <div className="text-xs text-muted-foreground font-mono">
-            {props.durationSeconds}s
-          </div>
+          <div className="text-xs text-muted-foreground font-mono">{props.durationSeconds}s</div>
         </div>
 
         {/* Hebrew voiceover text */}
@@ -95,19 +190,8 @@ export function SceneCard(props: SceneCardProps) {
           )}
           {!hasImage && !pending && (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-center p-4">
-              {props.locked ? (
-                <>
-                  <span className="text-3xl opacity-40">🔒</span>
-                  <span className="text-xs text-muted-foreground">
-                    פתח את הסצנה הקודמת קודם
-                  </span>
-                </>
-              ) : (
-                <>
-                  <span className="text-3xl opacity-40">🖼️</span>
-                  <span className="text-xs text-muted-foreground">תמונה עדיין לא נוצרה</span>
-                </>
-              )}
+              <span className="text-3xl opacity-40">🖼️</span>
+              <span className="text-xs text-muted-foreground">תמונה עדיין לא נוצרה</span>
             </div>
           )}
           {pending && (
@@ -122,7 +206,7 @@ export function SceneCard(props: SceneCardProps) {
                 <ElapsedTimer keyValue={props.sceneId + props.imageGenerationCount} />
               </div>
               <div className="text-[10px] text-muted-foreground/70 max-w-[80%]">
-                gpt-image-2 לוקח בדרך כלל 10–30 שניות עם תמונות רפרנס.
+                gpt-image-2 בדרך כלל 10–30 שניות עם תמונות רפרנס.
               </div>
             </div>
           )}
@@ -178,7 +262,7 @@ export function SceneCard(props: SceneCardProps) {
               type="submit"
               size="sm"
               variant={hasImage ? 'outline' : 'default'}
-              disabled={pending || props.locked}
+              disabled={pending}
             >
               {pending
                 ? 'יוצר…'

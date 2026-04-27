@@ -43,15 +43,10 @@ export async function generateSceneImageAction(
   if (!scene) return { error: 'הסצנה לא נמצאה' };
   if (scene.script.project.userId !== dbUser.id) return { error: 'אין הרשאה' };
 
-  // Enforce continuity: scene N requires scene N-1 to have an image first.
-  if (scene.sceneOrder > 0) {
-    const prev = await prisma.scene.findFirst({
-      where: { scriptId: scene.scriptId, sceneOrder: scene.sceneOrder - 1 },
-    });
-    if (!prev?.imageUrl) {
-      return { error: `יש ליצור קודם את הסצנה ${scene.sceneOrder} לפני סצנה ${scene.sceneOrder + 1}` };
-    }
-  }
+  // Note: scenes are now independent (each anchored on the avatar reference),
+  // so we no longer require scene N-1 before scene N. The "Generate all"
+  // button on the page generates them in sequence, but a user can also
+  // regenerate any scene at any time.
 
   if (dbUser.creditsBalance < COST_PER_SCENE_IMAGE) {
     return { error: 'אין מספיק קרדיטים', needsCredits: true };

@@ -6,7 +6,7 @@ import { findAvatar } from '@/lib/avatars/catalog';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Stepper } from '@/components/wizard/stepper';
-import { SceneCard } from './client-bits';
+import { SceneCard, GenerateAllButton } from './client-bits';
 
 export default async function ScenesPage({
   params,
@@ -47,14 +47,7 @@ export default async function ScenesPage({
     );
   }
 
-  // Determine the lock state for each scene (scene N is locked until N-1 has an image).
   const scenes = selected.scenes;
-  const sceneStates = scenes.map((s, i) => {
-    const prev = i === 0 ? null : scenes[i - 1];
-    const locked = i > 0 && !prev?.imageUrl;
-    return { scene: s, locked };
-  });
-
   const allDone = scenes.length > 0 && scenes.every((s) => !!s.imageUrl);
 
   return (
@@ -65,9 +58,8 @@ export default async function ScenesPage({
         </div>
         <h1 className="text-3xl font-bold tracking-tight">סצנות תמונות</h1>
         <p className="text-sm text-muted-foreground max-w-2xl">
-          לכל סצנה ייצור AI תמונה, על בסיס הפרומפט שאתה רואה. כדי לשמור על דמות עקבית לאורך
-          הסרטון — סצנה <strong>N</strong> תפתח רק אחרי שסצנה <strong>N-1</strong> קיימת.
-          אפשר לערוך פרומפט או להריץ מחדש.
+          לחץ על "צור את כל הסצנות" כדי להריץ את כולן בלחיצה אחת. הן ייוצרו ברצף ויופיעו
+          למטה אחת אחרי השנייה. אפשר גם לערוך פרומפט של סצנה ולהריץ אותה מחדש בנפרד.
         </p>
       </div>
 
@@ -104,9 +96,19 @@ export default async function ScenesPage({
         </CardContent>
       </Card>
 
+      {/* Generate-all banner — only shows when at least one scene is missing */}
+      <GenerateAllButton
+        scenes={scenes.map((s) => ({
+          id: s.id,
+          sceneOrder: s.sceneOrder,
+          hasImage: !!s.imageUrl,
+        }))}
+        creditsBalance={dbUser.creditsBalance}
+      />
+
       {/* Scene grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {sceneStates.map(({ scene, locked }) => (
+        {scenes.map((scene) => (
           <SceneCard
             key={scene.id}
             sceneId={scene.id}
@@ -118,7 +120,6 @@ export default async function ScenesPage({
             durationSeconds={scene.durationSeconds}
             imageUrl={scene.imageUrl}
             imageGenerationCount={scene.imageGenerationCount}
-            locked={locked}
           />
         ))}
       </div>
