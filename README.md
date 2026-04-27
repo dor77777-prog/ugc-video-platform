@@ -1,11 +1,12 @@
-# UGC Video Platform
+# tachles
 
 Hebrew-first AI platform for generating UGC video ads from product URLs.
+Brand tagline: **מודעות וידאו שמוכרות. תכל'ס.**
 
-This is the **foundation only**. The product extractor, OpenAI script engine, and real
-provider integrations (ElevenLabs / HeyGen / Kling / Runway / Creatomate) are intentionally
-**not** implemented yet. Everything ships behind a mock provider so the queue + DB + UI
-flow can be exercised end to end before any external API costs are paid.
+The product extractor, OpenAI script engine, and real provider integrations (ElevenLabs /
+HeyGen / Kling / Runway / Creatomate) are intentionally **not** implemented yet — everything
+ships behind a mock provider so the queue + DB + UI flow can be exercised end to end
+before any external API costs are paid.
 
 ## Stack
 
@@ -36,6 +37,7 @@ ugc-video-platform/
 - npm 10+ (this repo uses npm workspaces — no pnpm/yarn needed)
 - PostgreSQL 14+ — local install or hosted (Supabase, Neon, Railway, RDS)
 - Redis 6+ — local install or hosted (Upstash, Railway)
+- **Supabase project** for auth (free tier is fine — see step 2 below)
 
 ### Quick local services with Docker
 
@@ -51,19 +53,38 @@ docker run -d --name ugc-redis -p 6379:6379 redis:7-alpine
 
 ## Setup
 
+### 1. Install dependencies
+
 ```bash
-# 1. Install dependencies (npm workspaces hoists everything to root node_modules)
 npm install
+```
 
-# 2. Copy environment file and fill in DATABASE_URL + REDIS_URL
+### 2. Create a Supabase project (for auth)
+
+1. Go to <https://supabase.com> → "New project". Free tier is enough.
+2. Once created, open **Project Settings → API** and copy:
+   - `Project URL` → `NEXT_PUBLIC_SUPABASE_URL`
+   - `anon` public key → `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+   - `service_role` key (only for later, when storage is wired up) → `SUPABASE_SERVICE_ROLE_KEY`
+3. (Recommended for local dev) **Authentication → Providers → Email** — turn off
+   "Confirm email" so you can sign up and log in immediately without a confirmation email.
+
+### 3. Configure env
+
+```bash
 cp .env.example .env
+# Edit .env — set DATABASE_URL, REDIS_URL, NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY
+```
 
-# 3. Generate the Prisma client
+> **Brew Postgres users:** the example uses `postgres:postgres` creds (the Docker recipe
+> below). If you have Homebrew Postgres, your superuser is your macOS username with no
+> password, so change `DATABASE_URL` to `postgresql://YOUR_USERNAME@localhost:5432/ugc_video?schema=public`.
+
+### 4. Prisma
+
+```bash
 npm run prisma:generate
-
-# 4. Apply the schema to your database (creates the tables)
-npm run prisma:migrate
-# When prompted for a migration name, type something like: init
+npm run prisma:migrate          # name the migration "init" when prompted
 ```
 
 ## Running
@@ -83,6 +104,21 @@ npm run dev:web
 npm run dev:worker
 # Watches for jobs on the "render" queue.
 ```
+
+Open `http://localhost:3000` and you'll be redirected to `/login`. Click "הירשם עכשיו"
+to create an account, then you'll land on the dashboard.
+
+### Routes you'll see
+
+| Path                  | Auth | What it is                                      |
+| --------------------- | ---- | ----------------------------------------------- |
+| `/login`              | —    | Email + password sign-in                        |
+| `/register`           | —    | Sign-up (creates a Supabase user + Prisma User) |
+| `/dashboard`          | ✓    | Home — stats + "create video" CTA               |
+| `/projects/new`       | ✓    | Wizard shell (7 steps — only the frame for now) |
+| `/library`            | ✓    | Past completed renders                          |
+| `/settings`           | ✓    | Account info                                    |
+| `/dev/demo`           | ✓    | Mock pipeline trigger (drives the worker)       |
 
 ### Health check
 
@@ -131,6 +167,9 @@ You can also poll the status from the web app:
 ```bash
 curl http://localhost:3000/api/render/<jobId>/status
 ```
+
+Or — easier — log in and go to **`/dev/demo`**. There's a "הפעל ג׳וב מוק" button that
+runs the same pipeline and shows live progress in the UI.
 
 Or open `npm run prisma:studio` and browse the `RenderJob` and `Asset` tables.
 

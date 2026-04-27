@@ -1,24 +1,16 @@
-import { Button } from '@/components/ui/button';
+import { redirect } from 'next/navigation';
+import { createSupabaseServerClient } from '@/lib/supabase/server';
 
-export default function Home() {
-  return (
-    <main className="min-h-screen flex flex-col items-center justify-center p-8 gap-8">
-      <div className="text-center space-y-4 max-w-xl">
-        <h1 className="text-4xl font-bold tracking-tight">פלטפורמת מודעות UGC</h1>
-        <p className="text-muted-foreground">
-          הזינו כתובת מוצר וצרו מודעת וידאו מקצועית בעברית, מוכנה לפייסבוק, טיקטוק ואינסטגרם.
-        </p>
-      </div>
+export default async function RootPage() {
+  // If Supabase isn't configured yet, send the user to login so they see something.
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+    redirect('/login');
+  }
 
-      <div className="flex gap-3">
-        <Button>צור פרויקט חדש</Button>
-        <Button variant="outline">היסטוריית פרויקטים</Button>
-      </div>
+  const supabase = await createSupabaseServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
-      <div className="mt-8 text-sm text-muted-foreground border rounded-lg p-4 max-w-xl text-center">
-        זהו השלד של המערכת. כרגע כל ספקי הווידאו, הקריינות והקומפוזיציה הם mocks.
-        בדקו את <code className="font-mono">/api/health</code> כדי לוודא שה-DB וה-Redis מחוברים.
-      </div>
-    </main>
-  );
+  redirect(user ? '/dashboard' : '/login');
 }
