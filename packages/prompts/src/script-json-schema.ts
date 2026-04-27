@@ -1,6 +1,9 @@
-// JSON schema enforced on the LLM response.
-// Mirrors packages/shared/src/schemas/script.ts. When the script engine is built,
-// this is the schema we'll pass to OpenAI's structured-output API.
+// JSON schema for OpenAI structured-outputs (strict mode).
+// Strict mode constraints:
+// - All listed properties must appear in `required`.
+// - No min/max/minItems/maxItems/minLength/etc.
+// - additionalProperties: false on every object.
+// - Optional fields are expressed as nullable types via type: ["string", "null"].
 
 export const SCRIPT_JSON_SCHEMA = {
   type: 'object',
@@ -9,12 +12,18 @@ export const SCRIPT_JSON_SCHEMA = {
   properties: {
     scripts: {
       type: 'array',
-      minItems: 6,
-      maxItems: 6,
+      description: 'Exactly 6 scripts, one per angle, in the order: problem_solution, testimonial, product_demo, before_after, price_anchor, fast_benefit.',
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['angle', 'hook', 'estimated_duration_seconds', 'scenes'],
+        required: [
+          'angle',
+          'hook',
+          'cta',
+          'target_audience',
+          'estimated_duration_seconds',
+          'scenes',
+        ],
         properties: {
           angle: {
             type: 'string',
@@ -27,13 +36,25 @@ export const SCRIPT_JSON_SCHEMA = {
               'fast_benefit',
             ],
           },
-          hook: { type: 'string', minLength: 1 },
-          cta: { type: 'string' },
-          target_audience: { type: 'string' },
-          estimated_duration_seconds: { type: 'integer', minimum: 10, maximum: 60 },
+          hook: {
+            type: 'string',
+            description: 'Punchy opening line in Hebrew, under ~12 words.',
+          },
+          cta: {
+            type: 'string',
+            description: 'Short call-to-action in Hebrew. Must not invent codes/discounts.',
+          },
+          target_audience: {
+            type: 'string',
+            description: 'One short sentence in Hebrew describing the persona.',
+          },
+          estimated_duration_seconds: {
+            type: 'integer',
+            description: 'Total spoken duration, between 20 and 35 seconds.',
+          },
           scenes: {
             type: 'array',
-            minItems: 1,
+            description: '3-5 scenes per script.',
             items: {
               type: 'object',
               additionalProperties: false,
@@ -45,10 +66,24 @@ export const SCRIPT_JSON_SCHEMA = {
                 'scene_type',
               ],
               properties: {
-                scene_order: { type: 'integer', minimum: 0 },
-                text_hebrew: { type: 'string', minLength: 1 },
-                visual_prompt_english: { type: 'string', minLength: 1 },
-                duration_seconds: { type: 'integer', minimum: 1, maximum: 20 },
+                scene_order: {
+                  type: 'integer',
+                  description: 'Zero-based scene index within the script.',
+                },
+                text_hebrew: {
+                  type: 'string',
+                  description:
+                    'Voice-over text in spoken Israeli Hebrew. TTS-friendly (numbers spelled out, no symbols, no emojis).',
+                },
+                visual_prompt_english: {
+                  type: 'string',
+                  description:
+                    'Detailed visual description in English for an AI video model. Include framing, setting, lighting, vertical 9:16 UGC handheld style.',
+                },
+                duration_seconds: {
+                  type: 'integer',
+                  description: 'Scene duration in seconds, between 3 and 7.',
+                },
                 scene_type: {
                   type: 'string',
                   enum: ['hook', 'problem', 'product_demo', 'benefit', 'cta', 'other'],

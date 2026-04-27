@@ -9,18 +9,9 @@ import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Stepper } from '@/components/wizard/stepper';
 import { cn } from '@/lib/utils';
 import { createProjectAction } from './actions';
-
-const STEPS = [
-  { num: 1, label: 'מוצר' },
-  { num: 2, label: 'פרטים' },
-  { num: 3, label: 'יוצרי תוכן' },
-  { num: 4, label: 'תסריט' },
-  { num: 5, label: 'סצנות תמונות' },
-  { num: 6, label: 'סצנות וידאו' },
-  { num: 7, label: 'סיום' },
-];
 
 interface ScrapeResponse {
   isProduct: boolean;
@@ -124,8 +115,7 @@ export default function NewProjectWizard() {
         <h1 className="text-3xl font-bold tracking-tight">בניית מודעת UGC חדשה</h1>
       </div>
 
-      {/* Stepper */}
-      <Stepper currentStep={1} />
+      <Stepper current={1} />
 
       {/* URL extraction card */}
       <Card>
@@ -332,45 +322,6 @@ export default function NewProjectWizard() {
           {submitPending ? 'שומר…' : 'המשך לשלב הבא →'}
         </Button>
       </div>
-    </div>
-  );
-}
-
-function Stepper({ currentStep }: { currentStep: number }) {
-  return (
-    <div dir="ltr" className="flex items-center justify-between gap-2 overflow-x-auto pb-2">
-      {STEPS.map((step, i) => {
-        const done = step.num < currentStep;
-        const active = step.num === currentStep;
-        return (
-          <div key={step.num} className="flex items-center gap-2 flex-1 min-w-0">
-            <div className="flex flex-col items-center gap-2 flex-shrink-0">
-              <div
-                className={cn(
-                  'w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold',
-                  done && 'bg-primary text-primary-foreground',
-                  active && 'bg-accent text-accent-foreground ring-4 ring-accent/30',
-                  !done && !active && 'border-2 border-muted-foreground/30 text-muted-foreground',
-                )}
-              >
-                {done ? '✓' : step.num}
-              </div>
-              <div
-                className={cn(
-                  'text-xs whitespace-nowrap',
-                  active ? 'font-semibold text-foreground' : 'text-muted-foreground',
-                )}
-                dir="rtl"
-              >
-                {step.label}
-              </div>
-            </div>
-            {i < STEPS.length - 1 && (
-              <div className={cn('h-0.5 flex-1', done ? 'bg-primary' : 'bg-muted')} />
-            )}
-          </div>
-        );
-      })}
     </div>
   );
 }

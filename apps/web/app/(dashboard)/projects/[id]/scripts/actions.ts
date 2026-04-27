@@ -1,0 +1,127 @@
+'use server';
+
+import { revalidatePath } from 'next/cache';
+import { redirect } from 'next/navigation';
+import { ProjectStatus, ScriptAngle, SceneType } from '@prisma/client';
+import { prisma } from '@/lib/db';
+import { getOrCreateAppUser } from '@/lib/auth/sync-user';
+import { generateScripts, LlmConfigError, type GeneratedScript } from '@/lib/llm/scripts';
+
+const GEN_COST_CREDITS = 1;
+
+export type GenerateState =
+  | { error?: string; needsCredits?: boolean }
+  | undefined;
+
+// Generate (or regenerate) 6 scripts for the project.
+export async function generateScriptsAction(
+  projectId: string,
+  _prev: GenerateState,
+  _formData: FormData,
+): Promise<GenerateState> {
+  const { dbUser } = await getOrCreateAppUser();
+
+  const project = await prisma.project.findFirst({
+    where: { id: projectId, userId: dbUser.id },
+  });
+  if (!project) return { error: 'הפרויקט לא נמצא' };
+
+  if (dbUser.creditsBalance < GEN_COST_CREDITS) {
+    return {
+      error: 'אין מספיק קרדיטים ליצירת תסריטים',
+      needsCredits: true,
+    };
+  }
+
+  const data = (project.productData as Record<string, unknown> | null) ?? {};
+
+  let generated: GeneratedScript[];
+  try {
+    generated = await generateScripts({
+      productName: project.productName ?? 'מוצר ללא שם',
+      description: typeof data.description === 'string' ? data.description : '',
+      brand: typeof data.brand === 'string' ? data.brand : null,
+      targetAudience: typeof data.targetAudience === 'string' ? data.targetAudience : null,
+      durationSeconds: typeof data.durationSeconds === 'number' ? data.durationSeconds : 15,
+      price: typeof data.price === 'string' ? data.price : null,
+      currency: typeof data.currency === 'string' ? data.currency : null,
+    });
+  } catch (err) {
+    if (err instanceof LlmConfigError) {
+      return { error: err.message };
+    }
+    return { error: `יצירת התסריטים נכשלה: ${(err as Error).message}` };
+  }
+
+  // Persist atomically: clear existing scripts (and their scenes via cascade),
+  // create the new 6, decrement credits, mark project status.
+  await prisma.$transaction(async (tx) => {
+    await tx.scene.deleteMany({ where: { script: { projectId } } });
+    await tx.script.deleteMany({ where: { projectId } });
+
+    for (const s of generated) {
+      await tx.script.create({
+        data: {
+          projectId,
+          angle: s.angle as ScriptAngle,
+          hook: s.hook,
+          cta: s.cta,
+          targetAudience: s.targetAudience,
+          estimatedDurationSeconds: s.estimatedDurationSeconds,
+          rawJson: s.raw as unknown as object,
+          scenes: {
+            create: s.scenes.map((sc) => ({
+              sceneOrder: sc.sceneOrder,
+              textHebrew: sc.textHebrew,
+              visualPromptEnglish: sc.visualPromptEnglish,
+              durationSeconds: sc.durationSeconds,
+              sceneType: sc.sceneType as SceneType,
+            })),
+          },
+        },
+      });
+    }
+
+    await tx.user.update({
+      where: { id: dbUser.id },
+      data: { creditsBalance: { decrement: GEN_COST_CREDITS } },
+    });
+
+    await tx.project.update({
+      where: { id: projectId },
+      data: {
+        status: ProjectStatus.scripts_generated,
+        selectedScriptId: null, // clear any previous selection
+      },
+    });
+  });
+
+  revalidatePath(`/projects/${projectId}/scripts`);
+  return undefined;
+}
+
+export async function selectScriptAction(formData: FormData) {
+  const { dbUser } = await getOrCreateAppUser();
+  const projectId = String(formData.get('projectId') ?? '');
+  const scriptId = String(formData.get('scriptId') ?? '');
+  if (!projectId || !scriptId) return;
+
+  const project = await prisma.project.findFirst({
+    where: { id: projectId, userId: dbUser.id },
+    include: { scripts: { where: { id: scriptId }, select: { id: true } } },
+  });
+  if (!project || project.scripts.length === 0) return;
+
+  await prisma.project.update({
+    where: { id: projectId },
+    data: { selectedScriptId: scriptId },
+  });
+  revalidatePath(`/projects/${projectId}/scripts`);
+}
+
+export async function continueAfterSelectAction(formData: FormData) {
+  const projectId = String(formData.get('projectId') ?? '');
+  if (!projectId) return;
+  // Next step is /scenes (placeholder for now).
+  redirect(`/projects/${projectId}/scenes`);
+}

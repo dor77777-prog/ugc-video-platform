@@ -81,5 +81,5 @@ export async function createProjectAction(
     },
   });
 
-  redirect(`/projects/${project.id}/edit?step=2`);
+  redirect(`/projects/${project.id}/scripts`);
 }
