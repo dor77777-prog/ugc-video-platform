@@ -56,7 +56,7 @@
 | `/admin/projects` — כל הפרויקטים | ✅ |
 | `/admin/renders` — רינדורים + פילטר סטטוס + retry/cancel | ✅ |
 | `/admin/queue` — BullMQ live (waiting/active/failed/etc) + נקיון | ✅ |
-| `/admin/costs` | 🟡 placeholder (יתמלא כשנעקוב עלויות בפועל) |
+| `/admin/costs` (API usage tab) | ✅ KPIs + פירוק לפי ספק/פעולה/מודל + לוג 50 קריאות אחרונות |
 | הגדרות פיצ'רים (feature flags) | ❌ |
 | Audit log לפעולות אדמין | ❌ |
 
