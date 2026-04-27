@@ -1,0 +1,29 @@
+{
+  "name": "ugc-video-platform",
+  "version": "0.1.0",
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:web": "npm run dev -w @ugc-video/web",
+    "dev:worker": "npm run dev -w @ugc-video/worker",
+    "build:web": "npm run build -w @ugc-video/web",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:studio": "prisma studio",
+    "test:render": "npm run test:render -w @ugc-video/worker"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.0.0"
+  },
+  "devDependencies": {
+    "prisma": "^6.0.0",
+    "typescript": "^5.6.0"
+  }
+}

@@ -1,0 +1,171 @@
+// UGC Video Platform — Prisma schema
+// Postgres (Supabase-compatible). Run `npm run prisma:generate` after edits.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ProjectStatus {
+  draft
+  product_extracted
+  scripts_generated
+  rendering
+  completed
+  failed
+  archived
+}
+
+enum ScriptAngle {
+  problem_solution
+  testimonial
+  product_demo
+  before_after
+  price_anchor
+  fast_benefit
+}
+
+enum SceneType {
+  hook
+  problem
+  product_demo
+  benefit
+  cta
+  other
+}
+
+enum RenderJobStatus {
+  pending
+  extracting_assets
+  generating_voice
+  generating_avatar_video
+  generating_broll
+  composing_video
+  uploading_final
+  completed
+  failed
+  cancelled
+}
+
+enum AssetType {
+  product_image
+  voice_audio
+  avatar_video
+  broll_video
+  composition
+  final_video
+  thumbnail
+  background_music
+}
+
+model User {
+  id             String   @id @default(cuid())
+  email          String   @unique
+  plan           String   @default("free")
+  creditsBalance Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  projects   Project[]
+  renderJobs RenderJob[]
+}
+
+model Project {
+  id          String        @id @default(cuid())
+  userId      String
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  productUrl  String?
+  productName String?
+  productData Json?
+  status      ProjectStatus @default(draft)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  scripts    Script[]
+  renderJobs RenderJob[]
+  assets     Asset[]
+
+  @@index([userId])
+  @@index([status])
+}
+
+model Script {
+  id                       String      @id @default(cuid())
+  projectId                String
+  project                  Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  angle                    ScriptAngle
+  hook                     String
+  cta                      String?
+  targetAudience           String?
+  estimatedDurationSeconds Int
+  rawJson                  Json
+  createdAt                DateTime    @default(now())
+
+  scenes     Scene[]
+  renderJobs RenderJob[]
+
+  @@index([projectId])
+}
+
+model Scene {
+  id                  String    @id @default(cuid())
+  scriptId            String
+  script              Script    @relation(fields: [scriptId], references: [id], onDelete: Cascade)
+  sceneOrder          Int
+  textHebrew          String
+  textHebrewTts       String?
+  visualPromptEnglish String
+  durationSeconds     Int
+  sceneType           SceneType @default(other)
+
+  @@unique([scriptId, sceneOrder])
+  @@index([scriptId])
+}
+
+model RenderJob {
+  id                  String          @id @default(cuid())
+  projectId           String
+  project             Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  scriptId            String
+  script              Script          @relation(fields: [scriptId], references: [id])
+  userId              String
+  user                User            @relation(fields: [userId], references: [id])
+  status              RenderJobStatus @default(pending)
+  progressPercent     Int             @default(0)
+  errorMessage        String?
+  providerPayloadJson Json?
+  finalVideoUrl       String?
+  estimatedCostUsd    Float?
+  actualCostUsd       Float?
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+  completedAt         DateTime?
+
+  assets Asset[]
+
+  @@index([projectId])
+  @@index([userId])
+  @@index([status])
+}
+
+model Asset {
+  id              String     @id @default(cuid())
+  projectId       String
+  project         Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  renderJobId     String?
+  renderJob       RenderJob? @relation(fields: [renderJobId], references: [id], onDelete: SetNull)
+  type            AssetType
+  provider        String?
+  url             String
+  durationSeconds Float?
+  metadata        Json?
+  createdAt       DateTime   @default(now())
+
+  @@index([projectId])
+  @@index([renderJobId])
+  @@index([type])
+}
