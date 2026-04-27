@@ -1,15 +1,15 @@
-import { getOrCreateAppUser } from '@/lib/auth/sync-user';
+import { requireAdmin } from '@/lib/auth/sync-user';
 import { Topbar } from '@/components/layout/topbar';
-import { Sidebar } from '@/components/layout/sidebar';
+import { AdminSidebar } from '@/components/layout/admin-sidebar';
 
-export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const { authUser, dbUser } = await getOrCreateAppUser();
+export default async function AdminLayout({ children }: { children: React.ReactNode }) {
+  const { authUser, dbUser } = await requireAdmin();
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
       <Topbar email={authUser.email!} creditsBalance={dbUser.creditsBalance} role={dbUser.role} />
       <div className="flex-1 flex">
-        <Sidebar />
+        <AdminSidebar />
         <main className="flex-1 overflow-x-auto">{children}</main>
       </div>
     </div>

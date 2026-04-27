@@ -10,6 +10,11 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum UserRole {
+  user
+  admin
+}
+
 enum ProjectStatus {
   draft
   product_extracted
@@ -65,13 +70,17 @@ enum AssetType {
 model User {
   id             String   @id @default(cuid())
   email          String   @unique
+  role           UserRole @default(user)
   plan           String   @default("free")
   creditsBalance Int      @default(0)
+  banned         Boolean  @default(false)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
   projects   Project[]
   renderJobs RenderJob[]
+
+  @@index([role])
 }
 
 model Project {

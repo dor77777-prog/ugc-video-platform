@@ -1,23 +1,37 @@
+import Link from 'next/link';
+import type { UserRole } from '@prisma/client';
 import { Logo } from '@/components/brand/logo';
 import { Button } from '@/components/ui/button';
 
 interface TopbarProps {
   email: string;
   creditsBalance: number;
+  role: UserRole;
 }
 
-export function Topbar({ email, creditsBalance }: TopbarProps) {
+export function Topbar({ email, creditsBalance, role }: TopbarProps) {
   const initials = email.slice(0, 2).toUpperCase();
+  const isAdmin = role === 'admin';
 
   return (
     <header className="h-16 border-b border-border bg-card/60 backdrop-blur-sm sticky top-0 z-30">
       <div className="h-full flex items-center justify-between gap-4 px-6">
-        {/* Right side (in RTL): logo */}
+        {/* Right (in RTL): logo */}
         <div className="flex items-center gap-3">
-          <Logo size="md" />
+          <Link href="/dashboard">
+            <Logo size="md" />
+          </Link>
+          {isAdmin && (
+            <Link
+              href="/admin"
+              className="text-xs px-2 py-1 rounded-md bg-foreground text-background font-bold tracking-wider uppercase hover:opacity-90"
+            >
+              Admin
+            </Link>
+          )}
         </div>
 
-        {/* Left side (in RTL): credits, plan, user */}
+        {/* Left (in RTL): credits, plan, user */}
         <div className="flex items-center gap-3">
           <div className="hidden sm:flex items-center gap-2 px-3 h-9 rounded-md bg-accent/30 border border-accent/50 text-sm font-medium">
             <span className="w-1.5 h-1.5 rounded-full bg-accent" />
