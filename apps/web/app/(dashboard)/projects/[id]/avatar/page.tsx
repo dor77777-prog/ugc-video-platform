@@ -36,7 +36,7 @@ export default async function AvatarPage({
         </p>
       </div>
 
-      <Stepper current={2} done={[1]} />
+      <Stepper current={2} done={[1]} projectId={projectId} />
 
       <Card>
         <CardContent className="p-6">

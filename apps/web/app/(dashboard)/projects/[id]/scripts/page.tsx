@@ -67,7 +67,7 @@ export default async function ScriptsPage({
         </p>
       </div>
 
-      <Stepper current={3} done={[1, 2]} />
+      <Stepper current={3} done={[1, 2]} projectId={projectId} />
 
       {!hasScripts ? (
         <Card className="border-dashed">

@@ -1,10 +1,10 @@
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
+import { getStepHref } from '@/lib/wizard/current-step';
 
 export interface WizardStep {
   num: number;
   label: string;
-  href?: string;
 }
 
 export const WIZARD_STEPS: WizardStep[] = [
@@ -16,31 +16,35 @@ export const WIZARD_STEPS: WizardStep[] = [
   { num: 6, label: 'סיום' },
 ];
 
-export function Stepper({
-  steps = WIZARD_STEPS,
-  current,
-  done = [],
-}: {
+interface StepperProps {
   steps?: WizardStep[];
   current: number;
   done?: number[];
-}) {
+  // When projectId is provided, completed steps become clickable links
+  // (the user can jump back to any earlier step to change something).
+  projectId?: string;
+}
+
+export function Stepper({ steps = WIZARD_STEPS, current, done = [], projectId }: StepperProps) {
   return (
     <div dir="ltr" className="flex items-center justify-between gap-2 overflow-x-auto pb-2">
       {steps.map((step, i) => {
         const isDone = done.includes(step.num) || step.num < current;
         const isActive = step.num === current;
+        const clickable = (isDone || isActive) && step.num !== current;
+        const href = projectId ? getStepHref(step.num, projectId) : undefined;
+
         const node = (
           <div className="flex flex-col items-center gap-2 flex-shrink-0">
             <div
               className={cn(
                 'w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold transition-colors',
-                isDone && 'bg-primary text-primary-foreground',
-                isActive && !isDone && 'bg-accent text-accent-foreground ring-4 ring-accent/30',
+                isDone && !isActive && 'bg-primary text-primary-foreground',
+                isActive && 'bg-accent text-accent-foreground ring-4 ring-accent/30',
                 !isDone && !isActive && 'border-2 border-muted-foreground/30 text-muted-foreground',
               )}
             >
-              {isDone ? '✓' : step.num}
+              {isDone && !isActive ? '✓' : step.num}
             </div>
             <div
               className={cn(
@@ -53,10 +57,15 @@ export function Stepper({
             </div>
           </div>
         );
+
         return (
           <div key={step.num} className="flex items-center gap-2 flex-1 min-w-0">
-            {step.href && isDone ? (
-              <Link href={step.href} className="hover:opacity-80">
+            {clickable && href ? (
+              <Link
+                href={href}
+                className="hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded"
+                title={`לחזרה ל${step.label}`}
+              >
                 {node}
               </Link>
             ) : (

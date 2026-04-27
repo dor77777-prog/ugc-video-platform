@@ -34,7 +34,7 @@ export default async function ScenesPage({
     return (
       <div className="p-6 md:p-10 max-w-5xl space-y-6">
         <h1 className="text-3xl font-bold tracking-tight">סצנות תמונות</h1>
-        <Stepper current={4} done={[1, 2]} />
+        <Stepper current={4} done={[1, 2]} projectId={projectId} />
         <Card>
           <CardContent className="p-6 text-sm text-muted-foreground">
             עדיין לא נבחר תסריט.{' '}
@@ -71,7 +71,7 @@ export default async function ScenesPage({
         </p>
       </div>
 
-      <Stepper current={4} done={[1, 2, 3]} />
+      <Stepper current={4} done={[1, 2, 3]} projectId={projectId} />
 
       {/* Context strip: avatar + selected script summary */}
       <Card className="bg-accent/10 border-accent/30">
