@@ -5,6 +5,8 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
+import { ProgressBar } from '@/components/ui/progress-bar';
+import { ElapsedTimer } from '@/components/ui/elapsed-timer';
 import { cn } from '@/lib/utils';
 import {
   generateSceneImageAction,
@@ -83,14 +85,15 @@ export function SceneCard(props: SceneCardProps) {
 
         {/* Image area */}
         <div className="relative aspect-[9/16] rounded-md bg-muted overflow-hidden border border-border">
-          {hasImage ? (
+          {hasImage && (
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={props.imageUrl!}
               alt={`Scene ${props.sceneOrder + 1}`}
               className="w-full h-full object-cover"
             />
-          ) : (
+          )}
+          {!hasImage && !pending && (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-center p-4">
               {props.locked ? (
                 <>
@@ -99,17 +102,28 @@ export function SceneCard(props: SceneCardProps) {
                     פתח את הסצנה הקודמת קודם
                   </span>
                 </>
-              ) : pending ? (
-                <>
-                  <span className="text-3xl animate-pulse">✨</span>
-                  <span className="text-xs text-muted-foreground">ה-AI יוצר תמונה…</span>
-                </>
               ) : (
                 <>
                   <span className="text-3xl opacity-40">🖼️</span>
                   <span className="text-xs text-muted-foreground">תמונה עדיין לא נוצרה</span>
                 </>
               )}
+            </div>
+          )}
+          {pending && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-center p-4 bg-primary/5 backdrop-blur-[1px]">
+              <div className="text-4xl animate-shimmer-overlay">✨</div>
+              <div className="text-sm font-semibold">ה-AI יוצר תמונה…</div>
+              <div className="w-3/4">
+                <ProgressBar variant="accent" />
+              </div>
+              <div className="text-xs text-muted-foreground flex items-center gap-2">
+                <span>זמן שעבר:</span>
+                <ElapsedTimer keyValue={props.sceneId + props.imageGenerationCount} />
+              </div>
+              <div className="text-[10px] text-muted-foreground/70 max-w-[80%]">
+                gpt-image-2 לוקח בדרך כלל 10–30 שניות עם תמונות רפרנס.
+              </div>
             </div>
           )}
         </div>

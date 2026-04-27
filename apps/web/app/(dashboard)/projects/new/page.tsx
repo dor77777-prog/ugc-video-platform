@@ -10,6 +10,8 @@ import { Switch } from '@/components/ui/switch';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Stepper } from '@/components/wizard/stepper';
+import { ProgressBar } from '@/components/ui/progress-bar';
+import { ElapsedTimer } from '@/components/ui/elapsed-timer';
 import { cn } from '@/lib/utils';
 import { createProjectAction } from './actions';
 
@@ -144,12 +146,27 @@ export default function NewProjectWizard() {
               {scraping ? 'מנתח…' : 'ייבא'}
             </Button>
           </div>
+          {scraping && (
+            <div className="rounded-md border border-primary/30 bg-primary/[0.04] p-3 space-y-2">
+              <div className="flex items-center justify-between text-sm">
+                <div className="flex items-center gap-2">
+                  <span className="animate-shimmer-overlay">🔎</span>
+                  <span className="font-medium">מנתח את הדף — מחלץ מוצר, מחיר, תמונות…</span>
+                </div>
+                <span className="text-xs text-muted-foreground">
+                  <ElapsedTimer keyValue={url} />
+                </span>
+              </div>
+              <ProgressBar variant="primary" />
+              <div className="text-xs text-muted-foreground">בדרך כלל לוקח 2–8 שניות.</div>
+            </div>
+          )}
           {scrapeError && (
             <div className="text-sm text-destructive bg-destructive/10 border border-destructive/20 rounded-md p-3">
               {scrapeError}
             </div>
           )}
-          {scrapeResult && (
+          {scrapeResult && !scraping && (
             <ScrapeResultBanner result={scrapeResult} />
           )}
         </CardContent>

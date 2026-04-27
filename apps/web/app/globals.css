@@ -46,3 +46,26 @@
     font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
   }
 }
+
+/* Indeterminate progress bar — sliding gradient. Used while we wait for an
+   AI provider where we have no real progress events. */
+@keyframes tachles-progress-shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(200%);
+  }
+}
+.animate-progress-shimmer {
+  animation: tachles-progress-shimmer 1.4s infinite cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Subtle pulse on the loading skeleton inside scene cards. */
+@keyframes tachles-shimmer-overlay {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.85; }
+}
+.animate-shimmer-overlay {
+  animation: tachles-shimmer-overlay 1.6s infinite ease-in-out;
+}

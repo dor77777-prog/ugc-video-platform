@@ -96,6 +96,7 @@ export default async function ScriptsPage({
                   cta={s.cta ?? ''}
                   estimatedDurationSeconds={s.estimatedDurationSeconds}
                   scenes={s.scenes.map((sc) => ({
+                    id: sc.id,
                     sceneOrder: sc.sceneOrder,
                     textHebrew: sc.textHebrew,
                     durationSeconds: sc.durationSeconds,

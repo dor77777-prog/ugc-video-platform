@@ -125,3 +125,56 @@ export async function continueAfterSelectAction(formData: FormData) {
   // Next step is /scenes (placeholder for now).
   redirect(`/projects/${projectId}/scenes`);
 }
+
+// Save user edits to hook / cta / scenes for a single script.
+export async function updateScriptAction(formData: FormData) {
+  const { dbUser } = await getOrCreateAppUser();
+  const scriptId = String(formData.get('scriptId') ?? '');
+  const hook = String(formData.get('hook') ?? '').trim();
+  const cta = String(formData.get('cta') ?? '').trim();
+  const scenesRaw = String(formData.get('scenes') ?? '[]');
+  if (!scriptId || !hook) return;
+
+  const script = await prisma.script.findUnique({
+    where: { id: scriptId },
+    include: { project: true, scenes: true },
+  });
+  if (!script || script.project.userId !== dbUser.id) return;
+
+  let scenePatches: { id: string; textHebrew: string; durationSeconds: number }[];
+  try {
+    scenePatches = JSON.parse(scenesRaw);
+  } catch {
+    return;
+  }
+  const validIds = new Set(script.scenes.map((s) => s.id));
+  scenePatches = scenePatches.filter((s) => validIds.has(s.id));
+
+  // Total duration = sum of scene durations (clamp to 5–120s per scene).
+  const total = scenePatches.reduce(
+    (sum, s) => sum + Math.max(2, Math.min(20, Math.floor(s.durationSeconds || 0))),
+    0,
+  );
+
+  await prisma.$transaction([
+    prisma.script.update({
+      where: { id: scriptId },
+      data: {
+        hook,
+        cta: cta || null,
+        estimatedDurationSeconds: total || script.estimatedDurationSeconds,
+      },
+    }),
+    ...scenePatches.map((s) =>
+      prisma.scene.update({
+        where: { id: s.id },
+        data: {
+          textHebrew: s.textHebrew,
+          durationSeconds: Math.max(2, Math.min(20, Math.floor(s.durationSeconds || 0))),
+        },
+      }),
+    ),
+  ]);
+
+  revalidatePath(`/projects/${script.project.id}/scripts`);
+}
