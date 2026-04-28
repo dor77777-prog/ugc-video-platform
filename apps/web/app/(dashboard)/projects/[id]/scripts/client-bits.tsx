@@ -1,6 +1,7 @@
 'use client';
 
 import { useActionState, useEffect, useState, useTransition } from 'react';
+import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -12,19 +13,17 @@ import { ElapsedTimer } from '@/components/ui/elapsed-timer';
 import { cn } from '@/lib/utils';
 import { generateScriptsAction, updateScriptAction, type GenerateState } from './actions';
 
-// Time-based progress narrative for the V2 generator. The server side runs
-// one big LLM call (~40–60s) plus optional parallel regens (~15–25s), so
-// instead of a single "ה-AI חושב…" spinner we narrate the actual phases
-// the model goes through. Pure client-side cosmetic — the timings here
-// are calibrated against observed gpt-4o-mini latency for the V2 schema.
+// V6 streaming generator: 6 framework-specific calls fire in parallel
+// and each persists the moment it returns. Total wall-clock is now max
+// of the slowest (~15-30s) and the user sees the FIRST card in ~5-15s.
+// The narrative below frames that progressive reality — short phases
+// at the start, then "X תסריטים מוכנים…" once cards begin appearing.
 const SCRIPT_PHASES: Array<{ atMs: number; label: string; emoji: string }> = [
-  { atMs: 0, label: 'מנתח את המוצר ואת הקהל…', emoji: '🧠' },
-  { atMs: 6_000, label: 'מגבש אסטרטגיה יצירתית לכל זווית…', emoji: '🎯' },
-  { atMs: 18_000, label: 'כותב 3 hooks לכל תסריט ובוחר את החזק ביותר…', emoji: '✍️' },
-  { atMs: 32_000, label: 'מנסח 4–5 סצנות לכל תסריט…', emoji: '🎬' },
-  { atMs: 50_000, label: 'מדרג איכות עצמית של 8 צירים…', emoji: '⭐' },
-  { atMs: 65_000, label: 'משכלל תסריטים שקיבלו ציון נמוך (במקביל)…', emoji: '🔁' },
-  { atMs: 85_000, label: 'כמעט שם — שמירה למסד נתונים…', emoji: '💾' },
+  { atMs: 0, label: 'מתאמ/ת את המגדר של הקריין/ית ואת תקציב המילים…', emoji: '🧠' },
+  { atMs: 4_000, label: 'יוצר 6 תסריטים במקביל — כל אחד מ-framework אחר…', emoji: '🎯' },
+  { atMs: 12_000, label: 'מצרף creative_strategy + 5 hooks לכל תסריט…', emoji: '✍️' },
+  { atMs: 22_000, label: 'מדרג quality_score על 12 צירים — חסם 8…', emoji: '⭐' },
+  { atMs: 32_000, label: 'משלים את התסריטים האחרונים…', emoji: '🔁' },
 ];
 
 export function GenerateButton({
@@ -39,6 +38,19 @@ export function GenerateButton({
     action,
     undefined,
   );
+  const router = useRouter();
+
+  // While the action is in flight, the server is firing 6 OpenAI calls
+  // in parallel and the onScriptReady callback is writing each script
+  // to the DB the moment it returns. We poll via router.refresh() every
+  // 2.5s so the server-rendered scripts grid picks up the new rows
+  // without the user having to manually reload — cards appear one by
+  // one as their framework finishes.
+  useEffect(() => {
+    if (!pending) return;
+    const id = setInterval(() => router.refresh(), 2500);
+    return () => clearInterval(id);
+  }, [pending, router]);
 
   // Walk through SCRIPT_PHASES on a 1s tick while the action is in flight
   // so the user gets meaningful per-phase progress instead of one long spinner.
@@ -95,7 +107,7 @@ export function GenerateButton({
             <span>
               שלב {phaseIndex + 1} מתוך {SCRIPT_PHASES.length}
               {' · '}
-              סך הכל ~60–90 שניות
+              תסריטים מופיעים אחד-אחד למטה
             </span>
             <ElapsedTimer />
           </div>

@@ -3,7 +3,41 @@
 Hebrew-first AI platform for generating UGC video ads from product URLs.
 Brand tagline: **מודעות וידאו שמוכרות. תכל'ס.**
 
-## Current state (April 2026)
+## Current state (April 2026 — V6)
+
+End-to-end functional. Every wizard step uses real providers (no mocks in the main path).
+See [STATUS.md](./STATUS.md) for the full implemented / mocked / missing breakdown.
+
+### What V6 added (Apr 29)
+- **Script streaming** — 6 framework calls fire in parallel, each script persists +
+  appears in the UI the moment it's ready (no waiting for the slowest sibling).
+  `router.refresh()` polls every 2.5s during generation; pending slots show as
+  animated skeleton cards.
+- **Avatar gender lock** — Hebrew is heavily gendered. The selected avatar's
+  `gender` is now passed into the user prompt with an explicit zachar/nekeva
+  rule, so spoken_text + on_screen_caption never mismatch the chosen voice.
+- **30 voices** — VoicePicker now has 18 female + 12 male hand-picked from
+  ElevenLabs Voice Library (UGC creators / influencers / mature voices /
+  social-media-tuned). Pre-rendered Hebrew samples ship with the repo.
+
+### What V5 added (Apr 29)
+- **Israeli visual realism** — explicit per-scene `environment_type` +
+  `environment_style` + `israeli_environment_required` + `local_realism_notes`.
+  gpt-image-2 prompts get a hard-coded boilerplate forcing Israeli outlets,
+  switches, apartment proportions, trissim, Hebrew/neutral text.
+- **Expanded creative strategy** — 5 new fields (`big_idea`,
+  `specific_situation`, `product_role`, `proof_moment`,
+  `why_this_is_different_from_other_scripts`) + 5 hook_options + 12-dim
+  quality_score.
+
+### What V4 added (Apr 28)
+- **Duration mode (15s / 30s)** — single source of truth in `lib/video-mode.ts`.
+  Per-mode constraints (scene count, lipsync cap, word budget) thread through
+  the script LLM, the system prompt, and the clip pipeline.
+- **Product-first metadata** — every scene now commits to `primarySubject`,
+  `mustShowProduct`, `productVisibilityPriority`, `cameraFocus`, `showFace`
+  via structured-output. Image prompts switch to a product-led opener when
+  `primary_subject != avatar`.
 
 The wizard is end-to-end functional through **scene-image generation** with real OpenAI:
 

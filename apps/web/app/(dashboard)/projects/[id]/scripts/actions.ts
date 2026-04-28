@@ -34,6 +34,52 @@ function buildScriptRawJson(s: GeneratedScript): Record<string, unknown> {
   };
 }
 
+// Persist a single script + its scenes. Called from the
+// generateScripts onScriptReady callback as each per-framework
+// promise resolves. Independent transaction so one slow / failed
+// sibling doesn't block earlier ones from being readable by the
+// polling endpoint.
+async function persistOneScript(projectId: string, s: GeneratedScript): Promise<void> {
+  await prisma.script.create({
+    data: {
+      projectId,
+      angle: s.angle as ScriptAngle,
+      framework: s.framework,
+      hook: s.selectedHook,
+      selectedHookReason: s.hookReason,
+      qualityScoreOverall: s.qualityScore.overall,
+      cta: s.cta,
+      targetAudience: s.targetAudience,
+      estimatedDurationSeconds: s.estimatedDurationSeconds,
+      rawJson: buildScriptRawJson(s) as object,
+      scenes: {
+        create: s.scenes.map((sc) => ({
+          sceneOrder: sc.sceneOrder,
+          sceneGoal: sc.sceneGoal,
+          textHebrew: sc.textHebrew,
+          onScreenCaptionHebrew: sc.onScreenCaptionHebrew || null,
+          visualPromptEnglish: sc.visualPromptEnglish,
+          cameraDirection: sc.cameraDirection || null,
+          performanceNote: sc.performanceNote || null,
+          durationSeconds: sc.durationSeconds,
+          sceneType: sc.sceneType as SceneType,
+          sceneGenerationType: sc.sceneGenerationType ?? null,
+          faceVisibility: sc.faceVisibility ?? null,
+          requiresLipSync: sc.requiresLipSync ?? null,
+          primarySubject: sc.primarySubject ?? null,
+          mustShowProduct: sc.mustShowProduct ?? null,
+          productVisibilityPriority: sc.productVisibilityPriority ?? null,
+          cameraFocus: sc.cameraFocus ?? null,
+          showFace: sc.showFace ?? null,
+        })),
+      },
+    },
+  });
+  // Best-effort revalidate so the streaming UI's router.refresh()
+  // picks up the new row immediately.
+  revalidatePath(`/projects/${projectId}/scripts`);
+}
+
 export type GenerateState =
   | { error?: string; needsCredits?: boolean; rateLimited?: boolean; spendCapExceeded?: boolean }
   | undefined;
@@ -84,25 +130,44 @@ export async function generateScriptsAction(
     userId: dbUser.id,
     projectId,
   });
+
+  // Clear any previous scripts BEFORE generation starts so the polling
+  // endpoint sees an empty list and the UI shows blank slots filling in
+  // one-by-one (instead of a stale 6-script grid that suddenly swaps).
+  await prisma.scene.deleteMany({ where: { script: { projectId } } });
+  await prisma.script.deleteMany({ where: { projectId } });
+
   try {
     const selectedAvatar = findAvatar(
       typeof data.selectedAvatarId === 'string' ? data.selectedAvatarId : null,
     );
     const categoryId = (typeof data.category === 'string' ? data.category : null) as ProductCategoryId | null;
     const category = findCategory(categoryId);
-    const result = await generateScripts({
-      productName: project.productName ?? 'מוצר ללא שם',
-      description: typeof data.description === 'string' ? data.description : '',
-      brand: typeof data.brand === 'string' ? data.brand : null,
-      targetAudience: typeof data.targetAudience === 'string' ? data.targetAudience : null,
-      durationSeconds: typeof data.durationSeconds === 'number' ? data.durationSeconds : 15,
-      price: typeof data.price === 'string' ? data.price : null,
-      currency: typeof data.currency === 'string' ? data.currency : null,
-      avatarDescription: selectedAvatar ? describeAvatar(selectedAvatar) : null,
-      categoryId,
-      categoryLabel: category?.labelEnglish ?? null,
-      categoryGuidance: categoryGuidance(categoryId),
-    });
+    const result = await generateScripts(
+      {
+        productName: project.productName ?? 'מוצר ללא שם',
+        description: typeof data.description === 'string' ? data.description : '',
+        brand: typeof data.brand === 'string' ? data.brand : null,
+        targetAudience: typeof data.targetAudience === 'string' ? data.targetAudience : null,
+        durationSeconds: typeof data.durationSeconds === 'number' ? data.durationSeconds : 15,
+        price: typeof data.price === 'string' ? data.price : null,
+        currency: typeof data.currency === 'string' ? data.currency : null,
+        avatarDescription: selectedAvatar ? describeAvatar(selectedAvatar) : null,
+        avatarGender: selectedAvatar?.gender ?? null,
+        categoryId,
+        categoryLabel: category?.labelEnglish ?? null,
+        categoryGuidance: categoryGuidance(categoryId),
+      },
+      {
+        // Stream scripts to the DB as soon as each per-framework call
+        // resolves. The /api/projects/[id]/scripts/list endpoint serves
+        // these to the client poller so the user sees cards filling in
+        // live, instead of waiting 60-90s for the slowest framework.
+        onScriptReady: async (s) => {
+          await persistOneScript(projectId, s);
+        },
+      },
+    );
     generated = result.scripts;
     usage = result.usage;
   } catch (err) {
@@ -129,55 +194,11 @@ export async function generateScriptsAction(
     durationMs: usage.durationMs,
   });
 
-  // Persist atomically: clear existing scripts (and their scenes via cascade),
-  // create the new 6, decrement credits, mark project status.
+  // Scripts have already been persisted by the onScriptReady callback
+  // during generation. Now: charge credits + flip project status. We
+  // skip the previous bulk transaction since the rows are already in
+  // the DB; doing them in a single tx now would be a no-op.
   await prisma.$transaction(async (tx) => {
-    await tx.scene.deleteMany({ where: { script: { projectId } } });
-    await tx.script.deleteMany({ where: { projectId } });
-
-    for (const s of generated) {
-      await tx.script.create({
-        data: {
-          projectId,
-          angle: s.angle as ScriptAngle,
-          framework: s.framework,
-          hook: s.selectedHook,
-          selectedHookReason: s.hookReason,
-          qualityScoreOverall: s.qualityScore.overall,
-          cta: s.cta,
-          targetAudience: s.targetAudience,
-          estimatedDurationSeconds: s.estimatedDurationSeconds,
-          rawJson: buildScriptRawJson(s) as object,
-          scenes: {
-            create: s.scenes.map((sc) => ({
-              sceneOrder: sc.sceneOrder,
-              sceneGoal: sc.sceneGoal,
-              textHebrew: sc.textHebrew,
-              onScreenCaptionHebrew: sc.onScreenCaptionHebrew || null,
-              visualPromptEnglish: sc.visualPromptEnglish,
-              cameraDirection: sc.cameraDirection || null,
-              performanceNote: sc.performanceNote || null,
-              durationSeconds: sc.durationSeconds,
-              sceneType: sc.sceneType as SceneType,
-              // V3 + V4 metadata. Coalesce to null for legacy LLM
-              // outputs that don't carry these (Prisma columns are
-              // nullable; downstream falls back to deriveSceneRouting).
-              sceneGenerationType: sc.sceneGenerationType ?? null,
-              faceVisibility: sc.faceVisibility ?? null,
-              requiresLipSync: sc.requiresLipSync ?? null,
-              primarySubject: sc.primarySubject ?? null,
-              mustShowProduct: sc.mustShowProduct ?? null,
-              productVisibilityPriority: sc.productVisibilityPriority ?? null,
-              cameraFocus: sc.cameraFocus ?? null,
-              showFace: sc.showFace ?? null,
-            })),
-          },
-        },
-      });
-    }
-
-    // Charge via the audit-logged helper so the CreditTransaction row
-    // appears in /admin/users → user history.
     await tx.user.update({
       where: { id: dbUser.id },
       data: { creditsBalance: { decrement: GEN_COST_CREDITS } },
@@ -191,7 +212,6 @@ export async function generateScriptsAction(
         metadata: { model: usage?.model, scriptCount: generated.length } as object,
       },
     });
-
     await tx.project.update({
       where: { id: projectId },
       data: {

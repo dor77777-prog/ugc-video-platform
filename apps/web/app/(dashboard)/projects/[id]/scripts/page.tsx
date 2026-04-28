@@ -74,6 +74,7 @@ export default async function ScriptsPage({
   });
 
   const hasScripts = scripts.length > 0;
+  const isStreaming = scripts.length > 0 && scripts.length < 6;
   const selectedScriptId = project.selectedScriptId;
 
   return (
@@ -105,6 +106,14 @@ export default async function ScriptsPage({
         </Card>
       ) : (
         <>
+          {isStreaming && (
+            <div className="rounded-md border border-primary/30 bg-primary/[0.05] p-3 text-sm flex items-center gap-2">
+              <span className="animate-pulse text-lg">⏳</span>
+              <span>
+                <strong>{scripts.length} מתוך 6 תסריטים</strong> מוכנים — השאר עדיין ביצירה. הדף מתעדכן אוטומטית.
+              </span>
+            </div>
+          )}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {scripts.map((s) => {
               const isSelected = s.id === selectedScriptId;
@@ -150,6 +159,23 @@ export default async function ScriptsPage({
                 />
               );
             })}
+            {isStreaming &&
+              Array.from({ length: 6 - scripts.length }).map((_, i) => (
+                <Card
+                  key={`pending-${i}`}
+                  className="border-dashed animate-pulse opacity-60"
+                >
+                  <CardContent className="p-6 space-y-3">
+                    <div className="h-4 bg-muted rounded w-2/3" />
+                    <div className="h-3 bg-muted rounded w-full" />
+                    <div className="h-3 bg-muted rounded w-5/6" />
+                    <div className="h-3 bg-muted rounded w-4/6" />
+                    <div className="text-xs text-muted-foreground pt-2">
+                      ⏳ תסריט בתהליך יצירה…
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
           </div>
 
           <div className="flex justify-between items-center gap-3 pt-4" dir="ltr">

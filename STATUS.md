@@ -1,14 +1,79 @@
 # tachles · STATUS
 
-מסמך חי — מה מומש, מה בעבודה, מה חסר. **עדכון אחרון: 2026-04-28** (V3.5 — vision-grounded motion analysis + LipSync provider abstraction + admin live in-flight tracking + scene-routing fix + duration honors script + ffmpeg music mix + voice-bounded captions + library video player). קודם: V3 cost-safety bundle (rate-limit + spend cap + first-regen-free + refund + sweep), V3 video provider architecture (Kling i2v + LipSync + scene routing).
+מסמך חי — מה מומש, מה בעבודה, מה חסר. **עדכון אחרון: 2026-04-29** (V6 — script streaming + avatar-gender lock + Israeli realism boilerplate + 12-dim quality_score + 5 hooks + 30 voices + duration mode 15s/30s + product-first metadata).
+
+## 🆕 מה חדש מ-V4 ואילך (סיכום מצטבר)
+
+| ציון | תאריך | מה זה |
+|------|-------|--------|
+| **V6** | 2026-04-29 | **Script streaming**: 6 calls מקבילים בנפרד, כל תסריט נשמר ל-DB ברגע שהוא מוכן, ה-UI מתעדכן לייב דרך `router.refresh()` כל 2.5s. **Avatar gender lock**: כל ה-spoken_text + on_screen_caption בלשון התואמת (זכר/נקבה) למגדר האווטאר. **30 קולות** ב-VoicePicker. |
+| **V5** | 2026-04-29 | **Israeli realism**: per-scene `environment_type`+`environment_style`+`israeli_environment_required`+`local_realism_notes`+`why_this_scene_exists`. Image-prompt boilerplate שדוחף את gpt-image-2 ל-outlets/switches ישראליים, מידות דירה, trissim, טקסט עברי/נייטרלי. **Creative_strategy** הורחב ב-5 שדות (`big_idea`, `specific_situation`, `product_role`, `proof_moment`, `why_this_is_different_from_other_scripts`). **Quality_score** 12 צירים. **5 hook_options** מ-archetype-ים שונים. |
+| **V4** | 2026-04-28 | **Duration mode (15s/30s)** end-to-end: helper `lib/video-mode.ts`, system-prompt branches, lipsync cap מותאם (1 vs 2). **Product-first scene metadata**: `primarySubject`, `mustShowProduct`, `productVisibilityPriority`, `cameraFocus`, `showFace`, `secondarySubject` ב-Scene + structured-output נדרש. Image-prompt builder עובר ל-product-led opener כש-primary_subject != avatar. |
+| V3.6 | 2026-04-28 | TalkingSceneProvider abstraction (Kling Avatar v2 / advanced-lipsync / lipsync-v1). Kling Omni: `negative_prompt` + multi-image `image_list` + lipsync cap. Anti-drift NON_TALKING guard + negatives. |
+| V3.5 | 2026-04-28 | Vision-grounded motion analysis (gpt-4o-mini), in-flight tracking על Scene, scene-routing veto patterns, חישוב duration שמכבד את script. |
 
 ## 🚨 תמונת מצב מהירה למפתחים שמצטרפים עכשיו
 
-**הצינור עובד end-to-end** (אפריל 2026 V3.5):
-1. **Step 1-3** — מוצר → אווטאר → תסריט V2 (gpt-5.4-mini)
-2. **Step 4** — תמונת סצנה (gpt-image-2 + safety + silent_talking_plate ל-talking-head)
-3. **Step 5** — voice (ElevenLabs v3) + clip (Kling v3-omni i2v + Kling LipSync v1, או mock fallback)
-4. **Step 6** — ffmpeg local: concat + voice mux + RTL captions + music mix
+**הצינור עובד end-to-end** (אפריל 2026 V6):
+1. **Step 1-2** — מוצר (סקרייפ + טופס) → אווטאר (25 קטלוג, מגדר ידוע)
+2. **Step 3** — תסריט V6: 6 frameworks במקביל, **streaming live** (כל תסריט נכנס ל-DB ברגע שהוא מוכן). Per-mode constraints (15s vs 30s). Hard gender lock לפי האווטאר.
+3. **Step 4** — תמונת סצנה (gpt-image-2 + Israeli realism boilerplate + product-led opener כשצריך + safety auto-retry).
+4. **Step 5** — voice (ElevenLabs Multilingual v2, **30 קולות**) + clip (Kling Omni v3 i2v עם `negative_prompt` + multi-ref + per-mode lipsync cap). TalkingSceneProvider switchable.
+5. **Step 6** — ffmpeg local: concat per-scene clips (כל אחד עם voice mux פנימי) + captions OFF קשיח + music OFF קשיח.
+
+## ✅ מה עובד (מומש) | 🟡 מוקאפ / חלקי | ❌ חסר
+
+**✅ Script generation (V6)**
+- 6 frameworks במקביל, single-script schema לכל אחד
+- `onScriptReady` → persist + `revalidatePath` per script (streaming UI)
+- Avatar gender → grammatical lock ב-system prompt + user prompt
+- Per-mode constraints (15s: 4 scenes, 50 words, 1 lipsync; 30s: 5 scenes, 110 words, 2 lipsync)
+- 12-dim quality_score, 5 hook_options, diversity_notes
+- `creative_strategy` עם 17 שדות
+
+**✅ Scene image generation**
+- gpt-image-2 עם זיהוי avatar + product reference
+- Israeli realism boilerplate ב-prompt (Israeli outlets/switches, apartment proportions, trissim, Hebrew/neutral text)
+- Product-led opener כש-`primary_subject ≠ avatar`
+- Silent-talking-plate ל-lipsync scenes
+- Safety auto-retry עם הסלמה
+
+**✅ Clip generation**
+- Kling Omni v3 (`/v1/videos/omni-video`) עם `negative_prompt` + `image_list` של scene+product
+- Anti-drift NON_TALKING guards (positive + negative)
+- Per-mode lipsync cap (אוטומטי: scene 0 ל-15s, 0+1 ל-30s) — user toggle עוקף
+- Vision-grounded motion analysis (gpt-4o-mini) → motion prompt גרונדי
+- TalkingSceneProvider switchable (`KLING_TALKING_SCENE_PROVIDER`: `lipsync_v1` / `ai_avatar_v2_pro` / etc.)
+- In-flight tracking על Scene (`imageInFlightAt`/`voiceInFlightAt`/`clipInFlightAt`) שורד refresh
+
+**✅ Voice picker**
+- 30 קולות hand-picked מ-ElevenLabs Voice Library
+- 18 נשים (UGC creator / influencer / mature / social-media-tuned)
+- 12 גברים (UGC reviewer / ad voice / authoritative / social-media)
+- Pre-generated Hebrew samples ב-`apps/web/public/voice-samples/` (האזנה מיידית)
+
+**✅ Composition**
+- ffmpeg concat-demuxer scene-by-scene
+- כל clip self-contained (voice muxed פנימית ב-clip-impl, NOT one global track)
+- Captions OFF קשיח ברנדרר (`enableCaptions = false`)
+- Music OFF קשיח (`musicUrl = null`)
+
+**✅ Admin dashboard**
+- Live in-flight tracking ב-/admin/costs (5s polling)
+- Cancel button per call + bulk cancel stale (15 דק׳)
+- Cost forensics: כל ApiCall עם status / model / tokens / cost / duration
+
+**🟡 חלקי**
+- **Captions library** — קוד ASS RTL מוכן ב-ffmpeg.ts אבל force-disabled עד שהעיצוב טוב. דורש: word-by-word sync via ElevenLabs character timestamps + better RTL bidi + outline + fade-in/out.
+- **Music library** — ה-toggle נשמר ב-`productData.backgroundMusic` אבל renderer מתעלם. דורש: 5-10 רצועות royalty-free מ-Pixabay/Mixkit ב-`apps/web/public/music/` + picker ב-Step 1.
+- **Pre-lipsync vision quality gate** — לא קיים. ה-Kling lipsync יקרא על clipsים גרועים ויבזבז קרדיטים. דורש: קריאת gpt-4o-mini על first frame לפני lipsync, regen אם face_zoom > 0.6 או mouth occluded.
+
+**❌ חסר**
+- **Final-render duration validation** — סוכם משך הסצנות → אם מחוץ ל-`[14.5, 16.5]s` או `[28.5, 31.5]s` → לחסום render. דורש: גזרה במקרה overflow + extension במקרה underflow.
+- **Admin debug timeline table** — טבלה לכל סצנה: scene_order / type / primary_subject / target_duration / measured audio/video durations / final / timeline_start.
+- **BullMQ queue for scripts** — היום fire-via-action בלבד. בproduction serverless ה-action timeout (60s כברירת מחדל ב-Next.js) עלול לחתוך את הgeneration השלישי או הרביעי. דורש: `scripts` queue + worker side processing.
+- **Tests** — אין לnit/integration. הצינור נבדק בכל commit ע"י TS check + dry-run. דורש: snapshot tests על JSON-schema parseability + scene-routing edge cases.
+- **README/STATUS auto-update** — ידני היום. דורש: hook ב-CI שמוודא שה-status מצוטט ב-PR description.
 
 **תשתית ספקים (gen-3 architecture):**
 - **VideoGenerationProvider** ([types.ts](apps/web/lib/animation/types.ts)) — i2v + lipsync abstraction

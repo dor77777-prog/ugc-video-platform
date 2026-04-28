@@ -1,7 +1,6 @@
 import OpenAI from 'openai';
 import {
   SCRIPT_SYSTEM_PROMPT,
-  SCRIPT_JSON_SCHEMA,
   SINGLE_SCRIPT_JSON_SCHEMA,
 } from '@ugc-video/prompts';
 import { resolveVideoMode } from '@/lib/video-mode';
@@ -22,7 +21,6 @@ import { resolveVideoMode } from '@/lib/video-mode';
 //    accurately and decide whether to surface a "low quality" warning.
 
 const QUALITY_THRESHOLD = 8;
-const REGEN_BUDGET = 3; // total regen calls per generateScripts() invocation
 
 export interface ProductInput {
   productName: string;
@@ -34,6 +32,17 @@ export interface ProductInput {
   currency?: string | null;
   // The avatar the user already picked (from step 2).
   avatarDescription?: string | null;
+  /**
+   * Avatar's grammatical gender — drives the Hebrew binyan + adjective
+   * + verb-suffix the LLM uses for spoken_text and on_screen_caption.
+   * Hebrew is heavily gendered ("עשיתי" vs "עשיתי"... ok same here, but
+   * "מנסה" vs "מנסה" → no, but "טועה" vs "טועה"... actually "אני טועה"
+   * (m) vs "אני טועה" (f) is the same pronunciation, BUT verb forms
+   * like "הזמנתי" (m) / "הזמנתי" (f) differ in past, and
+   * adjectives differ throughout). Mismatched gender is the #1
+   * uncanny-valley bug for Hebrew TTS. Default 'female' if unset.
+   */
+  avatarGender?: 'male' | 'female' | null;
   // Product category id (e.g. "skincare", "fashion", "fitness").
   categoryId?: string | null;
   categoryLabel?: string | null;
@@ -99,9 +108,6 @@ interface LlmScript {
   estimated_duration_seconds: number;
   scenes: LlmScene[];
   quality_score: LlmQualityScore;
-}
-interface LlmResponse {
-  scripts: LlmScript[];
 }
 interface LlmRegenResponse {
   script: LlmScript;
@@ -249,7 +255,38 @@ export interface ScriptGenerationOutput {
   };
 }
 
-export async function generateScripts(input: ProductInput): Promise<ScriptGenerationOutput> {
+// V6: per-framework parallel generation (Apr 2026). The previous version
+// sent ONE big call returning all 6 scripts (60-90s wall-clock, no
+// progressive disclosure — the user stared at a spinner). Now we fire
+// 6 independent calls in parallel, each pinned to ONE framework, and
+// expose an onScriptReady callback so the action can persist + stream
+// scripts to the UI as they arrive. Total wall-clock = max(6 calls)
+// ≈ 15-30s, with the first card visible to the user in ~5-15s.
+const FRAMEWORK_ORDER: ScriptFrameworkSlug[] = [
+  'problem_agitation_solution',
+  'skeptical_testimonial',
+  'demonstration_proof',
+  'price_alternative_anchor',
+  'relatable_israeli_moment',
+  'fast_direct_response',
+];
+
+export interface GenerateScriptsOptions {
+  /**
+   * Fires the moment a single script's promise resolves successfully.
+   * The action wires this to a Prisma create() so the script appears
+   * in the DB (and the polling /api/.../scripts/list endpoint) without
+   * waiting for the slowest sibling. `index` is the framework's position
+   * in FRAMEWORK_ORDER. Throwing here is logged but doesn't fail the
+   * generation.
+   */
+  onScriptReady?: (script: GeneratedScript, index: number) => void | Promise<void>;
+}
+
+export async function generateScripts(
+  input: ProductInput,
+  options?: GenerateScriptsOptions,
+): Promise<ScriptGenerationOutput> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     throw new LlmConfigError(
@@ -261,69 +298,22 @@ export async function generateScripts(input: ProductInput): Promise<ScriptGenera
   const model = process.env.OPENAI_SCRIPT_MODEL || 'gpt-4o-mini';
 
   const startedAt = Date.now();
+  let totalInputTokens = 0;
+  let totalOutputTokens = 0;
 
-  // Pass 1 — generate all 6 scripts in one call.
-  const userPrompt = buildUserPrompt(input);
-  const response = await openai.chat.completions.create({
-    model,
-    messages: [
-      { role: 'system', content: SCRIPT_SYSTEM_PROMPT },
-      { role: 'user', content: userPrompt },
-    ],
-    response_format: {
-      type: 'json_schema',
-      json_schema: {
-        name: 'scripts_response',
-        strict: true,
-        schema: SCRIPT_JSON_SCHEMA as unknown as Record<string, unknown>,
-      },
-    },
-  });
-
-  const content = response.choices[0]?.message?.content;
-  if (!content) throw new Error('LLM returned an empty response');
-
-  let parsed: LlmResponse;
-  try {
-    parsed = JSON.parse(content) as LlmResponse;
-  } catch (err) {
-    throw new Error(`Failed to parse LLM JSON: ${(err as Error).message}`);
-  }
-
-  if (!Array.isArray(parsed.scripts) || parsed.scripts.length === 0) {
-    throw new Error('LLM returned no scripts');
-  }
-
-  let totalInputTokens = response.usage?.prompt_tokens ?? 0;
-  let totalOutputTokens = response.usage?.completion_tokens ?? 0;
-  let regenCalls = 0;
-
-  // Pass 2 — selectively regenerate any script with quality_score.overall < THRESHOLD,
-  // bounded by REGEN_BUDGET total calls. Lowest-scoring scripts go first so the
-  // budget is spent where it matters most.
-  const indexedByScore = parsed.scripts
-    .map((s, i) => ({ index: i, overall: s.quality_score?.overall ?? 0 }))
-    .filter((x) => x.overall < QUALITY_THRESHOLD)
-    .sort((a, b) => a.overall - b.overall);
-
-  // Run all eligible regens in parallel (capped at REGEN_BUDGET). Each regen
-  // is an independent OpenAI call rewriting one script; they don't depend on
-  // each other, so Promise.all collapses what used to be sequential 30–60s
-  // into a single ~15-25s wall-clock chunk.
-  const regenTargets = indexedByScore.slice(0, REGEN_BUDGET);
-  const regenStarted: number[] = regenTargets.map((t) => t.index);
-
-  const regenResults = await Promise.all(
-    regenTargets.map(async ({ index }) => {
-      const original = parsed.scripts[index];
-      if (!original) return null;
-      const regenPrompt = buildRegenUserPrompt(input, original);
+  // Fire all 6 framework-pinned calls in parallel. Each call uses
+  // SINGLE_SCRIPT_JSON_SCHEMA so the response is one well-typed script;
+  // we then forward the result to onScriptReady (best-effort) so the
+  // caller can persist immediately.
+  const results = await Promise.all(
+    FRAMEWORK_ORDER.map(async (framework, index) => {
+      const userPrompt = buildSingleFrameworkPrompt(input, framework);
       try {
-        const regenResp = await openai.chat.completions.create({
+        const resp = await openai.chat.completions.create({
           model,
           messages: [
             { role: 'system', content: SCRIPT_SYSTEM_PROMPT },
-            { role: 'user', content: regenPrompt },
+            { role: 'user', content: userPrompt },
           ],
           response_format: {
             type: 'json_schema',
@@ -334,51 +324,96 @@ export async function generateScripts(input: ProductInput): Promise<ScriptGenera
             },
           },
         });
-        const regenContent = regenResp.choices[0]?.message?.content;
-        if (!regenContent) return { index, original, regenResp, parsed: null };
-        const regenParsed = JSON.parse(regenContent) as LlmRegenResponse;
-        return { index, original, regenResp, parsed: regenParsed };
+        totalInputTokens += resp.usage?.prompt_tokens ?? 0;
+        totalOutputTokens += resp.usage?.completion_tokens ?? 0;
+        const content = resp.choices[0]?.message?.content;
+        if (!content) {
+          console.warn(`[scripts] framework=${framework} returned empty content`);
+          return null;
+        }
+        let parsedRegen: LlmRegenResponse;
+        try {
+          parsedRegen = JSON.parse(content) as LlmRegenResponse;
+        } catch (err) {
+          console.warn(`[scripts] framework=${framework} bad JSON:`, (err as Error).message);
+          return null;
+        }
+        if (!parsedRegen.script) return null;
+        // Force the framework slug — strict-mode should have done this
+        // already, but defensive: a model occasionally hallucinates a
+        // different slug despite the prompt pinning.
+        parsedRegen.script.framework = framework;
+        const generated = toGenerated(parsedRegen.script, false);
+        // Fire the streaming callback. Errors here are logged and
+        // swallowed so one persist failure doesn't poison the batch.
+        if (options?.onScriptReady) {
+          try {
+            await options.onScriptReady(generated, index);
+          } catch (err) {
+            console.warn(
+              `[scripts] onScriptReady for framework=${framework} threw:`,
+              (err as Error).message,
+            );
+          }
+        }
+        return generated;
       } catch (err) {
-        // Don't fail the whole generation if a single regen errors out.
-        console.warn(`[scripts] regen for index ${index} failed:`, (err as Error).message);
+        console.warn(
+          `[scripts] framework=${framework} OpenAI call failed:`,
+          (err as Error).message,
+        );
         return null;
       }
     }),
   );
 
-  for (const r of regenResults) {
-    if (!r) continue;
-    regenCalls++;
-    totalInputTokens += r.regenResp.usage?.prompt_tokens ?? 0;
-    totalOutputTokens += r.regenResp.usage?.completion_tokens ?? 0;
-    if (!r.parsed?.script) continue;
-    // Replace only if the new script scores higher than the original.
-    const newOverall = r.parsed.script.quality_score?.overall ?? 0;
-    const oldOverall = r.original.quality_score?.overall ?? 0;
-    if (newOverall >= oldOverall) {
-      parsed.scripts[r.index] = r.parsed.script;
-    }
+  const successful = results.filter((r): r is GeneratedScript => r !== null);
+  if (successful.length === 0) {
+    throw new Error('All 6 framework generations failed — check the LLM logs for details.');
   }
 
   const durationMs = Date.now() - startedAt;
-  const scriptsBelowThreshold = parsed.scripts.filter(
-    (s) => (s.quality_score?.overall ?? 0) < QUALITY_THRESHOLD,
+  const scriptsBelowThreshold = successful.filter(
+    (s) => (s.qualityScore?.overall ?? 0) < QUALITY_THRESHOLD,
   ).length;
 
   return {
-    scripts: parsed.scripts.map((s, i) => toGenerated(s, regenStarted.includes(i))),
+    scripts: successful,
     usage: {
       model,
       inputTokens: totalInputTokens,
       outputTokens: totalOutputTokens,
       durationMs,
-      regenCalls,
+      regenCalls: 0, // V6: regen folded into per-framework retry inside generateSingleFrameworkScript
       scriptsBelowThreshold,
     },
   };
 }
 
-function buildUserPrompt(p: ProductInput): string {
+// Per-framework user prompt — V6 streaming generation. Each of the 6
+// parallel calls receives the same product context but is pinned to
+// ONE framework, with a short framework-specific reminder so the model
+// commits to that ad concept instead of drifting toward whichever
+// archetype it finds easiest.
+const FRAMEWORK_BRIEF_HEBREW: Record<ScriptFrameworkSlug, string> = {
+  problem_agitation_solution:
+    'בעיה יומיומית ספציפית → להעצים את הכאב לרגע → המוצר נכנס באופן טבעי. לא "ה-X המהפכני", לא "פתרון מושלם".',
+  skeptical_testimonial:
+    'הקריין/ית מתחיל ספקני: "תכל\'ס, חשבתי שזה עוד גימיק". מנסה. מסביר מה הפתיע אותו. תהליך פסיכולוגי, לא רשימת תועלות.',
+  demonstration_proof:
+    'הוכחה ויזואלית, צעד-אחרי-צעד, של המוצר פותר את הבעיה. דיבור קצר — הוויזואל מספר את הסיפור. לפחות 2 סצנות hands_only / product_demo.',
+  price_alternative_anchor:
+    'השוואה לפתרון יקר/מסובך/מעצבן יותר. "במקום לשלם X / להתקשר ל-Y / להזמין Z, אני עושה את זה ב-30 שניות".',
+  relatable_israeli_moment:
+    'רגע ישראלי מאוד מקומי — ערב שישי, ילד שלא נרדם, ויכוח עם בן זוג על המקלחת, פקק בנתיבי איילון, מטבח אחרי ארוחה. המוצר מתערב כפתרון אנושי.',
+  fast_direct_response:
+    'קצר, חד, בנוי לביצועים במטא/טיקטוק. 18-22 שניות. Hook חזק → תועלת אחת → CTA. ללא סיפור.',
+};
+
+function buildSingleFrameworkPrompt(
+  p: ProductInput,
+  framework: ScriptFrameworkSlug,
+): string {
   const mode = resolveVideoMode(p.durationSeconds);
   // Render the per-mode constraints inline so the model sees the
   // exact targets it has to hit (scene count, talking caps, word
@@ -414,43 +449,22 @@ function buildUserPrompt(p: ProductInput): string {
     p.avatarDescription
       ? [
           `דמות הקריינות שכבר נבחרה: ${p.avatarDescription}.`,
+          // Hard gender lock — every spoken_text_hebrew + on_screen_caption_hebrew
+          // must use the matching grammatical gender. Mismatched verbs/
+          // adjectives are the #1 reason a Hebrew UGC ad sounds wrong.
+          p.avatarGender === 'male'
+            ? '⚠ **המגדר של הקריין: זכר**. כל הטקסט המדובר (spoken_text_hebrew) וכל הכתוביות (on_screen_caption_hebrew) חייבים להיות בלשון **זכר** — פעלים בעבר/הווה/עתיד, שמות תואר, וכינויי גוף. אסור על "הזמנתי / טעיתי / חשבתי" בלשון נקבה. דוגמאות: "אני בטוח" (לא "בטוחה"), "ראיתי" — בלשון זכר, "הזמנתי / ניסיתי / גיליתי" — בלשון זכר.'
+            : '⚠ **המגדר של הקריינית: נקבה**. כל הטקסט המדובר (spoken_text_hebrew) וכל הכתוביות (on_screen_caption_hebrew) חייבים להיות בלשון **נקבה** — פעלים בעבר/הווה/עתיד, שמות תואר, וכינויי גוף. דוגמאות: "ראיתי" (נקבה), "אני בטוחה" (לא "בטוח"), "הזמנתי, ניסיתי, גיליתי" (כולם בלשון נקבה).',
           '⚠ אל תכתוב את תיאור הדמות בתוך visual_prompt_english — תמונת הרפרנס תטופל ע"י ה-image model. ב-visual_prompt_english תכתוב רק setting / action / camera framing / lighting / outfit (אם רלוונטי).',
           '',
         ].join('\n')
       : null,
-    'הפק עכשיו את 6 התסריטים בפורמט ה-JSON המבוקש (Script Engine V2: creative_strategy מלא, 3 hook_options, scene_goal לכל סצנה, quality_score כן).',
+    `🎯 **ה-framework לתסריט הזה: ${framework}**`,
+    `הנחיה לפריימוורק: ${FRAMEWORK_BRIEF_HEBREW[framework]}`,
+    '',
+    'הפק עכשיו תסריט אחד בודד בפורמט { "script": {...} } תואם לסכמה — לפי ה-framework שצוין. creative_strategy מלא, 5 hook_options, quality_score עם 12 צירים, וכל סצנה עם המטא-דאטה החדש (environment_type / environment_style / primary_subject / וכו\').',
   ];
   return lines.filter((l): l is string => l !== null).join('\n');
-}
-
-function buildRegenUserPrompt(p: ProductInput, original: LlmScript): string {
-  // Compact recap of the product so the model has the same context as pass 1,
-  // plus the weak script + its self-criticism so it knows what to fix.
-  const productLines = [
-    `שם המוצר: ${p.productName}`,
-    p.brand ? `מותג: ${p.brand}` : null,
-    p.price ? `מחיר: ${p.price}${p.currency ? ' ' + p.currency : ''}` : null,
-    `אורך: ${p.durationSeconds}s`,
-    '',
-    'תיאור:',
-    p.description,
-    p.categoryLabel ? `קטגוריה: ${p.categoryLabel}` : null,
-    p.avatarDescription ? `דמות הרפרנס: ${p.avatarDescription}` : null,
-  ]
-    .filter((l): l is string => l !== null)
-    .join('\n');
-
-  return `הסקריפט הזה (framework="${original.framework}") קיבל ציון overall=${original.quality_score?.overall ?? '?'} — מתחת לסף 8.
-
-החולשה שזיהית בעצמך: "${original.quality_score?.weakness_note ?? '(לא צוין)'}"
-
-${productLines}
-
-צור גרסה **חזקה יותר** של אותו תסריט (אותו framework, אותו creative_strategy core_insight אם הוא חזק — אבל מותר לחדד אותו), כך שהציון yes-self יהיה ≥8 בכל הצירים. תן דגש לתיקון הצד החלש שצוין למעלה.
-
-אסור להחזיר את אותו טקסט. אסור להשאיר קלישאות. אם ה-hook חלש — תכתוב 3 hook_options שונים לחלוטין. אם ה-visual_prompt_english גנרי — תכתוב משהו ספציפי וחי.
-
-החזר { "script": {...} } תואם לסכמה — סקריפט אחד בלבד.`;
 }
 
 // Hebrew TTS at natural pace ≈ 14 chars/sec (matches the estimate in
