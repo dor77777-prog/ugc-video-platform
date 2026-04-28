@@ -2,10 +2,19 @@
 // the input is (image + audio) instead of (video + audio).
 //
 // KLING_TALKING_SCENE_PROVIDER values:
-//   "ai_avatar_v2_pro"      → Kling Avatar v2 Pro (recommended default)
-//   "ai_avatar_v2_standard" → Kling Avatar v2 Standard
-//   "advanced_lipsync"      → face_identify + advanced_lipsync chain
-//   "lipsync_v1"            → legacy 2-step (kling-v3-omni i2v + lipsync v1)
+//   "lipsync_v1"            → CURRENT DEFAULT. kling-v3-omni i2v +
+//                             kling-lip-sync-v1. Works on every Kling
+//                             account that has units; stable + tested.
+//   "ai_avatar_v2_pro"      → Kling Avatar v2 Pro. ENDPOINT NEEDS
+//                             VERIFICATION — our guess
+//                             (/v1/videos/avatar) returned 404 on the
+//                             official api-singapore.klingai.com.
+//                             Override KLING_AVATAR_V2_PRO_ENDPOINT
+//                             once you confirm the path with your
+//                             reseller (302/PiAPI/KIE/...).
+//   "ai_avatar_v2_standard" → Same caveat as Pro.
+//   "advanced_lipsync"      → face_identify + advanced_lipsync chain.
+//                             Same caveat.
 
 import { TalkingSceneProvider } from './types';
 import { klingAvatarV2Standard, klingAvatarV2Pro } from './kling-avatar-v2';
@@ -26,7 +35,10 @@ export const ALL_TALKING_SCENE_PROVIDERS: Record<TalkingSceneProviderName, Talki
 };
 
 export function getActiveTalkingSceneProvider(): TalkingSceneProvider {
-  const raw = (process.env.KLING_TALKING_SCENE_PROVIDER ?? 'ai_avatar_v2_pro').toLowerCase();
+  // Default → lipsync_v1 (the only path we've confirmed works on the
+  // official Kling API). Switch to Avatar v2 / Advanced LipSync only
+  // after verifying the endpoint with your reseller.
+  const raw = (process.env.KLING_TALKING_SCENE_PROVIDER ?? 'lipsync_v1').toLowerCase();
   return getTalkingSceneProviderByName(raw);
 }
 
