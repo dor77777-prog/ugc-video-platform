@@ -114,11 +114,13 @@ export function GenerateAllButton({
       // surfaces as an error rather than spinning forever.
       const PER_SCENE_BUDGET_MS = 200_000;
 
-      // Process the queue in parallel chunks. parallelism=2 cuts wall time
-      // roughly in half (5 min → ~2.5 min for 5 scenes) and stays well
-      // under gpt-image-2's tier-1 rate limits. Bumping to 3 is reasonable
-      // on tier 2+, but we keep the default conservative.
-      const PARALLELISM = 2;
+      // Process the queue in parallel chunks. With parallelism=5 all
+      // scenes start gpt-image-2 simultaneously — the bottleneck shifts
+      // from "user waits for sequential pairs" to "fastest 5 returns".
+      // OpenAI tier 1 image rate limit is 5/min; tier 2+ is much higher.
+      // Our per-user rate-limit caps at 20/min (lib/usage/rate-limit.ts)
+      // so even with all 5 in parallel we stay under both ceilings.
+      const PARALLELISM = 5;
 
       const runOne = async (s: SceneInfo) => {
         if (abortRest) return;

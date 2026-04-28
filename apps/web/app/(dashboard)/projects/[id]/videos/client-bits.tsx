@@ -1,0 +1,1030 @@
+'use client';
+
+import {
+  useActionState,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
+import { useRouter } from 'next/navigation';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { ProgressBar } from '@/components/ui/progress-bar';
+import { ElapsedTimer } from '@/components/ui/elapsed-timer';
+import { AudioPreview } from '@/components/ui/audio-preview';
+import { VideoPreview } from '@/components/ui/video-preview';
+import { cn } from '@/lib/utils';
+import {
+  generateSceneVoiceAction,
+  generateSceneClipAction,
+  setSceneRequiresLipSyncAction,
+  type GenerateVoiceState,
+  type GenerateClipState,
+} from './actions';
+
+// Window-level events the cards listen to during batch runs. Pattern lifted
+// from the scenes-page polling implementation. Naming kept distinct so a
+// voice batch doesn't trigger clip polling (and vice versa).
+const VOICES_BATCH_START = 'voices:batch-start';
+const VOICES_BATCH_DONE = 'voices:batch-done';
+const CLIPS_BATCH_START = 'clips:batch-start';
+const CLIPS_BATCH_DONE = 'clips:batch-done';
+
+const SCENE_GOAL_LABEL: Record<string, string> = {
+  stop_scroll: 'עוצר גלילה',
+  establish_pain: 'מבסס כאב',
+  introduce_product: 'מכניס מוצר',
+  prove_it_works: 'מוכיח שעובד',
+  decision_push: 'דחיפה לפעולה',
+  other: 'אחר',
+};
+
+interface SceneInfo {
+  id: string;
+  sceneOrder: number;
+  hasImage: boolean;
+  hasVoice: boolean;
+  hasClip: boolean;
+}
+
+/* ============================================================
+ * Helpers
+ * ============================================================ */
+
+function raceWithTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error('client-side timeout')), ms);
+    p.then(
+      (v) => {
+        clearTimeout(t);
+        resolve(v);
+      },
+      (err) => {
+        clearTimeout(t);
+        reject(err);
+      },
+    );
+  });
+}
+
+/* ============================================================
+ * Batch buttons
+ * ============================================================ */
+
+export function GenerateAllVoicesButton({
+  scenes,
+  creditsBalance,
+  voiceSelected,
+}: {
+  scenes: SceneInfo[];
+  creditsBalance: number;
+  voiceSelected: boolean;
+}) {
+  const router = useRouter();
+  const [pending, setPending] = useState(false);
+  const [progress, setProgress] = useState({ done: 0, total: 0, failed: 0 });
+  const [error, setError] = useState<string | null>(null);
+
+  const queue = scenes.filter((s) => !s.hasVoice);
+  if (queue.length === 0) return null;
+
+  const cost = queue.length;
+  const canRun = voiceSelected && creditsBalance >= cost;
+
+  const run = async () => {
+    if (!canRun || pending) return;
+    setError(null);
+    setProgress({ done: 0, total: queue.length, failed: 0 });
+    setPending(true);
+    if (typeof window !== 'undefined')
+      window.dispatchEvent(new CustomEvent(VOICES_BATCH_START));
+
+    try {
+      let done = 0;
+      let failed = 0;
+      let abort = false;
+      // Voice gen is fast (~3-5s) and ElevenLabs handles concurrent
+      // calls fine. Bumping from 2 → 5 fires all scenes at once,
+      // shaving 60-90s off a 5-scene batch.
+      const PARALLELISM = 5;
+      const PER_SCENE_BUDGET_MS = 120_000;
+
+      const runOne = async (s: SceneInfo) => {
+        if (abort) return;
+        try {
+          const result = await raceWithTimeout(
+            fetch(`/api/scenes/${s.id}/voice`, { method: 'POST' }).then(
+              (r) =>
+                r.json() as Promise<{
+                  success: boolean;
+                  error?: string;
+                  needsCredits?: boolean;
+                  needsVoiceSelection?: boolean;
+                  configError?: boolean;
+                }>,
+            ),
+            PER_SCENE_BUDGET_MS,
+          );
+          if (!result.success) {
+            failed++;
+            setError(result.error ?? 'יצירת voice-over נכשלה');
+            if (result.needsCredits || result.needsVoiceSelection || result.configError) {
+              abort = true;
+            }
+          } else {
+            done++;
+            setError(null);
+          }
+        } catch (err) {
+          failed++;
+          setError(`שגיאה: ${(err as Error).message}`);
+        }
+        setProgress({ done, total: queue.length, failed });
+      };
+
+      for (let i = 0; i < queue.length; i += PARALLELISM) {
+        if (abort) break;
+        const chunk = queue.slice(i, i + PARALLELISM);
+        await Promise.all(chunk.map(runOne));
+        router.refresh();
+      }
+    } finally {
+      setPending(false);
+      if (typeof window !== 'undefined')
+        window.dispatchEvent(new CustomEvent(VOICES_BATCH_DONE));
+    }
+  };
+
+  return (
+    <Card className="border-primary/40 bg-primary/[0.04]">
+      <CardContent className="p-4 flex items-center gap-3 justify-between">
+        <div className="flex-1 space-y-0.5">
+          <div className="text-sm font-semibold">
+            {pending ? 'יוצר voice-overs…' : 'צור voice-over לכל הסצנות החסרות'}
+          </div>
+          <div className="text-xs text-muted-foreground">
+            {pending
+              ? `${progress.done + progress.failed} מתוך ${progress.total}${progress.failed > 0 ? ` (${progress.failed} נכשלו)` : ''}`
+              : !voiceSelected
+                ? 'בחר קול לפני שמייצרים voice-overs'
+                : `${queue.length} חסרות · ${queue.length} קרדיטים (יש לך ${creditsBalance})`}
+          </div>
+          {pending && (
+            <div className="pt-2">
+              <ProgressBar variant="primary" />
+            </div>
+          )}
+          {error && (
+            <div className="text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded-md p-2 mt-2">
+              {error}
+            </div>
+          )}
+        </div>
+        <Button onClick={run} disabled={pending || !canRun} size="default">
+          {pending ? '…' : '🔊 צור הכל'}
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
+export function GenerateAllClipsButton({
+  scenes,
+  creditsBalance,
+}: {
+  scenes: SceneInfo[];
+  creditsBalance: number;
+}) {
+  const router = useRouter();
+  const [pending, setPending] = useState(false);
+  const [progress, setProgress] = useState({ done: 0, total: 0, failed: 0 });
+  const [error, setError] = useState<string | null>(null);
+
+  const queue = scenes.filter((s) => s.hasImage && s.hasVoice && !s.hasClip);
+  if (queue.length === 0) return null;
+
+  const cost = queue.length;
+  const canRun = creditsBalance >= cost;
+
+  const run = async () => {
+    if (!canRun || pending) return;
+    setError(null);
+    setProgress({ done: 0, total: queue.length, failed: 0 });
+    setPending(true);
+    if (typeof window !== 'undefined')
+      window.dispatchEvent(new CustomEvent(CLIPS_BATCH_START));
+
+    try {
+      let done = 0;
+      let failed = 0;
+      let abort = false;
+      // Kling submits are quick — the long part (60-180s) is the actual
+      // video render which runs on Kling's side. 5 parallel POSTs are
+      // well within our rate limit (12/5min) and let all scenes start
+      // their Kling work simultaneously instead of staggered in pairs.
+      // For a 5-scene batch this changes wall-time from ~3 batches ×
+      // ~3min each = 9min → 1 batch × ~3min = ~3min.
+      const PARALLELISM = 5;
+      // Kling i2v + lipsync = up to 8 minutes on slow days. Plus margin.
+      const PER_SCENE_BUDGET_MS = 600_000;
+
+      const runOne = async (s: SceneInfo) => {
+        if (abort) return;
+        try {
+          const result = await raceWithTimeout(
+            fetch(`/api/scenes/${s.id}/clip`, { method: 'POST' }).then(
+              (r) =>
+                r.json() as Promise<{
+                  success: boolean;
+                  error?: string;
+                  needsCredits?: boolean;
+                  needsImage?: boolean;
+                  needsVoice?: boolean;
+                  configError?: boolean;
+                  failedStage?: 'motion' | 'lipsync';
+                }>,
+            ),
+            PER_SCENE_BUDGET_MS,
+          );
+          if (!result.success) {
+            failed++;
+            setError(result.error ?? 'יצירת קליפ נכשלה');
+            if (result.needsCredits || result.configError) abort = true;
+          } else {
+            done++;
+            setError(null);
+          }
+        } catch (err) {
+          failed++;
+          const msg = (err as Error).message;
+          setError(
+            msg.includes('timeout')
+              ? 'הקליפ לא הסתיים תוך 6 דקות. ממשיך לסצנה הבאה.'
+              : `שגיאה: ${msg}`,
+          );
+        }
+        setProgress({ done, total: queue.length, failed });
+      };
+
+      for (let i = 0; i < queue.length; i += PARALLELISM) {
+        if (abort) break;
+        const chunk = queue.slice(i, i + PARALLELISM);
+        await Promise.all(chunk.map(runOne));
+        router.refresh();
+      }
+    } finally {
+      setPending(false);
+      if (typeof window !== 'undefined')
+        window.dispatchEvent(new CustomEvent(CLIPS_BATCH_DONE));
+    }
+  };
+
+  return (
+    <Card className="border-accent/40 bg-accent/[0.04]">
+      <CardContent className="p-4 flex items-center gap-3 justify-between">
+        <div className="flex-1 space-y-0.5">
+          <div className="text-sm font-semibold">
+            {pending ? 'מנפיש קליפים…' : 'הנפש את כל הקליפים החסרים'}
+          </div>
+          <div className="text-xs text-muted-foreground">
+            {pending
+              ? `${progress.done + progress.failed} מתוך ${progress.total}${progress.failed > 0 ? ` (${progress.failed} נכשלו)` : ''}`
+              : `${queue.length} חסרים · ${queue.length} קרדיטים (יש לך ${creditsBalance}). ~5 דק' סך הכל.`}
+          </div>
+          {pending && (
+            <div className="pt-2">
+              <ProgressBar variant="accent" />
+            </div>
+          )}
+          {error && (
+            <div className="text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded-md p-2 mt-2">
+              {error}
+            </div>
+          )}
+        </div>
+        <Button onClick={run} disabled={pending || !canRun} size="default" variant="default">
+          {pending ? '…' : '🎬 הנפש הכל'}
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
+/* ============================================================
+ * SceneClipCard — per-scene tile with voice + clip controls
+ * ============================================================ */
+
+interface SceneClipCardProps {
+  sceneId: string;
+  sceneOrder: number;
+  totalScenes: number;
+  sceneGoal: string | null;
+  textHebrew: string;
+  imageUrl: string | null;
+  voiceUrl: string | null;
+  voiceDurationSeconds: number | null;
+  voiceGenerationCount: number;
+  /** ISO timestamp set when a voice generation is currently running on
+   * the server. Null when idle. Lets the spinner survive page refresh. */
+  voiceInFlightAt: string | null;
+  clipUrl: string | null;
+  clipDurationSeconds: number | null;
+  clipGenerationCount: number;
+  /** ISO timestamp set when a clip generation is currently running. */
+  clipInFlightAt: string | null;
+  voiceSelected: boolean;
+  /** Currently effective lipsync flag (auto-derived OR user override). */
+  requiresLipSync: boolean;
+  /** True if the user has set the flag explicitly (so we can show "auto"
+   * vs "manual" in the UI and offer a "reset to auto" button). */
+  requiresLipSyncIsExplicit: boolean;
+  /** Auto-derived scene type label (talking_head / broll / hands_only / ...). */
+  sceneGenerationType: string;
+}
+
+// In-flight TTLs match the server. Past these, the flag is treated as
+// stale (the worker probably crashed) and the UI offers the action again.
+const CLIP_IN_FLIGHT_TTL_MS = 15 * 60 * 1000;
+const VOICE_IN_FLIGHT_TTL_MS = 2 * 60 * 1000;
+
+function isFresh(iso: string | null, ttlMs: number): boolean {
+  if (!iso) return false;
+  return Date.now() - new Date(iso).getTime() < ttlMs;
+}
+
+export function SceneClipCard(props: SceneClipCardProps) {
+  const router = useRouter();
+
+  // Per-scene action wrappers (server actions for the single buttons).
+  const voiceAction = generateSceneVoiceAction.bind(null, props.sceneId);
+  const [voiceState, voiceFormAction, voicePending] = useActionState<
+    GenerateVoiceState,
+    FormData
+  >(voiceAction, undefined);
+  const clipAction = generateSceneClipAction.bind(null, props.sceneId);
+  const [clipState, clipFormAction, clipPending] = useActionState<
+    GenerateClipState,
+    FormData
+  >(clipAction, undefined);
+
+  // Live overrides: when polling beats router.refresh() during a batch,
+  // we set these locally. Cleared once the prop catches up.
+  const [liveVoiceUrl, setLiveVoiceUrl] = useState<string | null>(null);
+  const [liveClipUrl, setLiveClipUrl] = useState<string | null>(null);
+  const [voiceBatchPolling, setVoiceBatchPolling] = useState(false);
+  const [clipBatchPolling, setClipBatchPolling] = useState(false);
+
+  const propsRef = useRef(props);
+  propsRef.current = props;
+
+  // Drop overrides when the server-rendered prop arrives.
+  useEffect(() => {
+    if (liveVoiceUrl && props.voiceUrl) setLiveVoiceUrl(null);
+  }, [props.voiceUrl, liveVoiceUrl]);
+  useEffect(() => {
+    if (liveClipUrl && props.clipUrl) setLiveClipUrl(null);
+  }, [props.clipUrl, liveClipUrl]);
+
+  // Voice batch polling.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+    let aborted = false;
+    const stop = () => {
+      if (intervalId) clearInterval(intervalId);
+      intervalId = null;
+      setVoiceBatchPolling(false);
+    };
+    const tick = async () => {
+      if (aborted || propsRef.current.voiceUrl) {
+        stop();
+        return;
+      }
+      try {
+        const res = await fetch(`/api/scenes/${propsRef.current.sceneId}`, {
+          cache: 'no-store',
+        });
+        if (!res.ok) return;
+        const json = (await res.json()) as { voiceUrl: string | null };
+        if (json.voiceUrl && !aborted) {
+          setLiveVoiceUrl(json.voiceUrl);
+          stop();
+          router.refresh();
+        }
+      } catch { /* keep trying */ }
+    };
+    const onStart = () => {
+      if (propsRef.current.voiceUrl) return;
+      setVoiceBatchPolling(true);
+      void tick();
+      intervalId = setInterval(tick, 2500);
+    };
+    const onDone = () => stop();
+    window.addEventListener(VOICES_BATCH_START, onStart);
+    window.addEventListener(VOICES_BATCH_DONE, onDone);
+    return () => {
+      aborted = true;
+      window.removeEventListener(VOICES_BATCH_START, onStart);
+      window.removeEventListener(VOICES_BATCH_DONE, onDone);
+      stop();
+    };
+  }, [router]);
+
+  // Clip batch polling — same pattern.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+    let aborted = false;
+    const stop = () => {
+      if (intervalId) clearInterval(intervalId);
+      intervalId = null;
+      setClipBatchPolling(false);
+    };
+    const tick = async () => {
+      if (aborted || propsRef.current.clipUrl) {
+        stop();
+        return;
+      }
+      try {
+        const res = await fetch(`/api/scenes/${propsRef.current.sceneId}`, {
+          cache: 'no-store',
+        });
+        if (!res.ok) return;
+        const json = (await res.json()) as { clipUrl: string | null };
+        if (json.clipUrl && !aborted) {
+          setLiveClipUrl(json.clipUrl);
+          stop();
+          router.refresh();
+        }
+      } catch { /* keep trying */ }
+    };
+    const onStart = () => {
+      if (propsRef.current.clipUrl) return;
+      setClipBatchPolling(true);
+      void tick();
+      intervalId = setInterval(tick, 3000);
+    };
+    const onDone = () => stop();
+    window.addEventListener(CLIPS_BATCH_START, onStart);
+    window.addEventListener(CLIPS_BATCH_DONE, onDone);
+    return () => {
+      aborted = true;
+      window.removeEventListener(CLIPS_BATCH_START, onStart);
+      window.removeEventListener(CLIPS_BATCH_DONE, onDone);
+      stop();
+    };
+  }, [router]);
+
+  // Per-card action bursts (single button completes → poll briefly).
+  // Captures the URL that was on the scene when the action started so we
+  // can detect *changes* (regeneration), not just first-creation.
+  const wasVoicePendingRef = useRef(voicePending);
+  const voiceUrlAtPendingRef = useRef<string | null>(props.voiceUrl);
+  useEffect(() => {
+    // Snapshot the pre-action URL exactly as the action begins.
+    if (!wasVoicePendingRef.current && voicePending) {
+      voiceUrlAtPendingRef.current = propsRef.current.voiceUrl;
+    }
+    if (wasVoicePendingRef.current && !voicePending && !voiceState?.error) {
+      // Action just succeeded. Force a router refresh so revalidatePath()
+      // results show up immediately. Then poll the GET endpoint until the
+      // URL is *different* from the pre-action one (new MP3 written).
+      router.refresh();
+      const startUrl = voiceUrlAtPendingRef.current;
+      let polls = 0;
+      const id = setInterval(async () => {
+        polls++;
+        try {
+          const res = await fetch(`/api/scenes/${propsRef.current.sceneId}`, {
+            cache: 'no-store',
+          });
+          if (res.ok) {
+            const json = (await res.json()) as { voiceUrl: string | null };
+            if (json.voiceUrl && json.voiceUrl !== startUrl) {
+              setLiveVoiceUrl(json.voiceUrl);
+              clearInterval(id);
+              router.refresh();
+              return;
+            }
+          }
+        } catch { /* */ }
+        if (polls > 6) clearInterval(id);
+      }, 2500);
+      return () => clearInterval(id);
+    }
+    wasVoicePendingRef.current = voicePending;
+  }, [voicePending, router, voiceState]);
+
+  const wasClipPendingRef = useRef(clipPending);
+  const clipUrlAtPendingRef = useRef<string | null>(props.clipUrl);
+  useEffect(() => {
+    if (!wasClipPendingRef.current && clipPending) {
+      clipUrlAtPendingRef.current = propsRef.current.clipUrl;
+    }
+    if (wasClipPendingRef.current && !clipPending && !clipState?.error) {
+      router.refresh();
+      const startUrl = clipUrlAtPendingRef.current;
+      let polls = 0;
+      const id = setInterval(async () => {
+        polls++;
+        try {
+          const res = await fetch(`/api/scenes/${propsRef.current.sceneId}`, {
+            cache: 'no-store',
+          });
+          if (res.ok) {
+            const json = (await res.json()) as { clipUrl: string | null };
+            if (json.clipUrl && json.clipUrl !== startUrl) {
+              setLiveClipUrl(json.clipUrl);
+              clearInterval(id);
+              router.refresh();
+              return;
+            }
+          }
+        } catch { /* */ }
+        if (polls > 12) clearInterval(id); // ~36s budget
+      }, 3000);
+      return () => clearInterval(id);
+    }
+    wasClipPendingRef.current = clipPending;
+  }, [clipPending, router, clipState]);
+
+  const effectiveVoiceUrl = liveVoiceUrl ?? props.voiceUrl;
+  const effectiveClipUrl = liveClipUrl ?? props.clipUrl;
+  const hasVoice = !!effectiveVoiceUrl;
+  const hasClip = !!effectiveClipUrl;
+  // Server-side in-flight flags survive page refresh — if the user
+  // refreshes mid-generation, the spinner persists until the row's
+  // *InFlightAt clears (set in the try/finally of the impl). When the
+  // flag is older than the TTL, treat it as stale (worker crashed).
+  const voiceInFlightServer = isFresh(props.voiceInFlightAt, VOICE_IN_FLIGHT_TTL_MS);
+  const clipInFlightServer = isFresh(props.clipInFlightAt, CLIP_IN_FLIGHT_TTL_MS);
+  const showVoiceWorking =
+    voicePending || (voiceBatchPolling && !hasVoice) || (voiceInFlightServer && !hasVoice);
+  const showClipWorking =
+    clipPending || (clipBatchPolling && !hasClip) || (clipInFlightServer && !hasClip);
+
+  // Polling: when the server-side flag is set but we don't yet have a
+  // result, keep checking the GET endpoint every 3s for up to its TTL
+  // so the spinner flips to the result the moment the server finishes.
+  useEffect(() => {
+    if (!voiceInFlightServer || hasVoice) return;
+    const id = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/scenes/${propsRef.current.sceneId}`, { cache: 'no-store' });
+        if (!res.ok) return;
+        const json = (await res.json()) as { voiceUrl: string | null; voiceInFlightAt: string | null };
+        if (json.voiceUrl) {
+          setLiveVoiceUrl(json.voiceUrl);
+          clearInterval(id);
+          router.refresh();
+        } else if (!json.voiceInFlightAt) {
+          // Flag cleared without a URL → terminal failure server-side.
+          clearInterval(id);
+          router.refresh();
+        }
+      } catch { /* keep trying */ }
+    }, 3000);
+    return () => clearInterval(id);
+  }, [voiceInFlightServer, hasVoice, router]);
+
+  useEffect(() => {
+    if (!clipInFlightServer || hasClip) return;
+    const id = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/scenes/${propsRef.current.sceneId}`, { cache: 'no-store' });
+        if (!res.ok) return;
+        const json = (await res.json()) as { clipUrl: string | null; clipInFlightAt: string | null };
+        if (json.clipUrl) {
+          setLiveClipUrl(json.clipUrl);
+          clearInterval(id);
+          router.refresh();
+        } else if (!json.clipInFlightAt) {
+          clearInterval(id);
+          router.refresh();
+        }
+      } catch { /* keep trying */ }
+    }, 3000);
+    return () => clearInterval(id);
+  }, [clipInFlightServer, hasClip, router]);
+
+  const canGenerateVoice = !!props.imageUrl && props.voiceSelected;
+  const canGenerateClip = !!props.imageUrl && hasVoice;
+
+  return (
+    <Card className={cn(hasClip && 'border-accent/40')}>
+      <CardContent className="p-5 space-y-4">
+        {/* Header */}
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-2">
+            <Badge variant={hasClip ? 'success' : hasVoice ? 'default' : 'outline'}>
+              סצנה {props.sceneOrder + 1}/{props.totalScenes}
+            </Badge>
+            {props.sceneGoal && (
+              <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-secondary text-secondary-foreground">
+                {SCENE_GOAL_LABEL[props.sceneGoal] ?? props.sceneGoal}
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Hebrew text */}
+        <div className="text-sm leading-relaxed border-s-2 border-primary ps-3">
+          <div className="text-xs text-muted-foreground mb-1">קריינות:</div>
+          {props.textHebrew}
+        </div>
+
+        {/* Clip preview area — takes priority when present */}
+        {hasClip ? (
+          <VideoPreview
+            src={effectiveClipUrl!}
+            poster={props.imageUrl ?? undefined}
+            durationSeconds={props.clipDurationSeconds ?? null}
+          />
+        ) : (
+          /* Fallback: scene image (or empty state) */
+          <div className="relative aspect-[9/16] rounded-md overflow-hidden bg-muted border border-border">
+            {props.imageUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={props.imageUrl}
+                alt={`Scene ${props.sceneOrder + 1}`}
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-center p-4">
+                <span className="text-3xl opacity-40">🖼️</span>
+                <span className="text-xs text-muted-foreground">צור תמונה לסצנה (שלב 4) קודם</span>
+              </div>
+            )}
+            {showClipWorking && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-center p-4 bg-black/40 backdrop-blur-[2px]">
+                <div className="text-4xl animate-shimmer-overlay">🎬</div>
+                <div className="text-sm font-semibold text-white">מנפיש את הסצנה…</div>
+                <div className="w-3/4">
+                  <ProgressBar variant="accent" />
+                </div>
+                <div className="text-xs text-white/80 flex items-center gap-2">
+                  <span>זמן שעבר:</span>
+                  <ElapsedTimer keyValue={props.sceneId + props.clipGenerationCount} />
+                </div>
+                <div className="text-[10px] text-white/70 max-w-[80%]">
+                  Kling i2v + lipsync · ~2 דק' עם תמונת רפרנס
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Voice row */}
+        <div className="space-y-2">
+          {hasVoice && !showVoiceWorking ? (
+            <>
+              <AudioPreview
+                src={effectiveVoiceUrl!}
+                durationSeconds={props.voiceDurationSeconds ?? null}
+              />
+              <form action={voiceFormAction}>
+                <Button
+                  type="submit"
+                  size="sm"
+                  variant="outline"
+                  className="w-full"
+                  disabled={!canGenerateVoice}
+                  title={
+                    !props.voiceSelected
+                      ? 'בחר קול בראש העמוד לפני שמרגנרים voice-over'
+                      : 'יוצר voice חדש לפי הקול הנוכחי שנבחר ב-VoicePicker'
+                  }
+                >
+                  ↻ צור voice-over מחדש
+                </Button>
+              </form>
+            </>
+          ) : showVoiceWorking ? (
+            <div className="rounded-md border border-primary/30 bg-primary/[0.04] p-3 flex items-center gap-3">
+              <span className="text-xl animate-shimmer-overlay">🎙️</span>
+              <div className="flex-1">
+                <div className="text-xs font-semibold">יוצר voice-over…</div>
+                <div className="text-[11px] text-muted-foreground flex items-center gap-1.5 mt-0.5">
+                  זמן שעבר: <ElapsedTimer keyValue={props.sceneId + props.voiceGenerationCount} />
+                </div>
+              </div>
+            </div>
+          ) : (
+            <form action={voiceFormAction}>
+              <Button
+                type="submit"
+                size="sm"
+                variant="outline"
+                disabled={!canGenerateVoice}
+                className="w-full"
+              >
+                {props.voiceSelected ? '🎙️ צור voice-over' : '🎙️ בחר קול לפני יצירת voice'}
+              </Button>
+            </form>
+          )}
+          {voiceState?.error && (
+            <div className="text-[11px] text-destructive bg-destructive/10 border border-destructive/20 rounded-md px-2 py-1.5">
+              {voiceState.error}
+            </div>
+          )}
+        </div>
+
+        {/* Lipsync toggle — controls whether the next clip generation
+            adds a Kling LipSync pass on top of the silent i2v. */}
+        <LipSyncToggle
+          sceneId={props.sceneId}
+          requiresLipSync={props.requiresLipSync}
+          requiresLipSyncIsExplicit={props.requiresLipSyncIsExplicit}
+          sceneGenerationType={props.sceneGenerationType}
+        />
+
+        {/* Animate button */}
+        <div className="space-y-2">
+          {!hasClip && !showClipWorking && (
+            <form action={clipFormAction}>
+              <Button
+                type="submit"
+                size="sm"
+                disabled={!canGenerateClip}
+                className="w-full"
+              >
+                {!hasVoice && props.requiresLipSync
+                  ? '🎬 צור voice-over לפני הנפשה'
+                  : props.requiresLipSync
+                    ? '🎬 הנפש + Lipsync'
+                    : '🎬 הנפש את הסצנה'}
+              </Button>
+            </form>
+          )}
+          {hasClip && (
+            <form action={clipFormAction}>
+              <Button type="submit" size="sm" variant="outline" className="w-full" disabled={clipPending}>
+                {clipPending ? 'מנפיש מחדש…' : '↻ הנפש מחדש'}
+              </Button>
+            </form>
+          )}
+          {clipState?.error && (
+            <div className="text-[11px] text-destructive bg-destructive/10 border border-destructive/20 rounded-md px-2 py-1.5">
+              {clipState.failedStage && (
+                <strong>
+                  שלב{' '}
+                  {clipState.failedStage === 'motion' ? 'תנועה' : 'lipsync'}:{' '}
+                </strong>
+              )}
+              {clipState.error}
+            </div>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+/* ============================================================
+ * LipSyncToggle — per-scene flag override (auto / on / off)
+ * ============================================================ */
+
+const SCENE_TYPE_LABEL_HE: Record<string, string> = {
+  talking_head: 'דיבור למצלמה',
+  selfie_talking: 'סלפי מדבר',
+  mirror_selfie_talking: 'סלפי במראה',
+  product_demo: 'הדגמת מוצר',
+  broll: 'B-roll',
+  lifestyle: 'לייפסטייל',
+  hands_only: 'ידיים בלבד',
+  closeup_product: 'תקריב מוצר',
+  before_after: 'לפני / אחרי',
+};
+
+function LipSyncToggle({
+  sceneId,
+  requiresLipSync,
+  requiresLipSyncIsExplicit,
+  sceneGenerationType,
+}: {
+  sceneId: string;
+  requiresLipSync: boolean;
+  requiresLipSyncIsExplicit: boolean;
+  sceneGenerationType: string;
+}) {
+  const router = useRouter();
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Optimistic local state so the toggle feels instant. Reset whenever
+  // the props (server-rendered) catch up.
+  const [localRequires, setLocalRequires] = useState(requiresLipSync);
+  const [localExplicit, setLocalExplicit] = useState(requiresLipSyncIsExplicit);
+  useEffect(() => {
+    setLocalRequires(requiresLipSync);
+    setLocalExplicit(requiresLipSyncIsExplicit);
+  }, [requiresLipSync, requiresLipSyncIsExplicit]);
+
+  const set = async (value: boolean | null) => {
+    setPending(true);
+    setError(null);
+    const res = await setSceneRequiresLipSyncAction(sceneId, value);
+    setPending(false);
+    if (!res.ok) {
+      setError(res.error ?? 'שמירה נכשלה');
+      return;
+    }
+    setLocalRequires(res.effective ?? false);
+    setLocalExplicit(value !== null);
+    router.refresh();
+  };
+
+  const typeLabel = SCENE_TYPE_LABEL_HE[sceneGenerationType] ?? sceneGenerationType;
+
+  return (
+    <div className="rounded-md border border-border bg-card/50 px-2.5 py-2 space-y-1.5">
+      <div className="flex items-center justify-between gap-2 text-[11px]">
+        <span className="text-muted-foreground">
+          סוג: <span className="font-medium text-foreground">{typeLabel}</span>
+        </span>
+        {!localExplicit && (
+          <span className="text-[10px] text-muted-foreground italic">אוטומטי</span>
+        )}
+      </div>
+      <div className="flex items-center gap-1.5">
+        <button
+          type="button"
+          onClick={() => set(true)}
+          disabled={pending}
+          className={cn(
+            'flex-1 text-[11px] font-medium rounded px-2 py-1 transition-colors',
+            localRequires && localExplicit
+              ? 'bg-primary text-primary-foreground'
+              : 'bg-muted text-muted-foreground hover:bg-secondary',
+          )}
+          title="כפה Lipsync — Kling יוסיף סנכרון שפתיים אחרי ה-i2v"
+        >
+          💋 Lipsync
+        </button>
+        <button
+          type="button"
+          onClick={() => set(false)}
+          disabled={pending}
+          className={cn(
+            'flex-1 text-[11px] font-medium rounded px-2 py-1 transition-colors',
+            !localRequires && localExplicit
+              ? 'bg-primary text-primary-foreground'
+              : 'bg-muted text-muted-foreground hover:bg-secondary',
+          )}
+          title="בטל Lipsync — silent i2v בלבד; קול ימוסך ב-ffmpeg"
+        >
+          🎵 שקט
+        </button>
+        {localExplicit && (
+          <button
+            type="button"
+            onClick={() => set(null)}
+            disabled={pending}
+            className="text-[11px] text-muted-foreground hover:text-foreground rounded px-1.5 py-1"
+            title="חזור לאוטומטי לפי כיוון מצלמה"
+          >
+            ↺
+          </button>
+        )}
+      </div>
+      {error && (
+        <div className="text-[10px] text-destructive">{error}</div>
+      )}
+    </div>
+  );
+}
+
+/* ============================================================
+ * RenderFinalButton — Step 6 trigger
+ * ============================================================ */
+
+export function RenderFinalButton({
+  projectId,
+  allClipsReady,
+  creditsBalance,
+}: {
+  projectId: string;
+  allClipsReady: boolean;
+  creditsBalance: number;
+}) {
+  const router = useRouter();
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [jobId, setJobId] = useState<string | null>(null);
+  const [statusText, setStatusText] = useState<string>('');
+
+  const start = async () => {
+    if (!allClipsReady || pending) return;
+    setError(null);
+    setPending(true);
+    setStatusText('שולח לרינדור…');
+    try {
+      const res = await fetch(`/api/projects/${projectId}/render`, { method: 'POST' });
+      const data = (await res.json()) as {
+        success?: boolean;
+        jobId?: string;
+        error?: string;
+      };
+      if (!res.ok || !data.success || !data.jobId) {
+        setError(data.error ?? 'הרכבה סופית נכשלה');
+        setPending(false);
+        setStatusText('');
+        return;
+      }
+      setJobId(data.jobId);
+      router.refresh();
+
+      // Poll the job status. When it completes, redirect the user to
+      // /library — they'll see the new MP4 ready to play. If something
+      // fails, surface the error and let them retry without leaving
+      // the videos page.
+      const pollStartedAt = Date.now();
+      const POLL_TIMEOUT_MS = 10 * 60 * 1000;
+      const pollInterval = window.setInterval(async () => {
+        try {
+          const sres = await fetch(`/api/render/${data.jobId}/status`, { cache: 'no-store' });
+          if (!sres.ok) return;
+          const s = (await sres.json()) as {
+            status?: string;
+            progressPercent?: number;
+            errorMessage?: string;
+            finalVideoUrl?: string;
+          };
+          setStatusText(progressLabel(s.status, s.progressPercent));
+          if (s.status === 'completed' && s.finalVideoUrl) {
+            window.clearInterval(pollInterval);
+            // Redirect to library (with hash-anchor on this jobId) so
+            // the user lands on the new finished video immediately.
+            router.push(`/library#job-${data.jobId}`);
+          } else if (s.status === 'failed' || s.status === 'cancelled') {
+            window.clearInterval(pollInterval);
+            setError(s.errorMessage ?? 'ההרכבה הסופית נכשלה');
+            setPending(false);
+            setStatusText('');
+          } else if (Date.now() - pollStartedAt > POLL_TIMEOUT_MS) {
+            window.clearInterval(pollInterval);
+            setError('הרינדור לוקח יותר מ-10 דק׳ — בדוק ב-/admin/queue או /library');
+            setPending(false);
+            setStatusText('');
+          }
+        } catch {
+          /* keep polling — transient network blips are fine */
+        }
+      }, 3000);
+    } catch (err) {
+      setError(`שגיאה: ${(err as Error).message}`);
+      setPending(false);
+      setStatusText('');
+    }
+  };
+
+  return (
+    <div className="space-y-2" dir="ltr">
+      <Button
+        onClick={start}
+        disabled={!allClipsReady || pending}
+        size="lg"
+        className="min-w-[220px]"
+      >
+        {pending
+          ? statusText || 'מתחיל הרכבה…'
+          : allClipsReady
+            ? '🎞️ הרכב סרטון סופי (1 קרדיט)'
+            : 'צור קליפים לכל הסצנות קודם'}
+      </Button>
+      {jobId && pending && (
+        <div className="text-xs text-muted-foreground">
+          ID: <span className="font-mono">{jobId.slice(0, 8)}</span>
+          {' — '}אנעבור לספרייה אוטומטית כשיסתיים
+        </div>
+      )}
+      {error && (
+        <div className="text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2 max-w-md">
+          {error}
+        </div>
+      )}
+      <div className="text-[11px] text-muted-foreground">
+        קרדיטים: <span className="font-mono font-semibold">{creditsBalance}</span>
+      </div>
+    </div>
+  );
+}
+
+function progressLabel(status: string | undefined, percent: number | undefined): string {
+  switch (status) {
+    case 'pending':
+      return 'בתור…';
+    case 'extracting_assets':
+      return 'אוסף נכסים…';
+    case 'composing_video':
+      return `מרכיב סרטון… ${percent ?? 50}%`;
+    case 'uploading_final':
+      return 'מעלה לפלט…';
+    case 'completed':
+      return 'הושלם — מעביר לספרייה…';
+    default:
+      return `מרכיב… ${percent ?? 0}%`;
+  }
+}

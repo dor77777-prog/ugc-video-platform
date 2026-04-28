@@ -2,10 +2,20 @@ import type { Job } from 'bullmq';
 import { RenderJobStatus, AssetType } from '@prisma/client';
 import { prisma } from '../db';
 import type { RenderJobPayload } from '../queue';
-import { mockTtsProvider } from '../providers/tts/mock';
-import { mockAvatarProvider } from '../providers/avatar/mock';
-import { mockBrollProvider } from '../providers/broll/mock';
-import { mockCompositionProvider } from '../providers/composition/mock';
+import { ffmpegCompositionProvider } from '../providers/composition/ffmpeg';
+
+// V3 render processor: composition-only.
+//
+// Step 5 of the wizard now generates per-scene voice (ElevenLabs) and per-
+// scene clip (Kling i2v + lipsync) live, before the user enqueues a final
+// render. By the time we get here, every Scene already has imageUrl,
+// voiceUrl, and clipUrl set. The worker's only job is to concat those
+// clips, burn RTL Hebrew captions, optionally mix in background music, and
+// publish the final MP4 + Asset row.
+//
+// Old per-scene voice / avatar / b-roll stages are removed — they were
+// never integrated end-to-end (mock providers only) and don't fit the
+// new live-preview flow.
 
 export async function processRenderJob(job: Job<RenderJobPayload>) {
   const { renderJobId } = job.data;
@@ -24,84 +34,56 @@ export async function processRenderJob(job: Job<RenderJobPayload>) {
   }
 
   try {
-    // Step 1 — extract assets
-    await advance(renderJobId, RenderJobStatus.extracting_assets, 5, job);
-
-    // Step 2 — voice (per scene)
-    await advance(renderJobId, RenderJobStatus.generating_voice, 15, job);
-    const voiceUrls: string[] = [];
-    for (const scene of renderJob.script.scenes) {
-      const result = await mockTtsProvider.generate({
-        text: scene.textHebrewTts || scene.textHebrew,
-        voiceId: 'mock-voice',
-        language: 'he',
-      });
-      voiceUrls.push(result.audioUrl);
-      await prisma.asset.create({
-        data: {
-          projectId: renderJob.projectId,
-          renderJobId: renderJob.id,
-          type: AssetType.voice_audio,
-          provider: result.provider,
-          url: result.audioUrl,
-          durationSeconds: result.durationSeconds,
-          metadata: { sceneId: scene.id, sceneOrder: scene.sceneOrder },
-        },
-      });
+    // Step 1 — gather assets (verify all scenes have a clip).
+    await advance(renderJobId, RenderJobStatus.extracting_assets, 10, job);
+    const scenes = renderJob.script.scenes;
+    const missingClip = scenes.filter((s) => !s.clipUrl);
+    if (missingClip.length > 0) {
+      throw new Error(
+        `Scenes missing animated clips: ${missingClip
+          .map((s) => `#${s.sceneOrder + 1}`)
+          .join(', ')}`,
+      );
     }
 
-    // Step 3 — avatar video
-    await advance(renderJobId, RenderJobStatus.generating_avatar_video, 35, job);
-    const avatarResult = await mockAvatarProvider.generate({
-      avatarId: 'mock-avatar',
-      audioUrl: voiceUrls[0] ?? 'mock://audio',
-    });
-    await prisma.asset.create({
-      data: {
-        projectId: renderJob.projectId,
-        renderJobId: renderJob.id,
-        type: AssetType.avatar_video,
-        provider: avatarResult.provider,
-        url: avatarResult.videoUrl,
-        durationSeconds: avatarResult.durationSeconds,
-      },
-    });
+    // Step 2 — composition (concat + optional captions/music).
+    await advance(renderJobId, RenderJobStatus.composing_video, 50, job);
+    const productData = (renderJob.project.productData as Record<string, unknown> | null) ?? {};
 
-    // Step 4 — b-roll (per scene)
-    await advance(renderJobId, RenderJobStatus.generating_broll, 60, job);
-    const brollUrls: string[] = [];
-    for (const scene of renderJob.script.scenes) {
-      const result = await mockBrollProvider.generate({
-        prompt: scene.visualPromptEnglish,
-        durationSeconds: scene.durationSeconds,
-        aspectRatio: '9:16',
-      });
-      brollUrls.push(result.videoUrl);
-      await prisma.asset.create({
-        data: {
-          projectId: renderJob.projectId,
-          renderJobId: renderJob.id,
-          type: AssetType.broll_video,
-          provider: result.provider,
-          url: result.videoUrl,
-          durationSeconds: result.durationSeconds,
-          metadata: { sceneId: scene.id, sceneOrder: scene.sceneOrder },
-        },
-      });
-    }
+    // Music is OFF by default — the auto-default track sounded bad and
+    // burned a free-music library hasn't been curated yet. The toggle
+    // in Step 1 (productData.backgroundMusic) is preserved so a future
+    // music picker can wire in. For now, render is voice-only.
+    // TODO(music-library): add curated tracks under apps/web/public/music/
+    //   and a picker in Step 1, then re-enable here.
+    const musicUrl: string | null = null;
 
-    // Step 5 — composition
-    await advance(renderJobId, RenderJobStatus.composing_video, 85, job);
-    const composition = await mockCompositionProvider.compose({
-      avatarVideoUrl: avatarResult.videoUrl,
-      voiceUrls,
-      brollUrls,
-      captions: renderJob.script.scenes.map((s) => s.textHebrew),
+    // Captions are OFF by default — burned ASS overlay didn't look good
+    // for Hebrew at our typeface/size. The toggle in Step 1 (productData.captions)
+    // can re-enable per project once the styling is acceptable. For now,
+    // viewers hear the voice — the ad still works without captions.
+    // TODO(captions): word-by-word sync via ElevenLabs character timestamps
+    //   + better RTL bidi + outline + fade-in/out.
+    const enableCaptions = productData.captions === true; // default false
+
+    const composition = await ffmpegCompositionProvider.compose({
+      avatarVideoUrl: '', // unused in the new flow
+      voiceUrls: scenes.map((s) => s.voiceUrl ?? ''),
+      brollUrls: scenes.map((s) => s.clipUrl ?? ''),
+      captions: scenes.map((s) => s.onScreenCaptionHebrew || s.textHebrew),
       aspectRatio: '9:16',
+      musicUrl,
+      enableCaptions,
+      scenes: scenes.map((s) => ({
+        clipUrl: s.clipUrl!,
+        caption: enableCaptions ? (s.onScreenCaptionHebrew || s.textHebrew || '').trim() : '',
+        voiceDurationSeconds: s.voiceDurationSeconds ?? null,
+        durationSeconds: s.clipDurationSeconds ?? s.durationSeconds ?? 5,
+      })),
     });
 
-    // Step 6 — upload final
-    await advance(renderJobId, RenderJobStatus.uploading_final, 95, job);
+    // Step 3 — upload final + persist Asset.
+    await advance(renderJobId, RenderJobStatus.uploading_final, 90, job);
     await prisma.asset.create({
       data: {
         projectId: renderJob.projectId,
@@ -113,7 +95,7 @@ export async function processRenderJob(job: Job<RenderJobPayload>) {
       },
     });
 
-    // Done
+    // Done.
     await prisma.renderJob.update({
       where: { id: renderJobId },
       data: {
@@ -125,7 +107,7 @@ export async function processRenderJob(job: Job<RenderJobPayload>) {
     });
     await job.updateProgress(100);
 
-    console.log(`[render] job ${renderJobId} completed`);
+    console.log(`[render] job ${renderJobId} completed → ${composition.finalVideoUrl}`);
     return { finalVideoUrl: composition.finalVideoUrl };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

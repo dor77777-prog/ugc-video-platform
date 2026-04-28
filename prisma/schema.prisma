@@ -74,14 +74,41 @@ model User {
   plan           String   @default("free")
   creditsBalance Int      @default(0)
   banned         Boolean  @default(false)
+
+  // Per-user override for the daily provider-spend cap (USD). NULL → use
+  // the global default in lib/usage/spend-cap.ts. Admin sets this from
+  // /admin/users when a user needs a higher limit (e.g. paid plan).
+  spendCapUsd    Float?
+
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  projects   Project[]
-  renderJobs RenderJob[]
-  apiCalls   ApiCall[]
+  projects            Project[]
+  renderJobs          RenderJob[]
+  apiCalls            ApiCall[]
+  creditTransactions  CreditTransaction[]
 
   @@index([role])
+}
+
+// Append-only audit log of every credit movement on a user's balance.
+// Includes auto charges (script_gen / scene_image / voice / clip), auto
+// refunds (e.g. first_regen_free), and admin grants/refunds. The signed
+// `amount` matches the sign convention in the user's view: positive
+// number = credits added, negative = credits spent.
+model CreditTransaction {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  amount    Int
+  reason    String   // e.g. "scene_clip" / "refund:lipsync_failed" / "admin_grant"
+  ref       String?  // sceneId / projectId / apiCallId for traceability
+  adminId   String?  // user id that issued the transaction (NULL for auto)
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([reason, createdAt])
 }
 
 // One row per outbound call to a paid provider (OpenAI, ElevenLabs, Kling, etc).
@@ -99,6 +126,15 @@ model ApiCall {
   success       Boolean  @default(true)
   errorMessage  String?
 
+  // Two-phase status. We insert a row at submit time with status="in_progress"
+  // so the admin dashboard can see calls that are *currently running* with a
+  // live elapsed timer. The same row is updated to "success" or "failed" when
+  // the provider finishes. Using a separate field (vs. just success?:bool)
+  // lets us distinguish "still running" from "succeeded" from "explicitly
+  // failed" without nullable booleans, which Prisma + groupBy handle poorly.
+  status        String   @default("success")  // "in_progress" | "success" | "failed"
+  completedAt   DateTime?                      // NULL while in_progress
+
   userId    String?
   user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
   projectId String?
@@ -108,6 +144,7 @@ model ApiCall {
   @@index([provider, createdAt])
   @@index([operation, createdAt])
   @@index([createdAt])
+  @@index([status, createdAt])
   @@index([userId])
   @@index([projectId])
 }
@@ -178,6 +215,43 @@ model Scene {
   imageGenerationCount  Int      @default(0)
   imageProvider         String?
 
+  // Step 5 — voice-over (ElevenLabs Hebrew TTS).
+  voiceUrl              String?
+  voiceProvider         String?   // 'elevenlabs' | future
+  voiceGeneratedAt      DateTime?
+  voiceDurationSeconds  Float?
+  voiceGenerationCount  Int       @default(0)
+
+  // Step 5 — animated clip (Kling two-stage: i2v + lipsync).
+  clipUrl               String?
+  clipProvider          String?   // 'kling' | future
+  clipGeneratedAt       DateTime?
+  clipDurationSeconds   Float?
+  clipGenerationCount   Int       @default(0)
+
+  // Stage A (i2v) result cache — skip re-running motion when only Stage B
+  // (lipsync) failed or when the user just wants a different voice on the
+  // same animated frame. The motion stage costs $0.076 per attempt, so
+  // this cache is the difference between paying once and paying every
+  // retry. Invalidated when scene.imageUrl changes (we compare against
+  // clipMotionImageUrl) or when older than Kling's TTL (~30 days).
+  clipMotionTaskId      String?
+  clipMotionImageUrl    String?
+  clipMotionGeneratedAt DateTime?
+  clipMotionDurationSec Float?
+
+  // ── In-flight tracking ────────────────────────────────────────────────
+  // Set the moment a generation starts (i.e. before the provider call),
+  // cleared when it finishes (success or terminal failure). The UI uses
+  // these to show a spinner even after a page refresh — without them,
+  // the user thinks "nothing happened" because useActionState's pending
+  // flag is in-memory only. Also lets clip-impl/voice-impl/generate-impl
+  // refuse to start a duplicate provider call when one is already running
+  // (saves money on accidental double-clicks).
+  imageInFlightAt        DateTime?
+  voiceInFlightAt        DateTime?
+  clipInFlightAt         DateTime?
+
   durationSeconds     Int
   // Legacy V1 enum — informational, consumed by the scene-image prompt builder.
   sceneType           SceneType @default(other)
@@ -193,6 +267,22 @@ model Scene {
   cameraDirection        String?
   // Performance note for the creator (delivery: tone, pacing, energy).
   performanceNote        String?
+
+  // V3 routing fields — explicit signals to the clip pipeline so we know
+  // which scenes need a Kling LipSync pass vs which can stay silent and
+  // get audio muxed at composition time. When NULL, clip-impl.ts falls
+  // back to deriveSceneRouting() heuristics on cameraDirection/sceneGoal.
+  // Vocabulary kept as strings for the same forward-compat reasons as
+  // sceneGoal.
+  //   sceneGenerationType — talking_head / selfie_talking / mirror_selfie_talking
+  //                         / product_demo / broll / lifestyle / hands_only
+  //                         / closeup_product / before_after
+  //   faceVisibility       — clear_front_facing / partial_face / profile / no_face
+  //   requiresLipSync      — true only when the face is clearly speaking
+  //                          to camera. Default false on ambiguity.
+  sceneGenerationType    String?
+  faceVisibility         String?
+  requiresLipSync        Boolean?
 
   @@unique([scriptId, sceneOrder])
   @@index([scriptId])

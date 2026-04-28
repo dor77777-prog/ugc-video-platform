@@ -1,6 +1,39 @@
 # tachles · STATUS
 
-מסמך חי — מה מומש, מה בעבודה, מה חסר. **עדכון אחרון: 2026-04-28** (Script Engine V2 + scene safety pipeline + true parallel scene generation + live polling).
+מסמך חי — מה מומש, מה בעבודה, מה חסר. **עדכון אחרון: 2026-04-28** (V3.5 — vision-grounded motion analysis + LipSync provider abstraction + admin live in-flight tracking + scene-routing fix + duration honors script + ffmpeg music mix + voice-bounded captions + library video player). קודם: V3 cost-safety bundle (rate-limit + spend cap + first-regen-free + refund + sweep), V3 video provider architecture (Kling i2v + LipSync + scene routing).
+
+## 🚨 תמונת מצב מהירה למפתחים שמצטרפים עכשיו
+
+**הצינור עובד end-to-end** (אפריל 2026 V3.5):
+1. **Step 1-3** — מוצר → אווטאר → תסריט V2 (gpt-5.4-mini)
+2. **Step 4** — תמונת סצנה (gpt-image-2 + safety + silent_talking_plate ל-talking-head)
+3. **Step 5** — voice (ElevenLabs v3) + clip (Kling v3-omni i2v + Kling LipSync v1, או mock fallback)
+4. **Step 6** — ffmpeg local: concat + voice mux + RTL captions + music mix
+
+**תשתית ספקים (gen-3 architecture):**
+- **VideoGenerationProvider** ([types.ts](apps/web/lib/animation/types.ts)) — i2v + lipsync abstraction
+- **LipSyncProvider** ([lipsync/types.ts](apps/web/lib/animation/lipsync/types.ts)) — Kling/Sync.so/ElevenLabs/Mock, switchable via `LIPSYNC_PROVIDER` env
+- **TalkingSceneProvider** ([talking-scene/types.ts](apps/web/lib/animation/talking-scene/types.ts)) — image+audio → talking video in ONE call. 4 implementations: Avatar v2 Pro / Avatar v2 Standard / Advanced LipSync (face_identify + advanced_lipsync chain) / lipsync_v1 adapter. Switchable via `KLING_TALKING_SCENE_PROVIDER`. **NEW IN V3.6** — replaces the old i2v→lipsync chain for talking_head scenes; b-roll still uses i2v.
+- **VoiceGenerationProvider** — ElevenLabs (eleven_v3 only — v2 doesn't support Hebrew)
+- **MotionAnalysisProvider** — gpt-4o-mini vision per scene → grounded Kling motion prompt
+
+**Live infra:**
+- Dev: `localhost:3000`, log → `/tmp/ugc-web.log`
+- Tunnel: cloudflared → `PUBLIC_BASE_URL` (regenerated when it drops)
+- Worker: BullMQ (`render` + `maintenance` queues; hourly Kling stuck-task sweep)
+
+**Cost per finished 5-scene video:**
+- Script: $0.02 | Images: $0.20 | Voices: $0.04 | Vision analysis: $0.005 | i2v: $4.10 | LipSync (2 talking): $0.04 | Composition: $0
+- **Total ≈ $4.40** (down from estimated $0.96 — Kling v3-omni is $0.82/5s, not the $0.42 we initially assumed)
+- Charged to user: 12 credits × $0.50 = $6 → **margin ≈ 27%**
+
+**Open issues:**
+- Music: **DISABLED** by default — auto-default track sounded bad and a curated free-music library hasn't been picked. Toggle in Step 1 still saved (`productData.backgroundMusic`) but the composer no-ops it. To re-enable: drop royalty-free tracks (Pixabay/Mixkit/YouTube Audio Library) into `apps/web/public/music/`, build a picker in Step 1, then unhide the `musicUrl` line in [render-processor.ts](apps/worker/src/processors/render-processor.ts).
+- Captions: **DISABLED** by default — burned ASS overlay didn't look good. Toggle in Step 1 (`productData.captions`) preserved; if user explicitly turns it on, captions render with voice-bounded timing + 5-word chunking. Default is OFF.
+- Final length: fixed (`pickClipDuration` honors script's `duration_seconds`).
+- Auto-redirect to `/library`: implemented in [RenderFinalButton](apps/web/app/(dashboard)/projects/[id]/videos/client-bits.tsx) — polls `/api/render/[jobId]/status`, navigates on `completed` with `#job-<id>` anchor.
+- Edit-back from library: each card has an "✎ ערוך פרויקט" link to `/projects/[id]/videos`.
+- Delete project: dashboard cards have a "🗑 מחק" button with inline confirm. [DeleteProjectButton](apps/web/app/(dashboard)/dashboard/delete-button.tsx) → [deleteProjectAction](apps/web/app/(dashboard)/dashboard/actions.ts) cascades through Prisma (`onDelete: Cascade`) to scripts/scenes/render-jobs/assets.
 
 נקרא כך:
 - ✅ מומש ועובד
@@ -9,7 +42,7 @@
 - ❌ עוד לא התחיל / out-of-scope לעכשיו
 - 👤 ממתין למידע ממך
 
-> **תמונת מצב גבוהה (אפריל 2026):** שלבים 1-4 של ה-Wizard (מוצר → אווטאר → תסריט → תמונות סצנה) **חיים, אמיתיים, בלי מוקים**, עם OpenAI אמיתי. **Script Engine V2** עם creative-strategy layer + self-scoring + selective regeneration. **Scene-image pipeline** עם safety pre-processor (term-rewrites + modesty tokens), auto-retry על safety, REALISM CHECK block, timeout protection, ו-**parallel batch generation** (Route Handler + 2 סצנות בו-זמנית). השלבים שעוד מוקים/חסרים: **5 קריינות, 6 וידאו לסצנה, 7 הרכבה סופית**.
+> **תמונת מצב גבוהה (אפריל 2026):** **כל 6 שלבי ה-Wizard חיים end-to-end** — מוצר → אווטאר → תסריט V2 → תמונות סצנה → סצנות מונפשות (voice + animated clip) → הרכבה סופית. כל הספקים האמיתיים מחוברים: OpenAI (gpt-5.4-mini + gpt-image-2), ElevenLabs Multilingual v2 (Hebrew TTS), Kling AI two-stage (Image-to-Video + Lip Sync), ffmpeg local (composition + RTL captions). אפס מוקים בצינור הראשי. עלות ראלית לוידאו ~$1 (כ-12 credits → $6 למשתמש, ~80% מרג'ין).
 
 ---
 
@@ -454,33 +487,83 @@ Three independent fallback paths so the user always sees scenes appear as they f
 | Streaming partial images (`partial_images` param) | ❌ (אופטימיזציה עתידית) |
 | שמירת תמונות ב-cloud storage | ❌ (כרגע `apps/web/public/uploads/` — לא יעבוד ב-prod) |
 
-### 5.5 שלב 5 · קריינות (`ElevenLabs` voice-over per scene)
+### 5.5 שלב 5 · סצנות מונפשות (Voice + Animated Clip per scene) ✨
+
+> **V3 video provider architecture (2026-04-28):**
+> Kling הופך לספק יחיד שמטפל גם ב-image-to-video וגם ב-LipSync, עם routing per-scene:
+> - **Talking head / selfie / mirror selfie** → `i2v (silent)` → `LipSync (video_url + audio_url)` → קליפ מסונכרן שפתיים
+> - **B-roll / product / hands-only / closeup / before-after** → `i2v (silent)` → ffmpeg ממסך אודיו בקומפוזיציה
+>
+> ה-routing נגזר אוטומטית מ-`cameraDirection` + `sceneGoal` ([scene-routing.ts](apps/web/lib/animation/scene-routing.ts)) או נשלף מ-3 עמודות חדשות ב-DB (`sceneGenerationType` / `requiresLipSync` / `faceVisibility`) כשה-LLM ממלא אותן ישירות.
+>
+> **קבצים חדשים:**
+> - [types.ts](apps/web/lib/animation/types.ts) — `VideoGenerationProvider` interface (provider-agnostic)
+> - [kling.ts](apps/web/lib/animation/kling.ts) — KlingProvider (real i2v + real lipsync + mock fallback via `KLING_LIPSYNC_MOCK=1`)
+> - [scene-routing.ts](apps/web/lib/animation/scene-routing.ts) — `deriveSceneRouting(cameraDirection, sceneGoal)`
+> - [public-url.ts](apps/web/lib/animation/public-url.ts) — `toPublicUrl(/uploads/...)` עם `PUBLIC_BASE_URL` (ngrok/cloudflared/deploy)
+> - [clip-impl.ts](apps/web/lib/scenes/clip-impl.ts) — שיכתוב מלא ל-routing הדו-pipeline
+>
+> **Schema additions** (`prisma migrate v3_scene_routing`):
+> - `Scene.sceneGenerationType` (String?)
+> - `Scene.faceVisibility` (String?)
+> - `Scene.requiresLipSync` (Boolean?)
+>
+> **ENV חדשים** (`.env`):
+> ```
+> KLING_API_BASE_URL=https://api-singapore.klingai.com
+> KLING_IMAGE_TO_VIDEO_ENDPOINT=/v1/videos/image2video
+> KLING_LIPSYNC_ENDPOINT=/v1/videos/lip-sync
+> KLING_IMAGE_TO_VIDEO_MODEL=kling-v3-omni
+> KLING_LIPSYNC_MODEL=kling-lip-sync-v1
+> KLING_API_KEY=                  # (optional) wrapper providers
+> KLING_ACCESS_KEY + KLING_SECRET_KEY  # official Kling JWT
+> KLING_LIPSYNC_MOCK=1            # while PUBLIC_BASE_URL not wired
+> PUBLIC_BASE_URL=                # ngrok/cloudflared/prod URL for lipsync
+> ```
+>
+> **חסום בכוונה:** Kling lipsync רץ במצב MOCK (מחזיר את ה-silent video כמות שהוא) עד שיש PUBLIC_BASE_URL נגיש מ-Kling. ברגע שתשמש tunnel או deploy → להגדיר `PUBLIC_BASE_URL` ולכבות `KLING_LIPSYNC_MOCK`. הצינור ימשיך לעבוד בלי לשבור פרויקטים קיימים.
+
 
 | נושא | סטטוס |
 |------|--------|
-| מפתח ElevenLabs ב-.env | ✅ |
-| לכל סצנה: כפתור "צור קריינות" → mp3 בעברית | ⏳ הקומיט הבא |
-| בחירת קול (גבר/אישה, מאפיינים) | ⏳ |
-| שמירת מאפייני voice ב-Project (consistency בין סצנות) | ⏳ |
-| Hebrew TTS normalization middleware (מספרים, מטבעות, קיצורים) | ❌ (יבנה עם הקומיט הבא) |
+| **ElevenLabs Multilingual v2** — Hebrew TTS REST integration ([lib/voice/elevenlabs.ts](apps/web/lib/voice/elevenlabs.ts)) | ✅ |
+| **Per-scene voice button** + audio waveform preview ([components/ui/audio-preview.tsx](apps/web/components/ui/audio-preview.tsx)) | ✅ |
+| **קטלוג 12 קולות ישראליים** (gender + age + energy filters) ([lib/voice/voice-presets.ts](apps/web/lib/voice/voice-presets.ts)) | ✅ |
+| **VoicePicker** UI עם sample preview (modeled after AvatarPicker) ([videos/voice-picker.tsx](apps/web/app/(dashboard)/projects/[id]/videos/voice-picker.tsx)) | ✅ |
+| **Project-level voice consistency** — `Project.productData.voiceId` נשמר, כל הסצנות משתמשות באותו קול | ✅ |
+| **Performance-driven voice settings** — performance_note → ElevenLabs `style`/`stability` (לוחש=0.15/0.85, פאנץ'=0.65/0.45 וכו') | ✅ |
+| Hebrew TTS rules בסקריפט-פרומפט (מספרים במילים, ללא סימנים, פיסוק לנשימה) | ✅ |
+| **Kling AI two-stage** — Image-to-Video (V2-Master) + Lip Sync ([lib/animation/kling.ts](apps/web/lib/animation/kling.ts)) | ✅ |
+| JWT-signed auth (HS256 על AccessKey + SecretKey, 30-min token) | ✅ |
+| **Per-scene clip button** + 9:16 video preview עם play-on-click ([components/ui/video-preview.tsx](apps/web/components/ui/video-preview.tsx)) | ✅ |
+| **Motion prompt builder** — מילון Kling Camera Movement (Master Shot / Pan / Tilt / Zoom / Mirror Selfie) ממופה מ-cameraDirection + performanceNote | ✅ |
+| **True parallel batch** (parallelism=2) דרך Route Handlers — `POST /api/scenes/[id]/voice` + `/clip` | ✅ |
+| **Live polling** — חידוש דפוס מ-Step 4: events `voices:batch-start/done` + `clips:batch-start/done` + burst polling אחרי action בודד | ✅ |
+| **Per-stage error classification** — config / safety / timeout / failedStage('motion'\|'lipsync') מוצגים בעברית ב-UI | ✅ |
+| **Cost tracking** — `recordApiCall` ב-3 קריאות נפרדות ל-admin/costs: `elevenlabs:tts`, `kling:i2v`, `kling:lipsync` | ✅ |
+| **Credit pricing** — voice=1 credit, clip=1 credit (משולב i2v + lipsync), final=1 credit. סה"כ ~12 credits = $6 לסרטון 5 סצנות | ✅ |
+| Schema migration `v3_voice_clip` — 10 עמודות חדשות ב-Scene (5 voice + 5 clip) | ✅ |
+| **שלב 5 = סצנות מונפשות, שלב 6 = הרכבה סופית** ב-Stepper | ✅ |
 
-### 5.6 שלב 6 · וידאו לסצנה (Image → Video)
+### 5.6 שלב 6 · הרכבה סופית (Final Composition via ffmpeg) ✨
 
 | נושא | סטטוס |
 |------|--------|
-| בחירת ספק (Kling 2.0 / Runway Gen-4 / Luma / Pika) | 👤 ממתין להחלטה ממך |
-| API integration | ⏳ |
-| מיזוג קול + וידאו לקליפ (ffmpeg / Creatomate) | ⏳ |
-
-### 5.7 שלב 7 · הרכבה סופית (Composition)
-
-| נושא | סטטוס |
-|------|--------|
-| Creatomate API integration | ⏳ |
-| Concat קליפים + מוזיקת רקע + כתוביות | ⏳ |
-| כתוביות עברית RTL מסונכרנות עם הקריינות | ⏳ |
-| הורדת MP4 סופי | ⏳ |
-| העלאה אוטומטית ל-cloud storage | ❌ |
+| **ffmpeg-local provider** ([apps/worker/src/providers/composition/ffmpeg.ts](apps/worker/src/providers/composition/ffmpeg.ts)) — חינם, ללא API key | ✅ |
+| Concat-demuxer של 5 קליפים → MP4 יחיד | ✅ |
+| **Burned RTL Hebrew captions** — ASS subtitles (libass), פונט Heebo, UTF-8 native | ✅ |
+| **Voice-bounded caption window** — caption מופיעה רק במשך הדיבור (`voiceDurationSeconds`), לא לאורך כל הקליפ | ✅ |
+| **Caption chunking** — אם הtext ארוך (>6 מילים), מתחלק אוטומטית ל-5 מילים בכל chunk עם timing פרופורציונלי | ✅ |
+| Re-encoding ל-x264 fast preset, CRF 20, AAC 192k, faststart MOV atom | ✅ |
+| **Background music mixing** (-18 dB ducking) דרך `amix` filter, נטען מ-`/music/default.mp3` כשהמשתמש בחר Music ב-Step 1 | 🟡 קוד מוכן — דורש קובץ `apps/web/public/music/default.mp3` (לא בundled) |
+| Per-scene audio embedded BEFORE composer (clip-impl ffmpeg mux) — composer רק concat + captions, לא נוגע באודיו פר-סצנה | ✅ |
+| **POST /api/projects/[id]/render** — מאמת את כל הקליפים, יוצר RenderJob, מקטין credits, enqueue ל-BullMQ | ✅ |
+| BullMQ progress events + `/admin/queue` + `/api/render/[jobId]/status` נשמרים | ✅ |
+| Final MP4 נשמר ב-`/uploads/finals/<timestamp>.mp4` | ✅ |
+| Asset(final_video) + RenderJob.finalVideoUrl מתעדכנים | ✅ |
+| **ספריית `/library`** — נגן 9:16 inline + כפתורי "פתח במסך מלא" + "הורד" + תיוג mock לרינדורים ישנים | ✅ |
+| **Cloud storage לפלט הסופי** — Supabase Storage / S3 | ❌ (כרגע local fs) |
+| **Word-by-word caption sync** דרך ElevenLabs character timestamps | ❌ (chunking של 5 מילים מספיק לרוב המקרים) |
 
 ---
 
@@ -497,6 +580,36 @@ Three independent fallback paths so the user always sees scenes appear as they f
 
 ---
 
+## 6.6 V3.6 — TalkingSceneProvider (אפריל 2026)
+
+| נושא | סטטוס | פירוט |
+|------|--------|--------|
+| **TalkingSceneProvider abstraction** | ✅ | חדש: ספק שמקבל **image + audio** ומחזיר **video עם מוצא דיבור** ב-call יחיד. שונה מ-LipSyncProvider שמקבל video + audio. |
+| **Kling AI Avatar v2 Pro** | ✅ | ברירת מחדל ל-`KLING_TALKING_SCENE_PROVIDER`. אמור לתת איכות עליונה ל-talking head בלי i2v→lipsync chain. |
+| **Kling AI Avatar v2 Standard** | ✅ | אותו provider עם model id זול יותר. |
+| **Kling Advanced LipSync** | ✅ | 2-step chain: `face_identify(image) → face_id`, ואז `advanced_lipsync(face_id + audio)`. דורש שהreseller יחשוף את `face_identify_endpoint`. |
+| **lipsync_v1 adapter** | ✅ | עוטף את ה-flow הישן (kling-v3-omni i2v + kling-lip-sync-v1) כ-TalkingSceneProvider — מאפשר A/B מאותם inputs. |
+| **POST /api/dev/kling-talking-bakeoff** (admin) | ✅ | מריץ את כל 4 השיטות במקביל על אותם image+audio, שומר MP4 לכל אחת תחת `bakeoff/talking/`, מחזיר URL לכל תוצאה. |
+| **clip-impl fast path לסצנות talking** | ✅ | אם `routing.requiresLipSync && KLING_TALKING_SCENE_PROVIDER ≠ lipsync_v1` → דילוג מלא על i2v. השלב היחיד הוא image+audio→video של provider. נופל בחזרה ל-i2v אם PUBLIC_BASE_URL חסר או ה-provider נכשל. |
+| **B-roll נשאר על kling-v3-omni** | ✅ | סצנות שלא דורשות lipsync (product_demo / hands_only / closeup_product / before_after / lifestyle / broll) ממשיכות בנתיב i2v המסורתי. |
+| **ENV** | ✅ | `KLING_TALKING_SCENE_PROVIDER` + `KLING_AVATAR_V2_{STANDARD,PRO}_{ENDPOINT,MODEL}` + `KLING_FACE_IDENTIFY_ENDPOINT` + `KLING_ADVANCED_LIPSYNC_{ENDPOINT,MODEL}`. כל ה-paths/models override-able כדי לתמוך ב-302/PiAPI/KIE wrappers. |
+
+## 6.5 בקרת איכות + ביצועים (V3.5 — אפריל 2026)
+
+| נושא | סטטוס | פירוט |
+|------|--------|--------|
+| **Vision-grounded motion analysis** | ✅ | gpt-4o-mini מנתח כל תמונת סצנה לפני Kling i2v ובונה motion prompt **גרונד**: "right hand tilts the bottle, water flows into glass". $0.005/סצנה. ללא זה — Kling היה מקבל motion prompt גנרי וממצמץ במקום להנפיש את הפעולה. |
+| **Scene routing veto fix** | ✅ | "selfie POV של ידיים שופכות" כבר לא מסווג כ-talking_head. PRODUCT_DEMO_VETO_PATTERNS ([scene-routing.ts](apps/web/lib/animation/scene-routing.ts)) חוסם 22 מילים (hand/holding/pouring/applying/closeup/counter/bottle/...). |
+| **Per-scene-type motion vocabulary** | ✅ | `pickMotionToken()` ב-[kling.ts](apps/web/lib/animation/kling.ts) — `product_demo` → "hands rotate the product, label catches light"; `hands_only` → "hands perform the action smoothly"; `closeup_product` → "very slow drift, surface highlights". במקום motion גנרי לכולם. |
+| **Silent talking plate** (image gen + Kling) | ✅ | רק לסצנות `requiresLipSync=true`. משפיע על **expression+liveness** (mouth open mid-sentence, eyebrow micro-raise, eyes alive) — **לא על framing**. הוראה מפורשת לשמר את ה-brief המקורי (product/hands/setting). |
+| **Pre-lipsync negatives** | ✅ | "frozen face, plastic skin, dramatic mouth, side profile, mouth covered" מצורפים אוטומטית ל-Kling motion prompt לסצנות lipsync. |
+| **clip duration honors script** | ✅ | `pickClipDuration(voice, scripted, lipsync)` — אם המשתמש בחר 15s ל-5 סצנות, כל סצנה מקבלת ~3s ולא נמתחת ל-5s. תוקן ב-V3.5. |
+| **Two-phase API logging** | ✅ | `recordApiCallStart()` יוצר row עם status="in_progress" + `recordApiCallComplete()` מעדכן ל-success/failed. כל קריאה (script/image/voice/i2v/lipsync/motion_analysis) רשומה כך — מופיעה ב-`/admin/costs` עם elapsed timer חי. |
+| **Admin live in-flight section** | ✅ | `/admin/costs` עם רכיב client-side ([in-flight.tsx](apps/web/app/(admin)/admin/costs/in-flight.tsx)) שמתרענן כל שנייה. badge אדום אחרי 5 דק׳ (stuck task). auto-refresh כל 5 שניות. |
+| **In-flight tracking per scene** | ✅ | 3 עמודות חדשות (`imageInFlightAt`, `voiceInFlightAt`, `clipInFlightAt`). כשהמשתמש מרענן באמצע גנרציה — הספינר נשאר על המסך כי ה-server יודע שהפעולה רצה. גם מונע double-click שמבזבז $0.82. |
+| **Increased parallelism (2 → 5)** | ✅ | כל הbatch buttons (image/voice/clip) כעת רצים את כל 5 הסצנות במקביל. wall-time מ-9 דק׳ ל-3 דק׳ ל-batch של 5. |
+| **Rate-limit caps** | ✅ | i2v/lipsync 20/5min; tts 30/min; image 20/min; motion_analysis 30/min — מתאימים ל-parallelism=5 + retry. |
+
 ## 7. תמחור וקרדיטים
 
 | נושא | סטטוס |
@@ -505,9 +618,17 @@ Three independent fallback paths so the user always sees scenes appear as they f
 | Free signup → 5 קרדיטים | ✅ |
 | חיוב 1 קרדיט/ייצור תסריט | ✅ |
 | חיוב 1 קרדיט/תמונת סצנה | ✅ |
+| **קרדיטים לא יורדים על כשלון API** (transaction מסוף הפונקציה — תקף לכל 4 הפעולות) | ✅ |
+| **CreditTransaction audit log** — כל שינוי בקרדיטים נרשם עם reason + ref + adminId | ✅ |
+| **First-regen-free** — הרגנרציה הראשונה אחרי גן מוצלח חינמית (voice / clip / image) | ✅ |
+| **Per-user daily spend cap** — ברירת מחדל $10/יום, override פר-משתמש דרך `User.spendCapUsd` | ✅ |
+| **Per-user rate limit** — Kling i2v: 12/5min, TTS: 30/min, image: 15/min, script: 6/10min | ✅ |
+| **Admin refund tool** — `/admin/users` → כפתור ↺ עם כמות + הערה (נכתב ל-CreditTransaction) | ✅ |
+| **Admin spend-cap override** — input על `/admin/users` (ריק = default) | ✅ |
+| **Stuck Kling task sweep** — BullMQ recurring job כל שעה, מסמן Stage A שתקועים מעל 15 דק׳ | ✅ |
+| **Kling motion task_id cache** — Stage A מוצלח לא משולם פעמיים (אם imageUrl לא השתנה) | ✅ |
 | תוכניות סובסקריפשן (Free/Starter/Pro/Agency) | ❌ |
 | Stripe / payment integration | ❌ |
-| מנגנון rollback קרדיטים על כשלון | 🟡 חלקי |
 | Usage tracking + dashboard למשתמש | ❌ |
 | **תמחור מאושר**: מבנה 18 קרדיטים/וידאו, $0.50/קרדיט | 👤 ממתין לאישור סופי ממך |
 

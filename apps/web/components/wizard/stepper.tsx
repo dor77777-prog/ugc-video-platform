@@ -12,8 +12,8 @@ export const WIZARD_STEPS: WizardStep[] = [
   { num: 2, label: 'אווטאר' },
   { num: 3, label: 'תסריט' },
   { num: 4, label: 'סצנות תמונות' },
-  { num: 5, label: 'סצנות וידאו' },
-  { num: 6, label: 'סיום' },
+  { num: 5, label: 'סצנות מונפשות' },
+  { num: 6, label: 'הרכבה סופית' },
 ];
 
 interface StepperProps {

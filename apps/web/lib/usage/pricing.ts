@@ -13,6 +13,8 @@ const OPENAI_TEXT_PRICING: Record<string, { input: number; output: number }> = {
   // Older models still around for fallback.
   'gpt-4o': { input: 2.5, output: 10 },
   'gpt-4o-mini': { input: 0.15, output: 0.6 },
+  // Vision pricing matches the regular text rates (gpt-4o-mini does
+  // image inputs at the same per-token rate as text).
 };
 
 export function priceOpenAiText(model: string, inputTokens: number, outputTokens: number): number {
@@ -50,11 +52,84 @@ export function priceOpenAiImage(
   return m[quality]?.[size] ?? m[quality]?.['1024x1024'] ?? 0;
 }
 
-// ElevenLabs — pricing is by characters synthesized for most plans, but the
-// Pay-as-you-go API costs roughly $0.30 per 1k characters at standard models.
-// Refine when the actual key tier is known.
-export function priceElevenLabsTts(charCount: number): number {
-  return (charCount / 1000) * 0.3;
+// ElevenLabs TTS — pay-as-you-go pricing per 1K characters synthesized,
+// from elevenlabs.io/pricing (ElevenAPI tab):
+//   Flash / Turbo            $0.05 / 1K chars  (ultra-low latency ~75ms)
+//   Multilingual v2 / v3     $0.10 / 1K chars  (low latency ~250-300ms)
+const ELEVENLABS_PRICING_PER_1K_CHARS: Record<string, number> = {
+  // Flash / Turbo tier
+  eleven_turbo_v2: 0.05,
+  eleven_turbo_v2_5: 0.05,
+  eleven_flash_v2: 0.05,
+  eleven_flash_v2_5: 0.05,
+  // Multilingual / v3 tier (the one we use for Hebrew)
+  eleven_multilingual_v2: 0.1,
+  eleven_v3: 0.1,
+};
+export function priceElevenLabsTts(model: string, charCount: number): number {
+  const rate = ELEVENLABS_PRICING_PER_1K_CHARS[model] ?? 0.1;
+  return (charCount / 1000) * rate;
+}
+
+// Kling AI — observed effective $/second by model (April 2026).
+//
+// Standard pack base unit price = $0.126/unit. Tier modes:
+//   std × 1s × no audio = 0.6 units = $0.084 / sec
+//   pro × 1s × no audio = 0.8 units = $0.112 / sec
+//   4k                  = 3.0 units = $0.420 / sec
+//
+// BUT v3-omni is priced separately (higher tier — Kling charges ~$0.73–
+// $0.91 per 5s clip in production, observed in our account). That maps
+// to ~$0.16/sec or ~1.3 units/sec. We treat it as its own row so the
+// admin/usage view shows accurate spend.
+//
+// Legacy v2-master / v1-6 still use the std rate. Keys end with model
+// + duration to keep the old call sites working.
+const KLING_UNIT_PRICE_USD = 0.126;
+const KLING_UNITS_PER_SECOND: Record<string, number> = {
+  i2v_std_no_audio: 0.6,
+  i2v_std_with_audio: 0.8,
+  i2v_pro_no_audio: 0.8,
+  i2v_pro_with_audio: 1.0,
+  i2v_pro_with_video_no_audio: 1.2,
+  i2v_4k_with_audio: 3.0,
+  i2v_4k_with_video_no_audio: 3.0,
+  // v3-omni: empirical mid-point of $0.73–$0.91 per 5s = $0.164/sec,
+  // ÷ $0.126 unit = ~1.3 units/sec.
+  i2v_v3_omni: 1.3,
+  // Lip-sync functional model (when enabled).
+  lipsync: 0.15,
+};
+const KLING_FIXED_DURATION_5S: Record<string, number> = {
+  i2v_std_5s_no_audio: KLING_UNITS_PER_SECOND.i2v_std_no_audio! * 5,
+  i2v_std_5s_with_audio: KLING_UNITS_PER_SECOND.i2v_std_with_audio! * 5,
+  i2v_pro_5s_no_audio: KLING_UNITS_PER_SECOND.i2v_pro_no_audio! * 5,
+  i2v_pro_5s_with_audio: KLING_UNITS_PER_SECOND.i2v_pro_with_audio! * 5,
+  i2v_v3_omni_5s: KLING_UNITS_PER_SECOND.i2v_v3_omni! * 5, // ~$0.82
+  lipsync_5s: KLING_UNITS_PER_SECOND.lipsync! * 5,
+};
+export function priceKling(operation: string, durationSeconds = 5): number {
+  const units =
+    KLING_FIXED_DURATION_5S[operation] ??
+    (KLING_UNITS_PER_SECOND[operation] ?? 0) * durationSeconds;
+  return units * KLING_UNIT_PRICE_USD;
+}
+
+// Pick the right pricing key for a given Kling model id. The effective
+// rate depends on which model the request used, so the call sites pass
+// the model_used returned by the API and let us route to the right cost.
+export function klingPricingKeyForModel(modelId: string | undefined): string {
+  if (!modelId) return 'i2v_std_5s_no_audio';
+  if (/v3.?omni|video.?o1/i.test(modelId)) return 'i2v_v3_omni_5s';
+  if (/4k/i.test(modelId)) return 'i2v_4k_with_audio';
+  if (/pro/i.test(modelId)) return 'i2v_pro_5s_no_audio';
+  return 'i2v_std_5s_no_audio';
+}
+
+// Creatomate — flat per-render fee for short videos. Their pricing model
+// is per-credit; ~$0.05 covers a sub-60s 1080p export at our usage tier.
+export function priceCreatomate(): number {
+  return 0.05;
 }
 
 function stripVersionSuffix(model: string): string {

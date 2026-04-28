@@ -15,8 +15,11 @@ import {
 } from '@/lib/llm/scene-images';
 import { LlmConfigError } from '@/lib/llm/scripts';
 import { getStorage } from '@/lib/storage';
-import { recordApiCall } from '@/lib/usage/log';
+import { recordApiCallStart, recordApiCallComplete } from '@/lib/usage/log';
 import { priceOpenAiImage } from '@/lib/usage/pricing';
+import { buildCreditMutationOps } from '@/lib/usage/credits';
+import { checkRateLimit, RateLimitedError } from '@/lib/usage/rate-limit';
+import { checkSpendCap, SpendCapExceededError } from '@/lib/usage/spend-cap';
 
 const COST_PER_SCENE_IMAGE = 1;
 
@@ -27,6 +30,9 @@ export interface GenerateSceneResult {
   safetyBlocked?: boolean;
   timedOut?: boolean;
   safetyRetryApplied?: boolean;
+  rateLimited?: boolean;
+  spendCapExceeded?: boolean;
+  freeRegen?: boolean;
   imageUrl?: string;
 }
 
@@ -47,6 +53,36 @@ export async function generateSceneImageImpl(
     return { success: false, error: 'אין הרשאה' };
   }
 
+  // ── In-flight guard ────────────────────────────────────────────────────
+  // gpt-image-2 typically returns in 30-60s. 3-min TTL gives margin for
+  // safety-retry without letting genuine stuck calls block forever.
+  const IMAGE_IN_FLIGHT_TTL_MS = 3 * 60 * 1000;
+  const sceneAny = scene as unknown as { imageInFlightAt?: Date | null };
+  if (
+    sceneAny.imageInFlightAt &&
+    Date.now() - sceneAny.imageInFlightAt.getTime() < IMAGE_IN_FLIGHT_TTL_MS
+  ) {
+    return {
+      success: false,
+      error: 'יצירת תמונה כבר רצה לסצנה הזו. רענן ועקוב אחרי הספינר.',
+      rateLimited: true,
+    };
+  }
+
+  // Pre-flight: rate-limit + daily spend cap.
+  try {
+    await checkRateLimit(userId, 'image_gen');
+    await checkSpendCap(userId);
+  } catch (err) {
+    if (err instanceof RateLimitedError) {
+      return { success: false, error: err.message, rateLimited: true };
+    }
+    if (err instanceof SpendCapExceededError) {
+      return { success: false, error: err.message, spendCapExceeded: true };
+    }
+    throw err;
+  }
+
   const dbUser = await prisma.user.findUnique({
     where: { id: userId },
     select: { creditsBalance: true },
@@ -56,6 +92,37 @@ export async function generateSceneImageImpl(
     return { success: false, error: 'אין מספיק קרדיטים', needsCredits: true };
   }
 
+  // Mark in-flight + run inside try/finally so we always clean up.
+  await prisma.scene.update({
+    where: { id: sceneId },
+    data: { imageInFlightAt: new Date() },
+  });
+  try {
+    return await generateSceneImageImplInner(sceneId, userId, scene);
+  } finally {
+    await prisma.scene
+      .update({ where: { id: sceneId }, data: { imageInFlightAt: null } })
+      .catch(() => {/* best effort */});
+  }
+}
+
+async function loadSceneForImage(sceneId: string) {
+  return prisma.scene.findUnique({
+    where: { id: sceneId },
+    include: {
+      script: {
+        include: { project: { select: { id: true, productData: true, productName: true, userId: true } } },
+      },
+    },
+  });
+}
+type ImageSceneType = NonNullable<Awaited<ReturnType<typeof loadSceneForImage>>>;
+
+async function generateSceneImageImplInner(
+  sceneId: string,
+  userId: string,
+  scene: ImageSceneType,
+): Promise<GenerateSceneResult> {
   const project = scene.script.project;
   const data = (project.productData as Record<string, unknown> | null) ?? {};
   const heroImageUrl = typeof data.heroImageUrl === 'string' ? data.heroImageUrl : null;
@@ -67,6 +134,29 @@ export async function generateSceneImageImpl(
   const totalScenes = await prisma.scene.count({ where: { scriptId: scene.scriptId } });
 
   let result;
+  const imageStartedAt = Date.now();
+  const imageCallId = await recordApiCallStart({
+    provider: 'openai',
+    operation: 'image_gen',
+    model: process.env.OPENAI_IMAGE_MODEL || 'gpt-image-2',
+    units: 1,
+    userId,
+    projectId: project.id,
+  });
+  // If the scene will be lip-synced downstream, the still must look like
+  // a frame from a real silent UGC speaking video — not a posed
+  // portrait. We read explicit DB columns first, fall back to the
+  // derived routing heuristic for legacy scenes.
+  const explicitRequiresLipSync =
+    (scene as { requiresLipSync?: boolean | null }).requiresLipSync;
+  const silentTalkingPlate =
+    explicitRequiresLipSync != null
+      ? !!explicitRequiresLipSync
+      : (await import('@/lib/animation/scene-routing')).deriveSceneRouting({
+          cameraDirection: scene.cameraDirection,
+          sceneGoal: scene.sceneGoal,
+          sceneType: scene.sceneType,
+        }).requiresLipSync;
   try {
     result = await generateSceneImage({
       productImageUrl: heroImageUrl,
@@ -84,20 +174,16 @@ export async function generateSceneImageImpl(
         avatarPresent: !!selectedAvatar,
         productPresent: !!heroImageUrl,
         avatarDescription: selectedAvatar ? describeAvatar(selectedAvatar) : '',
+        silentTalkingPlate,
       },
       quality: 'medium',
     });
   } catch (err) {
     const errMsg = (err as Error).message;
-    await recordApiCall({
-      provider: 'openai',
-      operation: 'image_gen',
-      model: process.env.OPENAI_IMAGE_MODEL || 'gpt-image-2',
-      costUsd: 0,
+    await recordApiCallComplete(imageCallId, {
       success: false,
       errorMessage: errMsg,
-      userId,
-      projectId: project.id,
+      durationMs: Date.now() - imageStartedAt,
     });
     if (err instanceof LlmConfigError) return { success: false, error: err.message };
     if (err instanceof SceneImageTimeoutError) {
@@ -118,16 +204,12 @@ export async function generateSceneImageImpl(
     return { success: false, error: `יצירת התמונה נכשלה: ${errMsg}` };
   }
 
-  await recordApiCall({
-    provider: 'openai',
-    operation: 'image_gen',
+  await recordApiCallComplete(imageCallId, {
+    success: true,
     model: result.model,
     costUsd: priceOpenAiImage(result.model, result.quality, result.size),
     units: 1,
     durationMs: result.durationMs,
-    success: true,
-    userId,
-    projectId: project.id,
   });
 
   const storage = await getStorage();
@@ -140,6 +222,12 @@ export async function generateSceneImageImpl(
     contentType: 'image/png',
   });
 
+  // First-regen-free: previous count of 1 = first regen on a previously
+  // successful image. Don't charge for it.
+  const prevImgCount = scene.imageGenerationCount ?? 0;
+  const isFirstRegen = prevImgCount === 1;
+  const charge = isFirstRegen ? 0 : COST_PER_SCENE_IMAGE;
+
   await prisma.$transaction([
     prisma.scene.update({
       where: { id: sceneId },
@@ -151,9 +239,12 @@ export async function generateSceneImageImpl(
         imageProvider: result.model,
       },
     }),
-    prisma.user.update({
-      where: { id: userId },
-      data: { creditsBalance: { decrement: COST_PER_SCENE_IMAGE } },
+    ...buildCreditMutationOps(prisma, {
+      userId,
+      amount: -charge,
+      reason: isFirstRegen ? 'first_regen_free:scene_image' : 'spent:scene_image',
+      ref: sceneId,
+      metadata: { previousCount: prevImgCount, model: result.model },
     }),
     prisma.asset.create({
       data: {
@@ -175,5 +266,6 @@ export async function generateSceneImageImpl(
     success: true,
     imageUrl: url,
     safetyRetryApplied: result.safetyRetryApplied,
+    freeRegen: isFirstRegen,
   };
 }

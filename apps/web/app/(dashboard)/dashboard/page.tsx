@@ -6,6 +6,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { getCurrentStepNumber, getResumeUrl } from '@/lib/wizard/current-step';
 import { WIZARD_STEPS } from '@/components/wizard/stepper';
+import { DeleteProjectButton } from './delete-button';
 
 export default async function DashboardHome() {
   const { dbUser } = await getOrCreateAppUser();
@@ -101,6 +102,7 @@ export default async function DashboardHome() {
                     <Button asChild size="sm">
                       <Link href={resumeUrl}>המשך →</Link>
                     </Button>
+                    <DeleteProjectButton projectId={p.id} productName={p.productName ?? 'פרויקט'} />
                   </CardContent>
                 </Card>
               );
@@ -126,6 +128,10 @@ export default async function DashboardHome() {
                     </div>
                   </div>
                   <Badge variant="success">הושלם</Badge>
+                  <Button asChild size="sm" variant="outline">
+                    <Link href={`/projects/${p.id}/videos`}>✎ ערוך</Link>
+                  </Button>
+                  <DeleteProjectButton projectId={p.id} productName={p.productName ?? 'פרויקט'} />
                 </CardContent>
               </Card>
             ))}

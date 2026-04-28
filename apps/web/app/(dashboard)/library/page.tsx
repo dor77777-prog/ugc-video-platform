@@ -1,6 +1,10 @@
+import Link from 'next/link';
 import { getOrCreateAppUser } from '@/lib/auth/sync-user';
 import { prisma } from '@/lib/db';
 import { Card, CardContent } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+
+export const dynamic = 'force-dynamic';
 
 export default async function LibraryPage() {
   const { dbUser } = await getOrCreateAppUser();
@@ -31,22 +35,82 @@ export default async function LibraryPage() {
         </Card>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {finishedJobs.map((job) => (
-            <Card key={job.id}>
-              <div className="aspect-[9/16] bg-gradient-to-br from-primary/10 to-accent/10 rounded-t-lg flex items-center justify-center">
-                <span className="text-4xl">▶</span>
-              </div>
-              <CardContent className="p-4">
-                <div className="font-semibold truncate">{job.project.productName ?? 'ללא שם'}</div>
-                <div className="text-xs text-muted-foreground mt-1 truncate" dir="ltr">
-                  {job.finalVideoUrl}
+          {finishedJobs.map((job) => {
+            // Legacy mock:// URLs from the demo phase aren't real files.
+            // We mark them as "mock" so the user knows why they don't play.
+            const isMock = (job.finalVideoUrl ?? '').startsWith('mock://');
+            const playableUrl = isMock ? null : job.finalVideoUrl;
+            return (
+              <Card key={job.id} className="overflow-hidden" id={`job-${job.id}`}>
+                <div className="aspect-[9/16] bg-black relative">
+                  {playableUrl ? (
+                    // Inline 9:16 player — controls + click-anywhere to play.
+                    // preload="metadata" keeps the grid light; the actual
+                    // bytes only stream when the user hits play.
+                    <video
+                      src={playableUrl}
+                      controls
+                      preload="metadata"
+                      playsInline
+                      className="w-full h-full object-contain bg-black"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex flex-col items-center justify-center gap-2 text-white/60">
+                      <span className="text-4xl">🎭</span>
+                      <Badge variant="muted" className="text-[10px]">demo / mock</Badge>
+                    </div>
+                  )}
                 </div>
-                <div className="text-xs text-muted-foreground mt-1">
-                  {job.completedAt?.toLocaleDateString('he-IL') ?? '—'}
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+                <CardContent className="p-4 space-y-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="font-semibold truncate flex-1">
+                      {job.project.productName ?? 'ללא שם'}
+                    </div>
+                    {isMock && (
+                      <Badge variant="muted" className="text-[10px] flex-shrink-0">
+                        mock
+                      </Badge>
+                    )}
+                  </div>
+                  <div className="text-[11px] text-muted-foreground" dir="ltr">
+                    {job.completedAt?.toLocaleString('he-IL', {
+                      dateStyle: 'short',
+                      timeStyle: 'short',
+                    }) ?? '—'}
+                  </div>
+                  <div className="flex items-center gap-2 pt-1 flex-wrap">
+                    {playableUrl && (
+                      <>
+                        <a
+                          href={playableUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-xs px-2 py-1 rounded bg-primary text-primary-foreground hover:opacity-90"
+                        >
+                          ↗ פתח במסך מלא
+                        </a>
+                        <a
+                          href={playableUrl}
+                          download
+                          className="text-xs px-2 py-1 rounded border border-border hover:bg-muted"
+                        >
+                          ⬇ הורד
+                        </a>
+                      </>
+                    )}
+                    {/* Back-to-edit: lets the user iterate on the same
+                        project (regenerate scenes, redo voice, re-render). */}
+                    <Link
+                      href={`/projects/${job.projectId}/videos`}
+                      className="text-xs px-2 py-1 rounded border border-border hover:bg-muted"
+                    >
+                      ✎ ערוך פרויקט
+                    </Link>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
         </div>
       )}
     </div>

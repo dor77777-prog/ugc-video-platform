@@ -28,6 +28,12 @@ export interface SceneImagePromptInput {
   // (fashion / shapewear / fitness / wellness) and bumped to an aggressive
   // version on auto-retry after a safety rejection. See scene-safety.ts.
   safetyTokens?: string;
+  // When true, the still must look like a frame from a real silent
+  // speaking-to-camera UGC video — not a posed portrait — so the
+  // downstream Kling i2v + LipSync pass produces natural mouth motion
+  // instead of a "patch on a frozen face" artifact. See the silent-
+  // talking-plate block below for the exact phrasing.
+  silentTalkingPlate?: boolean;
 }
 
 // Camera/lens specs are added up-front so gpt-image-2 commits to a phone-camera
@@ -96,6 +102,26 @@ function detectFramingHint(brief: string): string | null {
 // Adding this block reduces those failures dramatically. Keep it tight —
 // gpt-image-2 weights the END of a long prompt less, and we already have
 // a lot of other guidance up top.
+// Silent talking plate — appended to the prompt only when the scene will
+// be lip-synced. Affects EXPRESSION + LIVENESS only — does NOT change
+// framing or composition. The scene's visual brief above already states
+// what's in the frame (kitchen counter, product on hand, etc.); we
+// don't want to override that with a face crop.
+//
+// Why: the LipSyncProvider needs the mouth visible and "alive" to do its
+// job, but the user wants varied UGC where some scenes show the product,
+// hands, environment, etc. So we just nudge expression + add negatives —
+// composition stays whatever the brief described.
+const SILENT_TALKING_PLATE = [
+  'SILENT TALKING PLATE (apply ONLY to facial expression and liveness — DO NOT change framing, composition, or what is visible in the frame as described in the visual brief above):',
+  '- Mid-sentence expression: if the face is visible, lips parted slightly as if forming a word, NOT closed-mouth pose.',
+  '- Mouth slightly open with natural shape (no exaggerated O, no cartoon gape).',
+  '- Subtle eyebrow engagement — micro-raise like she\'s emphasising a point.',
+  '- Eyes alive: light catch, slightly dynamic gaze (not glassy or vacant).',
+  '- IMPORTANT: keep all other elements from the visual brief (product, hands, setting, props) exactly as described. Do NOT crop in to the face. Do NOT remove the product or environment.',
+  '- ABSOLUTELY NO: beauty filter, plastic skin, frozen portrait look, perfect smile, posed model expression, blurred motionless mouth.',
+].join('\n');
+
 const REALISM_CHECK = [
   'REALISM CHECK (critical for UGC believability):',
   '- Anatomy: every visible hand has exactly 5 fingers, natural wrist and elbow articulation, no extra or missing limbs, no fused fingers, ears mirror-symmetric, eyes both correctly aligned with matching catch-light.',
@@ -133,6 +159,8 @@ export function buildScenePrompt(input: SceneImagePromptInput): string {
       ``,
       REALISM_CHECK,
       ``,
+      input.silentTalkingPlate ? SILENT_TALKING_PLATE : '',
+      input.silentTalkingPlate ? `` : '',
       `Style: candid UGC phone-camera aesthetic, photorealistic, natural daylight, real-person imperfect (no glamour, no studio polish, no airbrush). Phone-camera realism: subtle handheld feel, slight overexposure on bright highlights, smartphone depth of field (medium DOF, not extreme bokeh), faint chromatic aberration at frame edges. No on-image text, no logos, no watermark.`,
       input.safetyTokens ? `` : '',
       input.safetyTokens ? `Content safety: ${input.safetyTokens}` : '',

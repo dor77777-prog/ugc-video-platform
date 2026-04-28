@@ -6,8 +6,11 @@ import { ProjectStatus, ScriptAngle, SceneType } from '@prisma/client';
 import { prisma } from '@/lib/db';
 import { getOrCreateAppUser } from '@/lib/auth/sync-user';
 import { generateScripts, LlmConfigError, type GeneratedScript } from '@/lib/llm/scripts';
-import { recordApiCall } from '@/lib/usage/log';
+import { recordApiCallStart, recordApiCallComplete } from '@/lib/usage/log';
 import { priceOpenAiText } from '@/lib/usage/pricing';
+import { buildCreditMutationOps } from '@/lib/usage/credits';
+import { checkRateLimit, RateLimitedError } from '@/lib/usage/rate-limit';
+import { checkSpendCap, SpendCapExceededError } from '@/lib/usage/spend-cap';
 import { findAvatar, describeAvatar } from '@/lib/avatars/catalog';
 import { findCategory, categoryGuidance, type ProductCategoryId } from '@/lib/categories';
 
@@ -32,7 +35,7 @@ function buildScriptRawJson(s: GeneratedScript): Record<string, unknown> {
 }
 
 export type GenerateState =
-  | { error?: string; needsCredits?: boolean }
+  | { error?: string; needsCredits?: boolean; rateLimited?: boolean; spendCapExceeded?: boolean }
   | undefined;
 
 // Generate (or regenerate) 6 scripts for the project.
@@ -55,10 +58,32 @@ export async function generateScriptsAction(
     };
   }
 
+  // Pre-flight: rate-limit + daily spend cap.
+  try {
+    await checkRateLimit(dbUser.id, 'script_gen');
+    await checkSpendCap(dbUser.id);
+  } catch (err) {
+    if (err instanceof RateLimitedError) {
+      return { error: err.message, rateLimited: true };
+    }
+    if (err instanceof SpendCapExceededError) {
+      return { error: err.message, spendCapExceeded: true };
+    }
+    throw err;
+  }
+
   const data = (project.productData as Record<string, unknown> | null) ?? {};
 
   let generated: GeneratedScript[];
   let usage: { model: string; inputTokens: number; outputTokens: number; durationMs: number } | null = null;
+  const scriptStartedAt = Date.now();
+  const scriptCallId = await recordApiCallStart({
+    provider: 'openai',
+    operation: 'script_gen',
+    model: process.env.OPENAI_SCRIPT_MODEL || 'gpt-5.4-mini',
+    userId: dbUser.id,
+    projectId,
+  });
   try {
     const selectedAvatar = findAvatar(
       typeof data.selectedAvatarId === 'string' ? data.selectedAvatarId : null,
@@ -81,16 +106,11 @@ export async function generateScriptsAction(
     generated = result.scripts;
     usage = result.usage;
   } catch (err) {
-    // Log the failed call so admin/usage shows it.
-    await recordApiCall({
-      provider: 'openai',
-      operation: 'script_gen',
-      model: process.env.OPENAI_SCRIPT_MODEL || 'gpt-5.4-mini',
-      costUsd: 0,
+    // Close the in-progress row as failed so the dashboard reflects it.
+    await recordApiCallComplete(scriptCallId, {
       success: false,
       errorMessage: (err as Error).message,
-      userId: dbUser.id,
-      projectId,
+      durationMs: Date.now() - scriptStartedAt,
     });
     if (err instanceof LlmConfigError) {
       return { error: err.message };
@@ -98,19 +118,15 @@ export async function generateScriptsAction(
     return { error: `יצירת התסריטים נכשלה: ${(err as Error).message}` };
   }
 
-  // Successful call — log with computed cost.
-  await recordApiCall({
-    provider: 'openai',
-    operation: 'script_gen',
+  // Successful call — close the in-progress row with computed cost.
+  await recordApiCallComplete(scriptCallId, {
+    success: true,
     model: usage.model,
     costUsd: priceOpenAiText(usage.model, usage.inputTokens, usage.outputTokens),
     inputTokens: usage.inputTokens,
     outputTokens: usage.outputTokens,
     units: generated.length,
     durationMs: usage.durationMs,
-    success: true,
-    userId: dbUser.id,
-    projectId,
   });
 
   // Persist atomically: clear existing scripts (and their scenes via cascade),
@@ -149,9 +165,20 @@ export async function generateScriptsAction(
       });
     }
 
+    // Charge via the audit-logged helper so the CreditTransaction row
+    // appears in /admin/users → user history.
     await tx.user.update({
       where: { id: dbUser.id },
       data: { creditsBalance: { decrement: GEN_COST_CREDITS } },
+    });
+    await tx.creditTransaction.create({
+      data: {
+        userId: dbUser.id,
+        amount: -GEN_COST_CREDITS,
+        reason: 'spent:script_gen',
+        ref: projectId,
+        metadata: { model: usage?.model, scriptCount: generated.length } as object,
+      },
     });
 
     await tx.project.update({

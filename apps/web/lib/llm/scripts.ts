@@ -416,6 +416,25 @@ ${productLines}
 החזר { "script": {...} } תואם לסכמה — סקריפט אחד בלבד.`;
 }
 
+// Hebrew TTS at natural pace ≈ 14 chars/sec (matches the estimate in
+// elevenlabs.ts). Reconcile the LLM's stated duration with the duration
+// the spoken text will actually take, so the clip and voice line up.
+//
+// Algorithm: take whichever is longer (LLM intent vs text reality), then
+// snap into Kling's allowed window. We bias toward the audio-derived
+// value because audio is the source of truth — if it doesn't fit, the
+// scene gets cut. Better to have a small visual tail than a chopped
+// sentence.
+function reconcileSceneDuration(spokenText: string, llmDuration: number): number {
+  const HEBREW_CHARS_PER_SEC = 14;
+  const KLING_MIN = 4;
+  const KLING_MAX = 10;
+  const audioDerived = Math.ceil((spokenText?.length ?? 0) / HEBREW_CHARS_PER_SEC);
+  const llmClamped = Math.max(KLING_MIN, Math.min(KLING_MAX, Math.round(llmDuration ?? KLING_MIN)));
+  const reconciled = Math.max(llmClamped, audioDerived);
+  return Math.max(KLING_MIN, Math.min(KLING_MAX, reconciled));
+}
+
 function toGenerated(s: LlmScript, regenerated: boolean): GeneratedScript {
   return {
     framework: s.framework,
@@ -449,7 +468,12 @@ function toGenerated(s: LlmScript, regenerated: boolean): GeneratedScript {
         visualPromptEnglish: sc.visual_prompt_english,
         cameraDirection: sc.camera_direction,
         performanceNote: sc.performance_note,
-        durationSeconds: sc.duration_seconds,
+        // Trust audio-derived duration over the LLM's claim. Hebrew TTS at
+        // natural pace ≈ 14 chars/sec — if the LLM said 4s but wrote 90
+        // chars, the voice will actually take ~6.4s and the clip will be
+        // out-of-sync. Pick whichever is larger so the clip is at least
+        // long enough to fit the voice. Clamped to Kling's [4-10] window.
+        durationSeconds: reconcileSceneDuration(sc.spoken_text_hebrew, sc.duration_seconds),
         sceneType: SCENE_GOAL_TO_LEGACY_TYPE[sc.scene_goal] ?? 'other',
       }))
       .sort((a, b) => a.sceneOrder - b.sceneOrder),
