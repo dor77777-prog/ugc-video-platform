@@ -175,6 +175,18 @@ async function generateSceneImageImplInner(
         productPresent: !!heroImageUrl,
         avatarDescription: selectedAvatar ? describeAvatar(selectedAvatar) : '',
         silentTalkingPlate,
+        // V4 product-first metadata. Pass through so the prompt builder
+        // can swap the opener from "of THE EXACT person" to a
+        // product-led composition when the LLM committed to one.
+        primarySubject:
+          (scene as { primarySubject?: string | null }).primarySubject ?? undefined,
+        mustShowProduct:
+          (scene as { mustShowProduct?: boolean | null }).mustShowProduct ?? undefined,
+        productVisibilityPriority:
+          (scene as { productVisibilityPriority?: string | null }).productVisibilityPriority ??
+          undefined,
+        cameraFocus: (scene as { cameraFocus?: string | null }).cameraFocus ?? undefined,
+        showFace: (scene as { showFace?: boolean | null }).showFace ?? undefined,
       },
       quality: 'medium',
     });

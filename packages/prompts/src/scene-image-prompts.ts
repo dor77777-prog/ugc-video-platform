@@ -34,6 +34,14 @@ export interface SceneImagePromptInput {
   // instead of a "patch on a frozen face" artifact. See the silent-
   // talking-plate block below for the exact phrasing.
   silentTalkingPlate?: boolean;
+  // V4 product-first metadata. When present, drives the framing of the
+  // still: product-led scenes get a different opener and a "product is
+  // the hero" guard so gpt-image-2 doesn't default to a portrait.
+  primarySubject?: string; // avatar | product | product_with_avatar | product_in_use | hands
+  mustShowProduct?: boolean;
+  productVisibilityPriority?: string; // high | medium | low
+  cameraFocus?: string; // face | product | action
+  showFace?: boolean;
 }
 
 // Camera/lens specs are added up-front so gpt-image-2 commits to a phone-camera
@@ -133,15 +141,60 @@ const REALISM_CHECK = [
   '- No AI tells: no plastic/wax skin, no glassy doll-eyes, no impossibly smooth gradients on faces, no garbled text on visible signs/labels (other than the product packaging, which stays accurate).',
 ].join('\n');
 
+// Product-led composition guards. Applied when the LLM committed to a
+// product-first frame (primary_subject != avatar). gpt-image-2 has a
+// strong default toward "creator portrait with a product in hand" —
+// these tokens push it toward "product fills the frame, creator is
+// supporting context (or absent)".
+const PRODUCT_LED_GUARD = [
+  'COMPOSITION RULE — PRODUCT IS THE HERO:',
+  '- The product is the visual focus. It occupies a meaningful portion of the frame (roughly 30–60% of frame area).',
+  '- Composition is product-led, NOT portrait-led. Do not make the creator\'s face the visual center of mass.',
+  '- The product is sharp, well-lit, and clearly readable (label/shape/color visible).',
+  '- If the creator appears, they are SECONDARY to the product — supporting framing only.',
+].join('\n');
+const PRODUCT_LED_NO_FACE = [
+  'NO-FACE COMPOSITION:',
+  '- Do NOT include the creator\'s face in the frame.',
+  '- The frame shows: hands + product, OR product alone, OR product in its real-life context (kitchen counter, vanity, table).',
+  '- If part of the body shows (hands, forearms, torso), it is supporting only — face is out of frame.',
+].join('\n');
+const HIGH_PRODUCT_VISIBILITY = [
+  'PRODUCT VISIBILITY = HIGH:',
+  '- The product fills 30-60% of the frame area.',
+  '- The product\'s label / packaging / color is clearly readable.',
+  '- The product remains in frame at every moment — never cropped out.',
+].join('\n');
+
 export function buildScenePrompt(input: SceneImagePromptInput): string {
   const opener = ASPECT_OPENER[input.aspectRatio];
   const productPresent = input.productPresent ?? true;
   const framingHint = detectFramingHint(input.sceneVisualBrief);
 
+  // V4: when the LLM committed to a product-first frame, the prompt
+  // structure changes — we open with the product as the hero and
+  // demote the avatar to "supporting context" (or remove them entirely
+  // when showFace=false).
+  const isProductLed = !!(
+    input.primarySubject &&
+    input.primarySubject !== 'avatar' &&
+    productPresent
+  );
+  const hideFace = input.showFace === false;
+  const highVisibility = input.productVisibilityPriority === 'high';
+
   if (input.avatarPresent) {
-    // Open with the punchy framing line, then layer constraints.
+    // Pick an opener that matches the committed primary subject. Without
+    // this, every prompt reads "scene OF THE PERSON" and gpt-image-2
+    // builds the composition around the face by default.
+    const subjectOpener = isProductLed
+      ? hideFace
+        ? `${opener} — product-led UGC frame featuring the product (Image 2). The creator from Image 1 is NOT the subject of this frame; their face is out of view (hands or torso may appear as supporting context). The scene:`
+        : `${opener} — product-led UGC frame: the product (Image 2) is the visual hero, the creator from Image 1 appears only as supporting context behind / beside the product. The scene:`
+      : `${opener} of the EXACT person from Image 1, in this scene:`;
+
     return [
-      `${opener} of the EXACT person from Image 1, in this scene:`,
+      subjectOpener,
       ``,
       input.sceneVisualBrief,
       ``,
@@ -156,6 +209,13 @@ export function buildScenePrompt(input: SceneImagePromptInput): string {
       productPresent
         ? `Image 2 = the PRODUCT. Keep its packaging, label, color, and shape exactly accurate. The product is in the frame, held or placed naturally — not pasted in. Hand grip on the product follows the rules in REALISM CHECK below.`
         : `(No product image is provided — describe the product naturally if the brief calls for it. No on-image text.)`,
+      ``,
+      isProductLed ? PRODUCT_LED_GUARD : '',
+      hideFace ? PRODUCT_LED_NO_FACE : '',
+      highVisibility ? HIGH_PRODUCT_VISIBILITY : '',
+      input.mustShowProduct === true && !isProductLed
+        ? 'PRODUCT VISIBILITY: the product MUST remain visible in the frame — do not crop it out, do not let it disappear.'
+        : '',
       ``,
       REALISM_CHECK,
       ``,

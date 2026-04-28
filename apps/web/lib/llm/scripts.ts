@@ -75,6 +75,17 @@ interface LlmScene {
   camera_direction: string;
   performance_note: string;
   duration_seconds: number;
+  // Visual-routing + product-first metadata. The structured-output
+  // schema requires these, so for any newly-generated script they are
+  // guaranteed present. Vocabularies enforced by the JSON schema.
+  scene_generation_type: string;
+  face_visibility: string;
+  requires_lip_sync: boolean;
+  primary_subject: string;
+  must_show_product: boolean;
+  product_visibility_priority: string;
+  camera_focus: string;
+  show_face: boolean;
 }
 interface LlmScript {
   framework: ScriptFrameworkSlug;
@@ -187,6 +198,18 @@ export interface GeneratedScene {
   durationSeconds: number;
   // Derived for the legacy Prisma enum.
   sceneType: LegacySceneTypeSlug;
+  // V3/V4 visual routing + product-first metadata. Mirrored from the
+  // structured-output fields onto camelCase Prisma columns. Optional in
+  // the type to keep older script JSON parseable, but the JSON schema
+  // makes them required for new generations.
+  sceneGenerationType?: string;
+  faceVisibility?: string;
+  requiresLipSync?: boolean;
+  primarySubject?: string;
+  mustShowProduct?: boolean;
+  productVisibilityPriority?: string;
+  cameraFocus?: string;
+  showFace?: boolean;
 }
 export interface GeneratedScript {
   framework: ScriptFrameworkSlug;
@@ -475,6 +498,16 @@ function toGenerated(s: LlmScript, regenerated: boolean): GeneratedScript {
         // long enough to fit the voice. Clamped to Kling's [4-10] window.
         durationSeconds: reconcileSceneDuration(sc.spoken_text_hebrew, sc.duration_seconds),
         sceneType: SCENE_GOAL_TO_LEGACY_TYPE[sc.scene_goal] ?? 'other',
+        // V3 routing + V4 product-first metadata mirrored 1:1 onto the
+        // camelCase fields the Prisma `Scene.create` reads.
+        sceneGenerationType: sc.scene_generation_type,
+        faceVisibility: sc.face_visibility,
+        requiresLipSync: sc.requires_lip_sync,
+        primarySubject: sc.primary_subject,
+        mustShowProduct: sc.must_show_product,
+        productVisibilityPriority: sc.product_visibility_priority,
+        cameraFocus: sc.camera_focus,
+        showFace: sc.show_face,
       }))
       .sort((a, b) => a.sceneOrder - b.sceneOrder),
     qualityScore: {

@@ -159,6 +159,17 @@ export async function generateScriptsAction(
               performanceNote: sc.performanceNote || null,
               durationSeconds: sc.durationSeconds,
               sceneType: sc.sceneType as SceneType,
+              // V3 + V4 metadata. Coalesce to null for legacy LLM
+              // outputs that don't carry these (Prisma columns are
+              // nullable; downstream falls back to deriveSceneRouting).
+              sceneGenerationType: sc.sceneGenerationType ?? null,
+              faceVisibility: sc.faceVisibility ?? null,
+              requiresLipSync: sc.requiresLipSync ?? null,
+              primarySubject: sc.primarySubject ?? null,
+              mustShowProduct: sc.mustShowProduct ?? null,
+              productVisibilityPriority: sc.productVisibilityPriority ?? null,
+              cameraFocus: sc.cameraFocus ?? null,
+              showFace: sc.showFace ?? null,
             })),
           },
         },

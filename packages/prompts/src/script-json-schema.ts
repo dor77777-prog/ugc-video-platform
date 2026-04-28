@@ -40,8 +40,51 @@ const SCENE_GOALS = [
   'other',
 ] as const;
 
+// Visual-routing vocabularies. These were previously declared only in
+// the runtime scene-routing module and inferred via regex on
+// cameraDirection — now they're first-class structured-output fields
+// so the LLM commits to a frame intent rather than us guessing.
+const SCENE_GENERATION_TYPES = [
+  'talking_head',
+  'selfie_talking',
+  'mirror_selfie_talking',
+  'product_demo',
+  'hold_product',
+  'broll',
+  'lifestyle',
+  'lifestyle_product',
+  'hands_only',
+  'closeup_product',
+  'before_after',
+  'cta_visual',
+] as const;
+
+const FACE_VISIBILITY = [
+  'clear_front_facing',
+  'partial_face',
+  'profile',
+  'no_face',
+] as const;
+
+const PRIMARY_SUBJECTS = [
+  'avatar',
+  'product',
+  'product_with_avatar',
+  'product_in_use',
+  'hands',
+] as const;
+
+const PRODUCT_VISIBILITY_PRIORITY = ['high', 'medium', 'low'] as const;
+
+const CAMERA_FOCUS = ['face', 'product', 'action'] as const;
+
 export const SCRIPT_FRAMEWORKS = FRAMEWORKS;
 export const SCENE_GOALS_LIST = SCENE_GOALS;
+export const SCENE_GENERATION_TYPES_LIST = SCENE_GENERATION_TYPES;
+export const FACE_VISIBILITY_LIST = FACE_VISIBILITY;
+export const PRIMARY_SUBJECTS_LIST = PRIMARY_SUBJECTS;
+export const PRODUCT_VISIBILITY_PRIORITY_LIST = PRODUCT_VISIBILITY_PRIORITY;
+export const CAMERA_FOCUS_LIST = CAMERA_FOCUS;
 
 const SCENE_ITEM_SCHEMA = {
   type: 'object',
@@ -55,6 +98,18 @@ const SCENE_ITEM_SCHEMA = {
     'camera_direction',
     'performance_note',
     'duration_seconds',
+    // Visual-routing metadata (was previously implicit in the prompt;
+    // now first-class so structured-output forces a commitment).
+    'scene_generation_type',
+    'face_visibility',
+    'requires_lip_sync',
+    // Product-first metadata (added Apr 2026 to break the
+    // "every scene becomes a talking selfie" failure mode).
+    'primary_subject',
+    'must_show_product',
+    'product_visibility_priority',
+    'camera_focus',
+    'show_face',
   ],
   properties: {
     scene_order: {
@@ -94,6 +149,51 @@ const SCENE_ITEM_SCHEMA = {
     duration_seconds: {
       type: 'integer',
       description: 'Scene duration in seconds, between 3 and 8.',
+    },
+    scene_generation_type: {
+      type: 'string',
+      enum: SCENE_GENERATION_TYPES as unknown as string[],
+      description:
+        'Frame intent. talking_head/selfie_talking/mirror_selfie_talking → creator speaks to camera (face visible). product_demo/hold_product/closeup_product/hands_only/before_after/lifestyle_product/cta_visual → product is the visual hero, no speaking.',
+    },
+    face_visibility: {
+      type: 'string',
+      enum: FACE_VISIBILITY as unknown as string[],
+      description:
+        'How visible the creator\'s face is in this frame. clear_front_facing for talking-head only; no_face for hands/closeup/cta_visual.',
+    },
+    requires_lip_sync: {
+      type: 'boolean',
+      description:
+        'true ONLY when scene_generation_type ∈ (talking_head, selfie_talking, mirror_selfie_talking) AND face_visibility=clear_front_facing. False everywhere else.',
+    },
+    primary_subject: {
+      type: 'string',
+      enum: PRIMARY_SUBJECTS as unknown as string[],
+      description:
+        'Who/what the camera is on. avatar = creator centered; product / product_with_avatar / product_in_use / hands = product is the hero. For non-talking scenes this MUST NOT be "avatar".',
+    },
+    must_show_product: {
+      type: 'boolean',
+      description:
+        'true if the product is required to be visible in the frame at the start AND end of the clip. Default true for every scene except scene 0 (hook).',
+    },
+    product_visibility_priority: {
+      type: 'string',
+      enum: PRODUCT_VISIBILITY_PRIORITY as unknown as string[],
+      description:
+        'How dominant the product should be in the frame. high = product fills 30-60%; medium = clearly visible but not dominant; low = peripheral or absent (talking-head only).',
+    },
+    camera_focus: {
+      type: 'string',
+      enum: CAMERA_FOCUS as unknown as string[],
+      description:
+        'Where the camera "wants the eye" to land. face for talking-head, product for closeup/lifestyle, action for demo/hands_only/before_after.',
+    },
+    show_face: {
+      type: 'boolean',
+      description:
+        'Whether the creator\'s face should appear at all. true for talking_head/selfie_talking/mirror_selfie_talking and lifestyle scenes where the creator is present; false for closeup_product/hands_only/cta_visual.',
     },
   },
 } as const;

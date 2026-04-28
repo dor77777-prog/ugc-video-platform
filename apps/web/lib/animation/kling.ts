@@ -611,6 +611,19 @@ export function buildKlingMotionPrompt(input: {
    * vocabulary so Kling animates what's REALLY in the frame.
    */
   motionAnalysis?: import('./motion-analysis').MotionAnalysis | null;
+  /**
+   * V4 product-first metadata, populated by the script LLM via
+   * structured output. When present, takes priority over heuristics
+   * derived from sceneGenerationType — the LLM committed to a frame
+   * intent and we should honor it. cameraFocus drives camera vocab,
+   * mustShowProduct + productVisibilityPriority strengthen the
+   * product-presence guard, showFace=false suppresses face-zoom.
+   */
+  primarySubject?: string | null;
+  mustShowProduct?: boolean | null;
+  productVisibilityPriority?: string | null;
+  cameraFocus?: string | null;
+  showFace?: boolean | null;
 }): KlingMotionPrompt {
   const cd = (input.cameraDirection ?? '').toLowerCase();
 
@@ -649,6 +662,29 @@ export function buildKlingMotionPrompt(input: {
     if (a.framingRisks.length > 0) {
       parts.push(`AVOID: ${a.framingRisks.join('; ')}`);
     }
+  }
+
+  // V4 metadata-driven adjustments. These only fire when the LLM
+  // explicitly committed to a value (the structured-output schema
+  // makes them required for new generations). Older scenes without
+  // metadata fall back to the heuristic path below.
+  if (input.cameraFocus === 'product') {
+    parts[0] = 'Product-led framing — camera holds steady on the product, no panning to the face';
+  } else if (input.cameraFocus === 'action') {
+    parts[0] = 'Action-led framing — camera follows the hands and the product, eye-level with the work surface';
+  }
+  if (input.mustShowProduct) {
+    parts.push(
+      'PRODUCT VISIBILITY GATE: the product must remain in the frame from start to finish — never crop it out, never let it leave the frame',
+    );
+  }
+  if (input.productVisibilityPriority === 'high') {
+    parts.push(
+      'The product fills 30-60% of the frame area and is sharp + readable throughout the clip',
+    );
+  }
+  if (input.showFace === false) {
+    parts.push("The creator's face is OUT OF FRAME — do not pan to it, do not crop in to it");
   }
 
   // Talking vs non-talking: each gets its own positive guard block AND

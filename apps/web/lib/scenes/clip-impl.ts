@@ -475,6 +475,14 @@ async function generateSceneClipImplInner(
     requiresLipSync: routing.requiresLipSync,
     sceneGenerationType: routing.sceneGenerationType,
     motionAnalysis,
+    // V4 product-first metadata. Read straight off the Scene row
+    // (LLM-committed values when present, else null fallback).
+    primarySubject: (scene as { primarySubject?: string | null }).primarySubject ?? null,
+    mustShowProduct: (scene as { mustShowProduct?: boolean | null }).mustShowProduct ?? null,
+    productVisibilityPriority:
+      (scene as { productVisibilityPriority?: string | null }).productVisibilityPriority ?? null,
+    cameraFocus: (scene as { cameraFocus?: string | null }).cameraFocus ?? null,
+    showFace: (scene as { showFace?: boolean | null }).showFace ?? null,
   });
 
   // Multi-reference for non-talking scenes: feed Kling Omni the product
