@@ -4,6 +4,7 @@ import {
   SCRIPT_JSON_SCHEMA,
   SINGLE_SCRIPT_JSON_SCHEMA,
 } from '@ugc-video/prompts';
+import { resolveVideoMode } from '@/lib/video-mode';
 
 // Script Engine V2 — wrapper.
 //
@@ -378,12 +379,25 @@ export async function generateScripts(input: ProductInput): Promise<ScriptGenera
 }
 
 function buildUserPrompt(p: ProductInput): string {
+  const mode = resolveVideoMode(p.durationSeconds);
+  // Render the per-mode constraints inline so the model sees the
+  // exact targets it has to hit (scene count, talking caps, word
+  // budget). Without this block the system prompt's "default 5 scenes"
+  // wins over a 15s project and the script bloats.
+  const modeBlock = [
+    `אורך הסרטון הסופי: ${mode.targetTotalDurationMs / 1000} שניות (mode = ${mode.mode}).`,
+    `יעד סצנות: ${mode.preferredSceneCount} (מקסימום ${mode.maxSceneCount}).`,
+    `מקסימום סצנות עם requires_lip_sync=true: ${mode.maxLipSyncScenes}.`,
+    `מקסימום סצנת talking-head בודדת: ${mode.maxTalkingSceneDurationMs / 1000}s.`,
+    `תקציב מילים בעברית לכל הסקריפט: יעד ${mode.totalSpokenWordsTarget} מילים, hard max ${mode.totalSpokenWordsHardMax}.`,
+    `אסור לחרוג מ-${mode.maxTotalDurationMs / 1000}s — הסכום של duration_seconds לכל הסצנות חייב להיות ב-[${mode.minTotalDurationMs / 1000}, ${mode.maxTotalDurationMs / 1000}]s.`,
+  ].join('\n');
   const lines: (string | null)[] = [
     `שם המוצר: ${p.productName}`,
     p.brand ? `מותג: ${p.brand}` : null,
     p.targetAudience ? `קהל יעד עיקרי: ${p.targetAudience}` : null,
     p.price ? `מחיר: ${p.price}${p.currency ? ' ' + p.currency : ''}` : null,
-    `אורך הסרטון הסופי: ${p.durationSeconds} שניות`,
+    modeBlock,
     '',
     'תיאור המוצר:',
     p.description,

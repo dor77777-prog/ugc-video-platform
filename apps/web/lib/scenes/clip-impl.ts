@@ -35,6 +35,7 @@ import {
   VideoProviderTimeoutError,
 } from '@/lib/animation/types';
 import { deriveSceneRouting } from '@/lib/animation/scene-routing';
+import { videoModeFromProductData } from '@/lib/video-mode';
 import { toPublicUrl, PublicUrlError } from '@/lib/animation/public-url';
 import {
   analyzeSceneForMotion,
@@ -223,24 +224,27 @@ async function generateSceneClipImplInner(
           sceneType: scene.sceneType,
         });
 
-  // ── Lipsync cap ────────────────────────────────────────────────────────
-  // UGC ads work best when only scene 1 (optionally scene 2) is talking
-  // head — the rest should be product / hands / lifestyle. Without this
-  // cap the LLM occasionally classifies later scenes as selfie_talking
-  // and we end up with 4 talking shots in a row, which (a) burns lipsync
-  // credits unnecessarily and (b) reads as a low-quality ad. We only
-  // apply the cap to AUTO-derived routing — if the user explicitly
-  // toggled "Lipsync" on the per-scene UI we honor that choice.
-  const LIPSYNC_MAX_SCENE_ORDER = 1; // scenes 1-2 (zero-indexed: 0, 1)
+  // ── Lipsync cap (per video duration mode) ──────────────────────────────
+  // The cap depends on the project's selected video duration:
+  //   15s mode → 1 lipsync scene  (sceneOrder ≤ 0)
+  //   30s mode → 2 lipsync scenes (sceneOrder ≤ 1)
+  // Without this, the LLM occasionally classifies later scenes as
+  // selfie_talking and we end up with 4 talking shots in a row,
+  // which (a) burns lipsync credits unnecessarily and (b) reads as
+  // a low-quality ad. We only apply the cap to AUTO-derived routing
+  // — if the user explicitly toggled "Lipsync" on the per-scene UI
+  // we honor that choice.
+  const videoMode = videoModeFromProductData(scene.script.project.productData);
+  const lipSyncMaxSceneOrder = videoMode.maxLipSyncScenes - 1; // zero-indexed
   if (
     explicitRequiresLipSync == null &&
     routing.requiresLipSync &&
-    scene.sceneOrder > LIPSYNC_MAX_SCENE_ORDER
+    scene.sceneOrder > lipSyncMaxSceneOrder
   ) {
     console.log(
-      `[clip] scene=${sceneId} order=${scene.sceneOrder} — auto-routed as ` +
-        `${routing.sceneGenerationType} but lipsync cap forces silent path ` +
-        `(only scenes 1-${LIPSYNC_MAX_SCENE_ORDER + 1} get lipsync). ` +
+      `[clip] scene=${sceneId} order=${scene.sceneOrder} mode=${videoMode.mode} — ` +
+        `auto-routed as ${routing.sceneGenerationType} but lipsync cap ` +
+        `(${videoMode.maxLipSyncScenes} for ${videoMode.mode}) forces silent path. ` +
         `User can override via the LipSync toggle.`,
     );
     routing.requiresLipSync = false;
