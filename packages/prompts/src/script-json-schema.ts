@@ -76,7 +76,41 @@ const PRIMARY_SUBJECTS = [
 
 const PRODUCT_VISIBILITY_PRIORITY = ['high', 'medium', 'low'] as const;
 
-const CAMERA_FOCUS = ['face', 'product', 'action'] as const;
+const CAMERA_FOCUS = ['face', 'product', 'action', 'environment'] as const;
+
+// V5 Israeli-realism vocabulary. The image prompt always prepends a
+// generic Israeli-realism boilerplate, but committing the LLM to a
+// specific environment_type + environment_style upstream means the
+// visual_prompt_english itself describes a believable Israeli setting
+// (kitchen vs bathroom vs balcony, modern vs practical) rather than
+// drifting to a generic "kitchen counter" stock-photo composition.
+const ENVIRONMENT_TYPES = [
+  'kitchen',
+  'bathroom',
+  'bedroom',
+  'living_room',
+  'balcony',
+  'office',
+  'car',
+  'street',
+  'store',
+  'family_home',
+  'kids_room',
+  'neutral_indoor',
+] as const;
+
+const ENVIRONMENT_STYLES = [
+  'modern_israeli_apartment',
+  'practical_family_home_israel',
+  'urban_israeli_home',
+  'premium_modern_israeli_home',
+  'israeli_bathroom_modern',
+  'israeli_kitchen_modern',
+  'israeli_home_office',
+  'israeli_city_street',
+  'israeli_balcony',
+  'neutral_israeli_indoor',
+] as const;
 
 export const SCRIPT_FRAMEWORKS = FRAMEWORKS;
 export const SCENE_GOALS_LIST = SCENE_GOALS;
@@ -85,6 +119,8 @@ export const FACE_VISIBILITY_LIST = FACE_VISIBILITY;
 export const PRIMARY_SUBJECTS_LIST = PRIMARY_SUBJECTS;
 export const PRODUCT_VISIBILITY_PRIORITY_LIST = PRODUCT_VISIBILITY_PRIORITY;
 export const CAMERA_FOCUS_LIST = CAMERA_FOCUS;
+export const ENVIRONMENT_TYPES_LIST = ENVIRONMENT_TYPES;
+export const ENVIRONMENT_STYLES_LIST = ENVIRONMENT_STYLES;
 
 const SCENE_ITEM_SCHEMA = {
   type: 'object',
@@ -110,6 +146,12 @@ const SCENE_ITEM_SCHEMA = {
     'product_visibility_priority',
     'camera_focus',
     'show_face',
+    // V5 Israeli realism + scene-purpose justification.
+    'environment_type',
+    'environment_style',
+    'israeli_environment_required',
+    'local_realism_notes',
+    'why_this_scene_exists',
   ],
   properties: {
     scene_order: {
@@ -195,6 +237,33 @@ const SCENE_ITEM_SCHEMA = {
       description:
         'Whether the creator\'s face should appear at all. true for talking_head/selfie_talking/mirror_selfie_talking and lifestyle scenes where the creator is present; false for closeup_product/hands_only/cta_visual.',
     },
+    environment_type: {
+      type: 'string',
+      enum: ENVIRONMENT_TYPES as unknown as string[],
+      description:
+        'High-level location category. Drives Israeli-realism boilerplate selection downstream (kitchen → Israeli kitchen layout, bathroom → Israeli bathroom proportions + tile style, etc.).',
+    },
+    environment_style: {
+      type: 'string',
+      enum: ENVIRONMENT_STYLES as unknown as string[],
+      description:
+        'Specific Israeli home/lifestyle aesthetic. Modern, practical, premium, or urban — but always locally realistic. Foreign suburban or American showroom looks are forbidden.',
+    },
+    israeli_environment_required: {
+      type: 'boolean',
+      description:
+        'Should be true for every scene by default. Set to false ONLY for scenes deliberately set abroad (rare). When true, the image prompt forces Israeli outlets, switches, apartment proportions, and Hebrew-friendly visible text.',
+    },
+    local_realism_notes: {
+      type: 'string',
+      description:
+        'Free-form Hebrew or English notes about local realism cues for this specific scene (e.g. "trissim shutters visible on the balcony", "Israeli outlet next to the sink", "Hebrew note on the fridge"). Empty string allowed but discouraged.',
+    },
+    why_this_scene_exists: {
+      type: 'string',
+      description:
+        '1 short Hebrew sentence — what conversion-job does this specific scene do? ("hook stops the scroll", "establishes the daily pain", "shows the product solving it in one tap"). Used by the editor + admin forensics to spot redundant scenes.',
+    },
   },
 } as const;
 
@@ -212,6 +281,7 @@ const SCRIPT_ITEM_SCHEMA = {
     'estimated_duration_seconds',
     'scenes',
     'quality_score',
+    'diversity_notes',
   ],
   properties: {
     framework: {
@@ -225,6 +295,7 @@ const SCRIPT_ITEM_SCHEMA = {
       description:
         'The advertising idea behind this script. Choose a strong angle BEFORE writing any scenes.',
       required: [
+        // V2 fields (kept for back-compat).
         'core_insight',
         'audience_pain',
         'emotional_trigger',
@@ -237,6 +308,13 @@ const SCRIPT_ITEM_SCHEMA = {
         'script_promise',
         'conversion_goal',
         'assumptions',
+        // V5 fields — force the model to commit to a real ad concept
+        // before writing any scene text.
+        'big_idea',
+        'specific_situation',
+        'product_role',
+        'proof_moment',
+        'why_this_is_different_from_other_scripts',
       ],
       properties: {
         core_insight: { type: 'string' },
@@ -251,21 +329,51 @@ const SCRIPT_ITEM_SCHEMA = {
         script_promise: { type: 'string' },
         conversion_goal: { type: 'string' },
         assumptions: { type: 'array', items: { type: 'string' } },
+        big_idea: {
+          type: 'string',
+          description:
+            'One Hebrew sentence that names the creative concept of THIS ad. Not a benefits list.',
+        },
+        specific_situation: {
+          type: 'string',
+          description:
+            'A concrete Israeli daily situation in 1-2 sentences (e.g. "ערב שישי, חמישה אורחים, הכיריים נראות כמו זירת פשע"). Must feel local.',
+        },
+        product_role: {
+          type: 'string',
+          description:
+            'How the product enters the story naturally. Not "the product is amazing" — what role it plays in the situation.',
+        },
+        proof_moment: {
+          type: 'string',
+          description:
+            'The visual moment that makes the product believable. What the viewer SEES that converts skepticism to interest.',
+        },
+        why_this_is_different_from_other_scripts: {
+          type: 'string',
+          description:
+            'One short Hebrew sentence — what makes THIS script structurally different from the other 5 in this batch (different hook archetype, different emotional trigger, different proof angle, etc.).',
+        },
       },
     },
     hook_options: {
       type: 'array',
       description:
-        'Exactly 3 distinct opening-line options in spoken Israeli Hebrew, under ~12 words each.',
+        'Exactly 5 distinct opening-line options in spoken Israeli Hebrew, under ~12 words each. Each option should come from a different hook archetype (confession / frustration / curiosity / mistake / skeptical / price_shock / wish_i_knew / i_stopped_doing / nobody_tells_you).',
       items: { type: 'string' },
     },
     selected_hook: {
       type: 'string',
-      description: 'The strongest of the 3 hook_options. Must match one verbatim.',
+      description: 'The strongest of the 5 hook_options. Must match one verbatim.',
     },
     hook_reason: {
       type: 'string',
       description: 'Why the selected hook is the strongest. 1 short Hebrew sentence.',
+    },
+    diversity_notes: {
+      type: 'string',
+      description:
+        '1 short Hebrew sentence — what makes this script feel DIFFERENT from the other 5 scripts in the batch (different hook archetype, different emotional trigger, different proof angle, different scene rhythm). Used by the regen step to spot duplicates.',
     },
     cta: {
       type: 'string',
@@ -300,6 +408,11 @@ const SCRIPT_ITEM_SCHEMA = {
         'conversion_potential',
         'tts_naturalness',
         'no_generic_cliches',
+        // V5 quality dimensions.
+        'creative_originality',
+        'product_visibility',
+        'israeli_visual_realism',
+        'duration_fit',
         'overall',
         'weakness_note',
       ],
@@ -312,9 +425,29 @@ const SCRIPT_ITEM_SCHEMA = {
         conversion_potential: { type: 'integer', description: '1–10' },
         tts_naturalness: { type: 'integer', description: '1–10' },
         no_generic_cliches: { type: 'integer', description: '1–10' },
+        creative_originality: {
+          type: 'integer',
+          description:
+            '1–10. How fresh is the angle? Is this a NEW idea vs. one of the other 5 scripts in the batch? <8 means too similar to siblings — regen.',
+        },
+        product_visibility: {
+          type: 'integer',
+          description:
+            '1–10. Is the product the visual hero in most scenes? Does it appear by Scene 2? <8 means avatar-dominant — regen.',
+        },
+        israeli_visual_realism: {
+          type: 'integer',
+          description:
+            '1–10. Do the visual_prompt_english + environment_type fields commit to a believable Israeli setting? Foreign suburban / showroom interiors = <5.',
+        },
+        duration_fit: {
+          type: 'integer',
+          description:
+            '1–10. Does the scene count + scene durations + spoken word total match the selected video_duration_mode? 30s pacing on a 15s ad = <5.',
+        },
         overall: {
           type: 'number',
-          description: 'Average of the 8 sub-scores. The wrapper regenerates if < 8.',
+          description: 'Average of the 12 sub-scores. The wrapper regenerates if < 8.',
         },
         weakness_note: {
           type: 'string',

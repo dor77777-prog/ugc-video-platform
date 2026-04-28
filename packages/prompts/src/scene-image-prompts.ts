@@ -166,6 +166,23 @@ const HIGH_PRODUCT_VISIBILITY = [
   '- The product remains in frame at every moment — never cropped out.',
 ].join('\n');
 
+// Israeli visual realism — applied to EVERY scene by default, regardless
+// of scene type. The product is for the Israeli market, the creator is
+// Israeli, the home is Israeli — but gpt-image-2's default for "kitchen
+// counter" is an oversized American suburban kitchen with US-style
+// outlets and English-only signage, which immediately breaks UGC
+// believability for a Hebrew-speaking audience. This block forces the
+// model toward locally-credible interiors instead.
+const ISRAELI_REALISM_BOILERPLATE = [
+  'AUTHENTIC ISRAELI UGC REALISM (mandatory unless scene is deliberately abroad):',
+  '- The setting must feel like a believable Israeli home, apartment, balcony, or city — modern, renovated, premium, or practical, but always LOCAL.',
+  '- Israeli interior cues: Israeli-style electrical outlets and light switches if visible (NOT US/UK socket types), realistic Israeli apartment proportions (room sizes that match a real city flat — not American mega-rooms), Israeli-style trissim shutters or modern blinds, plausible Mediterranean light.',
+  '- Visible text defaults to Hebrew or stays minimal/neutral. Do NOT add random English-heavy signage, calendars, or magnets.',
+  '- Avoid generic American suburban interiors, oversized US-style kitchens with islands, foreign-looking architecture, hotel-catalog showroom rooms, perfect stock-photo perfection.',
+  '- "Israeli realism" can be modern, stylish, premium, urban — it does NOT mean "old / cluttered / outdated". It means "this could plausibly exist in Tel Aviv / Holon / Rishon / Haifa / Jerusalem".',
+  '- Negative cues to avoid: foreign outlet design, American house look, non-Israeli switches, showroom interior, generic stock home, oversized suburban kitchen, English-heavy environment, non-local home aesthetic.',
+].join('\n');
+
 export function buildScenePrompt(input: SceneImagePromptInput): string {
   const opener = ASPECT_OPENER[input.aspectRatio];
   const productPresent = input.productPresent ?? true;
@@ -217,6 +234,8 @@ export function buildScenePrompt(input: SceneImagePromptInput): string {
         ? 'PRODUCT VISIBILITY: the product MUST remain visible in the frame — do not crop it out, do not let it disappear.'
         : '',
       ``,
+      ISRAELI_REALISM_BOILERPLATE,
+      ``,
       REALISM_CHECK,
       ``,
       input.silentTalkingPlate ? SILENT_TALKING_PLATE : '',
@@ -239,6 +258,7 @@ export function buildScenePrompt(input: SceneImagePromptInput): string {
     productPresent
       ? `Image 1 = the PRODUCT. Keep its packaging, label, color, and shape exactly. Visible in the frame, held or placed naturally.`
       : '',
+    ISRAELI_REALISM_BOILERPLATE,
     REALISM_CHECK,
     `Style: candid UGC phone-camera aesthetic, photorealistic, natural daylight, real-person imperfect, no on-image text, no logos, no watermark.`,
     input.productName ? `Product: ${input.productName}.` : '',
