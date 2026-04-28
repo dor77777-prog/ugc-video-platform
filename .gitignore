@@ -29,3 +29,6 @@ yarn-error.log*
 .turbo/
 coverage/
 *.tsbuildinfo
+
+# Runtime-generated user uploads
+apps/web/public/uploads/
