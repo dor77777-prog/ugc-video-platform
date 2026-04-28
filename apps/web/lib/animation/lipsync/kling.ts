@@ -46,7 +46,10 @@ function getBaseUrl(): string {
 function getEndpoint(): string {
   return process.env.KLING_LIPSYNC_ENDPOINT ?? DEFAULT_ENDPOINT;
 }
-function getModel(): string {
+// Lip-Sync is an ENDPOINT, not a model — Kling doesn't accept
+// `model_name` in the request body. We keep this label only for
+// logging / cost-attribution rows, not for sending to the API.
+function getModelLabel(): string {
   return process.env.KLING_LIPSYNC_MODEL ?? DEFAULT_MODEL;
 }
 
@@ -88,6 +91,9 @@ class KlingLipSync implements LipSyncProvider {
   readonly name = 'kling';
 
   async submit(input: LipSyncInput): Promise<LipSyncSubmitResult> {
+    // Official KlingAI Lip-Sync API: endpoint, not a model. Do NOT
+    // include `model_name` in the body — only the `input` block. See:
+    //   https://app.klingai.com/global/dev/document-api/apiReference/model/videoLipSync
     const body = {
       input: {
         mode: 'audio2video',
@@ -95,7 +101,6 @@ class KlingLipSync implements LipSyncProvider {
         audio_type: 'url',
         audio_url: input.audioUrl,
       },
-      model_name: getModel(),
     };
     const res = await klingFetch<KlingCreate>(getEndpoint(), {
       method: 'POST',
@@ -162,7 +167,7 @@ class KlingLipSync implements LipSyncProvider {
           videoBytes,
           videoUrl: st.videoUrl,
           durationSeconds: input.durationSeconds,
-          modelUsed: getModel(),
+          modelUsed: getModelLabel(),
           providerName: this.name,
         };
       }
