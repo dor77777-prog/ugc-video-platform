@@ -120,6 +120,7 @@ export default async function ScenesPage({
             durationSeconds={scene.durationSeconds}
             imageUrl={scene.imageUrl}
             imageGenerationCount={scene.imageGenerationCount}
+            imageInFlightAt={scene.imageInFlightAt ? scene.imageInFlightAt.toISOString() : null}
           />
         ))}
       </div>

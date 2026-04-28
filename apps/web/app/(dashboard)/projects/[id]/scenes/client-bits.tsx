@@ -232,6 +232,18 @@ interface SceneCardProps {
   durationSeconds: number;
   imageUrl: string | null;
   imageGenerationCount: number;
+  // Set by the impl when an image generation is in flight; cleared in
+  // try/finally. Survives page refresh so the user keeps seeing the
+  // overlay even if they reload mid-generation.
+  imageInFlightAt: string | null;
+}
+
+// 3 min budget — Image gen is fast (gpt-image-1 ~30s) but we leave headroom
+// for network blips so a stale flag doesn't pin the overlay forever.
+const IMAGE_IN_FLIGHT_TTL_MS = 3 * 60 * 1000;
+function isFresh(at: string | null, ttlMs: number): boolean {
+  if (!at) return false;
+  return Date.now() - new Date(at).getTime() < ttlMs;
 }
 
 export function SceneCard(props: SceneCardProps) {
@@ -365,11 +377,39 @@ export function SceneCard(props: SceneCardProps) {
 
   const effectiveImageUrl = liveImageUrl ?? props.imageUrl;
   const hasImage = !!effectiveImageUrl;
-  // Show the "AI is generating" overlay either when this scene's per-card
-  // action is in flight, OR when a batch run has just told us to start
-  // polling for our image (so users see *something* happening even though
-  // the per-card useActionState pending flag is false).
-  const showGeneratingOverlay = pending || (batchPolling && !hasImage);
+  // Server-side in-flight flag: stays set across page refreshes so the
+  // user keeps seeing "working" even if they reloaded mid-generation.
+  // Crucially we do NOT gate it on `!hasImage` — during a regen the OLD
+  // image is still on display and the flag tells us a NEW one is cooking.
+  const imageInFlightServer = isFresh(props.imageInFlightAt, IMAGE_IN_FLIGHT_TTL_MS);
+  const showGeneratingOverlay = pending || batchPolling || imageInFlightServer;
+
+  // Poll for the new image while a regen is in-flight server-side. We
+  // anchor on the URL we had at mount; once the API returns a different
+  // URL we know the new image is ready and stop polling.
+  const initialImageUrlRef = useRef(props.imageUrl);
+  useEffect(() => {
+    if (!imageInFlightServer) return;
+    const baselineUrl = initialImageUrlRef.current;
+    const id = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/scenes/${propsRef.current.sceneId}`, { cache: 'no-store' });
+        if (!res.ok) return;
+        const json = (await res.json()) as { imageUrl: string | null; imageInFlightAt: string | null };
+        if (json.imageUrl && json.imageUrl !== baselineUrl) {
+          setLiveImageUrl(json.imageUrl);
+          initialImageUrlRef.current = json.imageUrl;
+          clearInterval(id);
+          router.refresh();
+        } else if (!json.imageInFlightAt) {
+          // Flag cleared without a new URL → terminal failure server-side.
+          clearInterval(id);
+          router.refresh();
+        }
+      } catch { /* keep trying */ }
+    }, 3000);
+    return () => clearInterval(id);
+  }, [imageInFlightServer, router]);
 
   const savePrompt = () => {
     const fd = new FormData();
@@ -441,7 +481,7 @@ export function SceneCard(props: SceneCardProps) {
             // Regen: keep the existing image fully visible — just a small
             // corner badge so the user can still see what they're
             // replacing while the new one renders.
-            <div className="absolute top-2 right-2 rounded-md bg-black/70 text-white text-[11px] px-2 py-1 flex items-center gap-1.5 shadow-lg">
+            <div className="absolute top-2 right-2 z-20 rounded-md bg-black/80 text-white text-[11px] px-2 py-1 flex items-center gap-1.5 shadow-lg ring-1 ring-white/20">
               <span className="animate-pulse">✨</span>
               <span>מתחדשת…</span>
               <ElapsedTimer keyValue={props.sceneId + props.imageGenerationCount} />
@@ -499,9 +539,9 @@ export function SceneCard(props: SceneCardProps) {
               type="submit"
               size="sm"
               variant={hasImage ? 'outline' : 'default'}
-              disabled={pending}
+              disabled={showGeneratingOverlay}
             >
-              {pending
+              {showGeneratingOverlay
                 ? 'יוצר…'
                 : hasImage
                   ? '↻ צור מחדש (1 קרדיט)'

@@ -559,44 +559,58 @@ export function SceneClipCard(props: SceneClipCardProps) {
   // flag is older than the TTL, treat it as stale (worker crashed).
   const voiceInFlightServer = isFresh(props.voiceInFlightAt, VOICE_IN_FLIGHT_TTL_MS);
   const clipInFlightServer = isFresh(props.clipInFlightAt, CLIP_IN_FLIGHT_TTL_MS);
-  const showVoiceWorking =
-    voicePending || (voiceBatchPolling && !hasVoice) || (voiceInFlightServer && !hasVoice);
-  const showClipWorking =
-    clipPending || (clipBatchPolling && !hasClip) || (clipInFlightServer && !hasClip);
+  // The server-side in-flight flag indicates an *active regen* even when
+  // the previous result is still on disk. We deliberately do NOT gate it
+  // on `!hasVoice` / `!hasClip`: during a regen the OLD result is still
+  // visible (so the user can keep playing it), and we want the badge +
+  // disabled button to reflect that a new generation is running.
+  const showVoiceWorking = voicePending || voiceBatchPolling || voiceInFlightServer;
+  const showClipWorking = clipPending || clipBatchPolling || clipInFlightServer;
 
   // Polling: when the server-side flag is set but we don't yet have a
   // result, keep checking the GET endpoint every 3s for up to its TTL
   // so the spinner flips to the result the moment the server finishes.
+  // Track which URL we already have so we can detect the *new* one arriving
+  // during a regen (when an old URL is still in props). Without this guard,
+  // the poll bails immediately because hasVoice / hasClip is true.
+  const initialVoiceUrlRef = useRef(effectiveVoiceUrl);
+  const initialClipUrlRef = useRef(effectiveClipUrl);
+
   useEffect(() => {
-    if (!voiceInFlightServer || hasVoice) return;
+    if (!voiceInFlightServer) return;
+    const baselineUrl = initialVoiceUrlRef.current;
     const id = setInterval(async () => {
       try {
         const res = await fetch(`/api/scenes/${propsRef.current.sceneId}`, { cache: 'no-store' });
         if (!res.ok) return;
         const json = (await res.json()) as { voiceUrl: string | null; voiceInFlightAt: string | null };
-        if (json.voiceUrl) {
+        // New URL arrived (different from what we had when regen started).
+        if (json.voiceUrl && json.voiceUrl !== baselineUrl) {
           setLiveVoiceUrl(json.voiceUrl);
+          initialVoiceUrlRef.current = json.voiceUrl;
           clearInterval(id);
           router.refresh();
         } else if (!json.voiceInFlightAt) {
-          // Flag cleared without a URL → terminal failure server-side.
+          // Flag cleared without a new URL → terminal failure server-side.
           clearInterval(id);
           router.refresh();
         }
       } catch { /* keep trying */ }
     }, 3000);
     return () => clearInterval(id);
-  }, [voiceInFlightServer, hasVoice, router]);
+  }, [voiceInFlightServer, router]);
 
   useEffect(() => {
-    if (!clipInFlightServer || hasClip) return;
+    if (!clipInFlightServer) return;
+    const baselineUrl = initialClipUrlRef.current;
     const id = setInterval(async () => {
       try {
         const res = await fetch(`/api/scenes/${propsRef.current.sceneId}`, { cache: 'no-store' });
         if (!res.ok) return;
         const json = (await res.json()) as { clipUrl: string | null; clipInFlightAt: string | null };
-        if (json.clipUrl) {
+        if (json.clipUrl && json.clipUrl !== baselineUrl) {
           setLiveClipUrl(json.clipUrl);
+          initialClipUrlRef.current = json.clipUrl;
           clearInterval(id);
           router.refresh();
         } else if (!json.clipInFlightAt) {
@@ -606,7 +620,7 @@ export function SceneClipCard(props: SceneClipCardProps) {
       } catch { /* keep trying */ }
     }, 3000);
     return () => clearInterval(id);
-  }, [clipInFlightServer, hasClip, router]);
+  }, [clipInFlightServer, router]);
 
   const canGenerateVoice = !!props.imageUrl && props.voiceSelected;
   const canGenerateClip = !!props.imageUrl && hasVoice;
@@ -647,7 +661,7 @@ export function SceneClipCard(props: SceneClipCardProps) {
               durationSeconds={props.clipDurationSeconds ?? null}
             />
             {showClipWorking && (
-              <div className="absolute top-2 right-2 rounded-md bg-black/70 text-white text-[11px] px-2 py-1 flex items-center gap-1.5 shadow-lg">
+              <div className="absolute top-2 right-2 z-20 rounded-md bg-black/80 text-white text-[11px] px-2 py-1 flex items-center gap-1.5 shadow-lg ring-1 ring-white/20">
                 <span className="animate-pulse">🎬</span>
                 <span>מנפיש מחדש…</span>
                 <ElapsedTimer keyValue={props.sceneId + props.clipGenerationCount} />
@@ -702,7 +716,7 @@ export function SceneClipCard(props: SceneClipCardProps) {
                   durationSeconds={props.voiceDurationSeconds ?? null}
                 />
                 {showVoiceWorking && (
-                  <div className="absolute top-1 right-1 rounded bg-primary/90 text-primary-foreground text-[10px] px-1.5 py-0.5 flex items-center gap-1 shadow-sm">
+                  <div className="absolute top-1 right-1 z-20 rounded bg-primary text-primary-foreground text-[10px] px-1.5 py-0.5 flex items-center gap-1 shadow-md ring-1 ring-white/20">
                     <span className="animate-pulse">🎙️</span>
                     <span>מתחדש…</span>
                     <ElapsedTimer keyValue={props.sceneId + props.voiceGenerationCount} />
@@ -785,8 +799,14 @@ export function SceneClipCard(props: SceneClipCardProps) {
           )}
           {hasClip && (
             <form action={clipFormAction}>
-              <Button type="submit" size="sm" variant="outline" className="w-full" disabled={clipPending}>
-                {clipPending ? 'מנפיש מחדש…' : '↻ הנפש מחדש'}
+              <Button
+                type="submit"
+                size="sm"
+                variant="outline"
+                className="w-full"
+                disabled={showClipWorking}
+              >
+                {showClipWorking ? 'מנפיש מחדש…' : '↻ הנפש מחדש'}
               </Button>
             </form>
           )}
