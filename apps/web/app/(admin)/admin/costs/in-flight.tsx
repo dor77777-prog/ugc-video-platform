@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -12,6 +12,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { cancelApiCallAction, cancelAllStaleInProgressAction } from './actions';
 
 const PROVIDER_LABEL: Record<string, string> = {
   openai: 'OpenAI',
@@ -79,9 +80,12 @@ export function InFlightCallsSection({ rows }: { rows: InFlightRow[] }) {
         <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
           קריאות API פעילות עכשיו
         </h2>
-        <Badge variant="default" className="text-xs">
-          {rows.length} פעילות · live
-        </Badge>
+        <div className="flex items-center gap-2">
+          <Badge variant="default" className="text-xs">
+            {rows.length} פעילות · live
+          </Badge>
+          <CancelStaleButton />
+        </div>
       </div>
       <Card className="border-amber-500/30 bg-amber-500/5">
         <CardContent className="p-0">
@@ -95,6 +99,7 @@ export function InFlightCallsSection({ rows }: { rows: InFlightRow[] }) {
                 <TableHead>מודל</TableHead>
                 <TableHead>משתמש</TableHead>
                 <TableHead>פרויקט</TableHead>
+                <TableHead>פעולות</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -141,6 +146,9 @@ export function InFlightCallsSection({ rows }: { rows: InFlightRow[] }) {
                     <TableCell className="font-mono text-xs text-muted-foreground" dir="ltr">
                       {c.projectId?.slice(-8) ?? '—'}
                     </TableCell>
+                    <TableCell>
+                      <CancelOneButton callId={c.id} />
+                    </TableCell>
                   </TableRow>
                 );
               })}
@@ -148,6 +156,84 @@ export function InFlightCallsSection({ rows }: { rows: InFlightRow[] }) {
           </Table>
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+function CancelOneButton({ callId }: { callId: string }) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <div className="flex items-center gap-1.5">
+      <button
+        type="button"
+        disabled={pending}
+        onClick={() => {
+          setError(null);
+          startTransition(async () => {
+            const fd = new FormData();
+            fd.set('id', callId);
+            const res = await cancelApiCallAction(fd);
+            if (!res.ok) setError(res.error ?? 'שגיאה');
+            router.refresh();
+          });
+        }}
+        className="text-xs px-2 py-1 rounded bg-destructive/15 text-destructive border border-destructive/30 hover:bg-destructive/25 disabled:opacity-50"
+        title="סמן כ-failed + נקה in-flight על הסצנה (לא מבטל בצד הספק)"
+      >
+        {pending ? '…' : '✕ בטל'}
+      </button>
+      {error && <span className="text-[10px] text-destructive">{error}</span>}
+    </div>
+  );
+}
+
+function CancelStaleButton() {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const [confirming, setConfirming] = useState(false);
+  const [last, setLast] = useState<{ count: number } | null>(null);
+  if (!confirming) {
+    return (
+      <button
+        type="button"
+        onClick={() => setConfirming(true)}
+        className="text-xs px-2 py-1 rounded border border-border hover:bg-muted"
+        title="בטל את כל הקריאות התקועות יותר מ-15 דק׳"
+      >
+        🧹 נקה תקועים
+      </button>
+    );
+  }
+  return (
+    <div className="flex items-center gap-1.5">
+      <span className="text-[11px] text-muted-foreground">בטל הכל מעל 15 דק׳?</span>
+      <button
+        type="button"
+        disabled={pending}
+        onClick={() => {
+          startTransition(async () => {
+            const fd = new FormData();
+            fd.set('olderThanMinutes', '15');
+            const res = await cancelAllStaleInProgressAction(fd);
+            setLast({ count: res.cancelled });
+            setConfirming(false);
+            router.refresh();
+          });
+        }}
+        className="text-xs px-2 py-1 rounded bg-destructive text-destructive-foreground hover:opacity-90 disabled:opacity-50"
+      >
+        {pending ? '…' : 'כן'}
+      </button>
+      <button
+        type="button"
+        onClick={() => setConfirming(false)}
+        className="text-xs px-2 py-1 rounded border border-border hover:bg-muted"
+      >
+        ביטול
+      </button>
+      {last && <span className="text-[10px] text-muted-foreground">בוטלו {last.count}</span>}
     </div>
   );
 }
