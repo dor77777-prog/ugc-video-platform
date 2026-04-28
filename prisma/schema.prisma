@@ -137,7 +137,17 @@ model Script {
   id                       String      @id @default(cuid())
   projectId                String
   project                  Project     @relation("ProjectScripts", fields: [projectId], references: [id], onDelete: Cascade)
+  // Legacy V1 enum — kept for backward compat, populated with a mapped value for V2 scripts.
   angle                    ScriptAngle
+  // V2 framework slug (problem_agitation_solution / skeptical_testimonial / demonstration_proof
+  // / price_alternative_anchor / relatable_israeli_moment / fast_direct_response). String,
+  // not enum, so the application can evolve frameworks without DB migrations.
+  framework                String?
+  // V2: the selected hook (mirrors `hook` for Engine V2; identical value).
+  // Kept separate so we always know which option came from `hook_options`.
+  selectedHookReason       String?
+  // V2: quality score (0–10). Lets the UI sort/filter and admin spot-check.
+  qualityScoreOverall      Float?
   hook                     String
   cta                      String?
   targetAudience           String?
@@ -169,7 +179,20 @@ model Scene {
   imageProvider         String?
 
   durationSeconds     Int
+  // Legacy V1 enum — informational, consumed by the scene-image prompt builder.
   sceneType           SceneType @default(other)
+
+  // V2 storytelling fields. Optional so legacy scenes still load.
+  // sceneGoal — narrative function: stop_scroll / establish_pain / introduce_product
+  //             / prove_it_works / decision_push / other. String (not enum) so the
+  //             vocabulary can evolve without migrations.
+  sceneGoal              String?
+  // On-screen Hebrew caption (burned-in text). Optional — user can leave blank.
+  onScreenCaptionHebrew  String?
+  // Camera direction in English (passed through to scene-image prompts when relevant).
+  cameraDirection        String?
+  // Performance note for the creator (delivery: tone, pacing, energy).
+  performanceNote        String?
 
   @@unique([scriptId, sceneOrder])
   @@index([scriptId])

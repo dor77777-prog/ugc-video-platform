@@ -64,6 +64,17 @@ export function GenerateButton({
   );
 }
 
+interface ScriptCardScene {
+  id: string;
+  sceneOrder: number;
+  sceneGoal: string | null;
+  textHebrew: string;
+  onScreenCaption: string;
+  cameraDirection: string;
+  performanceNote: string;
+  durationSeconds: number;
+}
+
 interface ScriptCardProps {
   scriptId: string;
   projectId: string;
@@ -71,14 +82,54 @@ interface ScriptCardProps {
   hook: string;
   cta: string;
   estimatedDurationSeconds: number;
-  scenes: { id: string; sceneOrder: number; textHebrew: string; durationSeconds: number }[];
+  qualityScoreOverall: number | null;
+  hookOptions: string[];
+  hookReason: string;
+  creativeStrategy: Record<string, unknown> | null;
+  qualityScore: Record<string, unknown> | null;
+  scenes: ScriptCardScene[];
   isSelected: boolean;
   selectAction: (formData: FormData) => Promise<void>;
 }
 
+const SCENE_GOAL_LABEL: Record<string, string> = {
+  stop_scroll: 'עוצר גלילה',
+  establish_pain: 'מבסס כאב',
+  introduce_product: 'מכניס מוצר',
+  prove_it_works: 'מוכיח שעובד',
+  decision_push: 'דחיפה לפעולה',
+  other: 'אחר',
+};
+
+const STRATEGY_LABEL: Record<string, string> = {
+  coreInsight: 'תובנה מרכזית',
+  audiencePain: 'הכאב של הקהל',
+  emotionalTrigger: 'טריגר רגשי',
+  productMechanism: 'איך זה עובד',
+  mainObjection: 'ההתנגדות העיקרית',
+  persuasionAngle: 'זווית שכנוע',
+  whyThisWouldStopScroll: 'למה זה עוצר גלילה',
+  ugcSituation: 'הסיטואציה הישראלית',
+  hookType: 'סוג Hook',
+  scriptPromise: 'ההבטחה לצופה',
+  conversionGoal: 'מטרת הקונברסיה',
+};
+
+const QUALITY_LABEL: Record<string, string> = {
+  hookStrength: 'Hook',
+  specificity: 'ספציפיות',
+  israeliAuthenticity: 'אותנטיות ישראלית',
+  emotionalPull: 'משיכה רגשית',
+  visualClarity: 'בהירות ויזואלית',
+  conversionPotential: 'פוטנציאל המרה',
+  ttsNaturalness: 'תוסס TTS',
+  noGenericCliches: 'ללא קלישאות',
+};
+
 export function ScriptCard(props: ScriptCardProps) {
   const [expanded, setExpanded] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [showStrategy, setShowStrategy] = useState(false);
   const [draftHook, setDraftHook] = useState(props.hook);
   const [draftCta, setDraftCta] = useState(props.cta);
   const [draftScenes, setDraftScenes] = useState(props.scenes.map((s) => ({ ...s })));
@@ -125,8 +176,24 @@ export function ScriptCard(props: ScriptCardProps) {
       )}
     >
       <CardContent className="p-5 space-y-4">
-        <div className="flex items-start justify-between gap-3">
-          <Badge variant={props.isSelected ? 'default' : 'outline'}>{props.angleLabel}</Badge>
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-2 flex-wrap">
+            <Badge variant={props.isSelected ? 'default' : 'outline'}>{props.angleLabel}</Badge>
+            {props.qualityScoreOverall !== null && (
+              <Badge
+                variant="secondary"
+                className={cn(
+                  'text-[10px] font-mono',
+                  props.qualityScoreOverall >= 8.5 && 'bg-emerald-500/15 text-emerald-700',
+                  props.qualityScoreOverall >= 8 && props.qualityScoreOverall < 8.5 && 'bg-amber-500/15 text-amber-700',
+                  props.qualityScoreOverall < 8 && 'bg-rose-500/15 text-rose-700',
+                )}
+                title="ציון איכות עצמי שה-LLM נתן לתסריט"
+              >
+                ★ {props.qualityScoreOverall.toFixed(1)}/10
+              </Badge>
+            )}
+          </div>
           <div className="text-xs text-muted-foreground font-mono">
             {props.estimatedDurationSeconds}s · {props.scenes.length} סצנות
           </div>
@@ -152,10 +219,45 @@ export function ScriptCard(props: ScriptCardProps) {
         {/* Expanded view */}
         {expanded && (
           <div className="space-y-3 pt-2 border-t border-border">
+            {/* Hook options + reason — V2 metadata, read-only */}
+            {!editing && props.hookOptions.length > 0 && (
+              <div className="rounded-md bg-muted/40 p-3 space-y-1.5 text-xs">
+                <div className="font-semibold text-muted-foreground uppercase tracking-wide">
+                  3 אופציות hook שנשקלו:
+                </div>
+                <ul className="space-y-1">
+                  {props.hookOptions.map((h, i) => (
+                    <li
+                      key={i}
+                      className={cn(
+                        'leading-relaxed',
+                        h === props.hook && 'font-semibold text-foreground',
+                      )}
+                    >
+                      {h === props.hook ? '✓' : '○'} {h}
+                    </li>
+                  ))}
+                </ul>
+                {props.hookReason && (
+                  <div className="text-muted-foreground pt-1 border-t border-border">
+                    <span className="font-semibold">למה נבחר: </span>
+                    {props.hookReason}
+                  </div>
+                )}
+              </div>
+            )}
+
             {(editing ? draftScenes : props.scenes).map((s, idx) => (
               <div key={s.id} className="text-sm space-y-1.5">
-                <div className="flex items-center justify-between text-xs text-muted-foreground">
-                  <span className="font-mono">סצנה {s.sceneOrder + 1}</span>
+                <div className="flex items-center justify-between text-xs text-muted-foreground flex-wrap gap-1">
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono">סצנה {s.sceneOrder + 1}</span>
+                    {s.sceneGoal && (
+                      <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-secondary text-secondary-foreground">
+                        {SCENE_GOAL_LABEL[s.sceneGoal] ?? s.sceneGoal}
+                      </span>
+                    )}
+                  </div>
                   {editing ? (
                     <div className="flex items-center gap-1">
                       <Input
@@ -182,7 +284,31 @@ export function ScriptCard(props: ScriptCardProps) {
                     className="text-sm"
                   />
                 ) : (
-                  <div className="leading-relaxed">{s.textHebrew}</div>
+                  <>
+                    <div className="leading-relaxed">{s.textHebrew}</div>
+                    {(s.onScreenCaption || s.cameraDirection || s.performanceNote) && (
+                      <div className="text-[11px] text-muted-foreground space-y-0.5 ps-2 border-s-2 border-border">
+                        {s.onScreenCaption && (
+                          <div>
+                            <span className="font-semibold">כתובית: </span>
+                            {s.onScreenCaption}
+                          </div>
+                        )}
+                        {s.cameraDirection && (
+                          <div className="font-mono">
+                            <span className="font-semibold">camera: </span>
+                            {s.cameraDirection}
+                          </div>
+                        )}
+                        {s.performanceNote && (
+                          <div>
+                            <span className="font-semibold">בימוי: </span>
+                            {s.performanceNote}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             ))}
@@ -200,6 +326,65 @@ export function ScriptCard(props: ScriptCardProps) {
                 )
               )}
             </div>
+
+            {/* Creative Strategy block — collapsible */}
+            {!editing && props.creativeStrategy && (
+              <div className="border-t border-border pt-3 space-y-2">
+                <button
+                  type="button"
+                  onClick={() => setShowStrategy((v) => !v)}
+                  className="text-xs text-muted-foreground hover:text-foreground"
+                >
+                  {showStrategy ? '× הסתר Creative Strategy' : '📋 ראה Creative Strategy'}
+                </button>
+                {showStrategy && (
+                  <div className="rounded-md bg-muted/40 p-3 space-y-1.5 text-xs">
+                    {Object.entries(props.creativeStrategy).map(([k, v]) => {
+                      if (k === 'assumptions') {
+                        const arr = Array.isArray(v) ? (v as string[]) : [];
+                        if (arr.length === 0) return null;
+                        return (
+                          <div key={k}>
+                            <span className="font-semibold">הנחות שנעשו: </span>
+                            {arr.join(' · ')}
+                          </div>
+                        );
+                      }
+                      if (typeof v !== 'string' || !v) return null;
+                      return (
+                        <div key={k}>
+                          <span className="font-semibold">{STRATEGY_LABEL[k] ?? k}: </span>
+                          <span className="text-muted-foreground">{v}</span>
+                        </div>
+                      );
+                    })}
+                    {props.qualityScore && (
+                      <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 pt-2 border-t border-border font-mono text-[11px]">
+                        {Object.entries(props.qualityScore).map(([k, v]) => {
+                          if (typeof v !== 'number' || k === 'overall') return null;
+                          const label = QUALITY_LABEL[k] ?? k;
+                          return (
+                            <div key={k} className="flex justify-between">
+                              <span className="text-muted-foreground">{label}</span>
+                              <span className={cn(v >= 8 ? 'text-emerald-700' : 'text-rose-700')}>
+                                {v}/10
+                              </span>
+                            </div>
+                          );
+                        })}
+                        {typeof props.qualityScore.weaknessNote === 'string' &&
+                          props.qualityScore.weaknessNote && (
+                            <div className="col-span-2 pt-1 mt-1 border-t border-border text-[11px] text-muted-foreground font-sans">
+                              <span className="font-semibold">חולשה שזוהתה: </span>
+                              {props.qualityScore.weaknessNote as string}
+                            </div>
+                          )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 

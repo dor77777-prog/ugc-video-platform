@@ -9,7 +9,7 @@
 - ❌ עוד לא התחיל / out-of-scope לעכשיו
 - 👤 ממתין למידע ממך
 
-> **תמונת מצב גבוהה (אפריל 2026):** שלבים 1-4 של ה-Wizard (מוצר → אווטאר → תסריט → תמונות סצנה) **חיים, אמיתיים, בלי מוקים**, עם OpenAI אמיתי. השלבים שעוד מוקים/חסרים: **5 קריינות, 6 וידאו לסצנה, 7 הרכבה סופית**. הצינור (BullMQ + Worker) קיים ועובד עם providers מוקיים — מוכן להחליף את כל אחד בנפרד עם ספק אמיתי.
+> **תמונת מצב גבוהה (אפריל 2026):** שלבים 1-4 של ה-Wizard (מוצר → אווטאר → תסריט → תמונות סצנה) **חיים, אמיתיים, בלי מוקים**, עם OpenAI אמיתי. **שלב התסריט שודרג ל-Script Engine V2** — מנוע creative-strategy עם self-scoring + selective regeneration. השלבים שעוד מוקים/חסרים: **5 קריינות, 6 וידאו לסצנה, 7 הרכבה סופית**. הצינור (BullMQ + Worker) קיים ועובד עם providers מוקיים — מוכן להחליף את כל אחד בנפרד עם ספק אמיתי.
 
 ---
 
@@ -113,25 +113,33 @@
 | HeyGen integration (קטלוג מקצועי) | ❌ |
 | Avatar model נפרד ב-DB (כרגע ב-JSON של Project) | ❌ (לא קריטי) |
 
-### 5.3 שלב 3 · תסריט (`/projects/[id]/scripts`)
+### 5.3 שלב 3 · תסריט (`/projects/[id]/scripts`) — **Script Engine V2** ✨
 
 | נושא | סטטוס |
 |------|--------|
 | יצירת 6 תסריטים עם gpt-5.4-mini, structured outputs (strict JSON) | ✅ |
-| 6 זוויות שיווקיות בסדר קבוע | ✅ |
-| System prompt חזק עם דוגמאות hooks אמיתיים בעברית + עצירת קלישאות | ✅ |
-| כללי TTS (מספרים במילים, ללא קיצורים אנגליים, ללא אימוג'ים) | ✅ |
-| כללי רציפות בין סצנות (visual_prompt_english) | ✅ |
-| **Category-aware visual prompts** (skincare/fitness/fashion/food/tech/wellness/baby/cleaning/jewelry/supplements) | ✅ |
-| Pose & Framing dictionary (mirror selfie / selfie POV / over-shoulder / close-up / wide / top-down / before-after) | ✅ |
-| Mood vocabulary (12 פראזות מוכנות, כולל iPhone-camera realism + skin micro-detail) | ✅ |
-| 5 דוגמאות `visual_prompt_english` per category + anti-example | ✅ |
-| Avatar description מוזרק לפרומפט (תיאור Reference, לא בתוך visual_prompt) | ✅ |
+| **Creative Strategy Layer חובה** — לכל תסריט יש 11 שדות אסטרטגיים שהמודל חייב למלא לפני שכותב סצנות (core_insight / audience_pain / emotional_trigger / product_mechanism / main_objection / persuasion_angle / why_this_would_stop_scroll / ugc_situation / hook_type / script_promise / conversion_goal / assumptions) | ✅ |
+| **6 פריימוורקים חדים חדשים** (PAS / Skeptical Testimonial / Demonstration Proof / Price Anchor / Relatable Israeli Moment / Fast Direct Response) — מחליפים את ה-angles הגנריים | ✅ |
+| **3 hook_options + selected_hook + hook_reason** לכל תסריט | ✅ |
+| **9 hook archetypes** (confession / frustration / mistake / curiosity / price_shock / before_after / wish_i_knew / i_stopped_doing / nobody_tells_you) | ✅ |
+| **Anti-cliché blacklist** — 12 ביטויים אסורים שלא יופיעו בתסריט (שינה לי את החיים, חייבים לנסות, וכו') | ✅ |
+| **Quality Score עצמי** — המודל מדרג כל תסריט על 8 צירים (hook_strength / specificity / israeli_authenticity / emotional_pull / visual_clarity / conversion_potential / tts_naturalness / no_generic_cliches) + overall + weakness_note | ✅ |
+| **Selective regeneration** — wrapper מזהה תסריטים עם overall<8 ושולח קריאה ממוקדת לחזק את התסריט החלש (cap=3 ריצות חוזרות per generation) | ✅ |
+| **שדות Per-scene חדשים**: scene_goal (stop_scroll/establish_pain/introduce_product/prove_it_works/decision_push) + on_screen_caption_hebrew + camera_direction + performance_note | ✅ |
+| Category-aware visual prompts (skincare/fitness/fashion/food/tech/wellness/baby/cleaning/jewelry/supplements) | ✅ |
+| Pose & Framing dictionary, Mood vocabulary | ✅ |
+| 2 דוגמאות מלאות בסגנון V2 בתוך ה-system prompt + אנטי-דוגמה | ✅ |
+| Avatar description מוזרק לפרומפט (לא בתוך visual_prompt) | ✅ |
+| **חובת ספציפיות מוצרית** — כל תסריט חייב להזכיר ≥2 פרטים קונקרטיים מהמוצר; אם נתונים חסרים, להירשם ב-`assumptions` ולא להמציא טענות | ✅ |
+| Backward-compat ל-V1 ב-DB (Script.angle ו-Scene.sceneType ENUMs נשמרים, ממופים מ-V2) | ✅ |
+| UI מציג quality score badge (ירוק/ענבר/אדום), 3 hook options, Creative Strategy collapsible, scene goals, captions, camera directions, performance notes | ✅ |
+| Test fixtures (skincare/kitchen/tech) — 444/444 assertions עוברים, ציונים 8.6-8.9 | ✅ |
 | בחירת תסריט (`selectedScriptId` על Project) | ✅ |
 | עריכה ידנית של hook / cta / טקסט סצנות / משך | ✅ |
-| Regenerate (1 קרדיט) | ✅ |
+| Regenerate (1 קרדיט; לא תלוי ב-regen פנימי של V2) | ✅ |
 | Progress indicator בייצור | ✅ |
 | כתיבה ידנית מאפס (במקום AI) | ❌ |
+| עריכה של creative_strategy / quality_score ב-UI | ❌ (read-only כרגע — אם לא מרוצים, מרגנרים) |
 
 ### 5.4 שלב 4 · תמונות סצנה (`/projects/[id]/scenes`)
 

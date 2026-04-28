@@ -4,11 +4,21 @@ import { ScriptAngle } from '@prisma/client';
 import { prisma } from '@/lib/db';
 import { getOrCreateAppUser } from '@/lib/auth/sync-user';
 import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Stepper } from '@/components/wizard/stepper';
 import { GenerateButton, ScriptCard } from './client-bits';
 import { selectScriptAction, continueAfterSelectAction } from './actions';
+
+// V2: framework labels in Hebrew. Older scripts (pre-V2) won't have a `framework`
+// field — for those we fall back to the legacy angle label.
+const FRAMEWORK_LABEL_HEBREW: Record<string, string> = {
+  problem_agitation_solution: 'בעיה → הסלמה → פתרון',
+  skeptical_testimonial: 'סקפטיקל מתהפך',
+  demonstration_proof: 'הדגמה ויזואלית',
+  price_alternative_anchor: 'עוגן מחיר/אלטרנטיבה',
+  relatable_israeli_moment: 'רגע ישראלי',
+  fast_direct_response: 'דיירקט-ריספונס מהיר',
+};
 
 const ANGLE_LABEL_HEBREW: Record<ScriptAngle, string> = {
   problem_solution: 'בעיה ↔ פתרון',
@@ -18,6 +28,15 @@ const ANGLE_LABEL_HEBREW: Record<ScriptAngle, string> = {
   price_anchor: 'השוואת מחיר',
   fast_benefit: 'תועלת מהירה',
 };
+
+const FRAMEWORK_ORDER = [
+  'problem_agitation_solution',
+  'skeptical_testimonial',
+  'demonstration_proof',
+  'price_alternative_anchor',
+  'relatable_israeli_moment',
+  'fast_direct_response',
+];
 
 const ANGLE_ORDER: ScriptAngle[] = [
   'problem_solution',
@@ -46,10 +65,13 @@ export default async function ScriptsPage({
   });
   if (!project) notFound();
 
-  // Sort scripts by canonical angle order.
-  const scripts = [...project.scripts].sort(
-    (a, b) => ANGLE_ORDER.indexOf(a.angle) - ANGLE_ORDER.indexOf(b.angle),
-  );
+  // Sort scripts: V2 scripts come first by framework order, V1 fall back to angle order.
+  const scripts = [...project.scripts].sort((a, b) => {
+    const aIdx = a.framework ? FRAMEWORK_ORDER.indexOf(a.framework) : -1;
+    const bIdx = b.framework ? FRAMEWORK_ORDER.indexOf(b.framework) : -1;
+    if (aIdx !== -1 && bIdx !== -1) return aIdx - bIdx;
+    return ANGLE_ORDER.indexOf(a.angle) - ANGLE_ORDER.indexOf(b.angle);
+  });
 
   const hasScripts = scripts.length > 0;
   const selectedScriptId = project.selectedScriptId;
@@ -86,19 +108,41 @@ export default async function ScriptsPage({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {scripts.map((s) => {
               const isSelected = s.id === selectedScriptId;
+              const label = s.framework
+                ? FRAMEWORK_LABEL_HEBREW[s.framework] ?? ANGLE_LABEL_HEBREW[s.angle]
+                : ANGLE_LABEL_HEBREW[s.angle];
+              const raw = (s.rawJson ?? {}) as Record<string, unknown>;
+              const strategy =
+                (raw.creativeStrategy as Record<string, unknown> | undefined) ?? null;
+              const qualityScore =
+                (raw.qualityScore as Record<string, unknown> | undefined) ?? null;
+              const hookOptions = Array.isArray(raw.hookOptions)
+                ? (raw.hookOptions as string[])
+                : [];
+              const hookReason =
+                typeof raw.hookReason === 'string' ? raw.hookReason : '';
               return (
                 <ScriptCard
                   key={s.id}
                   scriptId={s.id}
                   projectId={projectId}
-                  angleLabel={ANGLE_LABEL_HEBREW[s.angle]}
+                  angleLabel={label}
                   hook={s.hook}
                   cta={s.cta ?? ''}
                   estimatedDurationSeconds={s.estimatedDurationSeconds}
+                  qualityScoreOverall={s.qualityScoreOverall ?? null}
+                  hookOptions={hookOptions}
+                  hookReason={hookReason}
+                  creativeStrategy={strategy}
+                  qualityScore={qualityScore}
                   scenes={s.scenes.map((sc) => ({
                     id: sc.id,
                     sceneOrder: sc.sceneOrder,
+                    sceneGoal: sc.sceneGoal ?? null,
                     textHebrew: sc.textHebrew,
+                    onScreenCaption: sc.onScreenCaptionHebrew ?? '',
+                    cameraDirection: sc.cameraDirection ?? '',
+                    performanceNote: sc.performanceNote ?? '',
                     durationSeconds: sc.durationSeconds,
                   }))}
                   isSelected={isSelected}

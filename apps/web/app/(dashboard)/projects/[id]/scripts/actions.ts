@@ -13,6 +13,24 @@ import { findCategory, categoryGuidance, type ProductCategoryId } from '@/lib/ca
 
 const GEN_COST_CREDITS = 1;
 
+// V2: rich payload stored in Script.rawJson — the original LLM scripts plus
+// the strategy + hook options + score breakdown + the regen flag. Keeping
+// this in JSON rather than adding 12 more columns lets the strategy block
+// evolve without future migrations.
+function buildScriptRawJson(s: GeneratedScript): Record<string, unknown> {
+  return {
+    raw: s.raw,
+    creativeStrategy: s.creativeStrategy,
+    hookOptions: s.hookOptions,
+    selectedHook: s.selectedHook,
+    hookReason: s.hookReason,
+    qualityScore: s.qualityScore,
+    framework: s.framework,
+    regenerated: s.regenerated,
+    schemaVersion: 2,
+  };
+}
+
 export type GenerateState =
   | { error?: string; needsCredits?: boolean }
   | undefined;
@@ -106,16 +124,23 @@ export async function generateScriptsAction(
         data: {
           projectId,
           angle: s.angle as ScriptAngle,
-          hook: s.hook,
+          framework: s.framework,
+          hook: s.selectedHook,
+          selectedHookReason: s.hookReason,
+          qualityScoreOverall: s.qualityScore.overall,
           cta: s.cta,
           targetAudience: s.targetAudience,
           estimatedDurationSeconds: s.estimatedDurationSeconds,
-          rawJson: s.raw as unknown as object,
+          rawJson: buildScriptRawJson(s) as object,
           scenes: {
             create: s.scenes.map((sc) => ({
               sceneOrder: sc.sceneOrder,
+              sceneGoal: sc.sceneGoal,
               textHebrew: sc.textHebrew,
+              onScreenCaptionHebrew: sc.onScreenCaptionHebrew || null,
               visualPromptEnglish: sc.visualPromptEnglish,
+              cameraDirection: sc.cameraDirection || null,
+              performanceNote: sc.performanceNote || null,
               durationSeconds: sc.durationSeconds,
               sceneType: sc.sceneType as SceneType,
             })),
