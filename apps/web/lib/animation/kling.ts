@@ -194,30 +194,63 @@ class KlingProvider implements VideoGenerationProvider {
     const endpoint =
       process.env.KLING_IMAGE_TO_VIDEO_ENDPOINT ?? DEFAULT_I2V_ENDPOINT;
     const model = process.env.KLING_IMAGE_TO_VIDEO_MODEL ?? DEFAULT_I2V_MODEL;
-    const imagePayload = await imageToPayload(input.imageUrl);
+    const omni = isOmniEndpoint(endpoint);
+
+    // Resolve all images to URLs/base64. Omni-Video accepts up to 4
+    // entries in image_list and weights the first one highest — so the
+    // primary scene image always goes first, with additional references
+    // (e.g. product photo) appended after.
+    const primary = await imageToPayload(input.imageUrl);
+    const refs = input.referenceImageUrls?.length
+      ? await Promise.all(input.referenceImageUrls.map(imageToPayload))
+      : [];
 
     // Field shape differs between the two endpoint families:
-    //   omni-video    → image_list: [{ image_url: <url|b64> }]
-    //   image2video   → image_list: [{ image: <url|b64> }]
-    // Body schemas otherwise overlap (model_name / prompt / mode /
-    // aspect_ratio / duration).
-    const body: Record<string, unknown> = isOmniEndpoint(endpoint)
-      ? {
-          model_name: model,
-          image_list: [{ image_url: imagePayload }],
-          mode: 'std',
-          prompt: input.prompt,
-          aspect_ratio: input.aspectRatio,
-          duration: String(input.durationSeconds),
-        }
-      : {
-          model_name: model,
-          image_list: [{ image: imagePayload }],
-          mode: 'std',
-          prompt: input.prompt,
-          aspect_ratio: input.aspectRatio,
-          duration: String(input.durationSeconds),
-        };
+    //   omni-video    → image_list: [{ image_url: <url|b64> }, ...]
+    //                    + supports `negative_prompt` natively
+    //   image2video   → image_list: [{ image: <url|b64> }] (single only)
+    //                    no native negative_prompt → we append "NEGATIVE: …"
+    //                    to the main prompt as a best-effort fallback
+    let body: Record<string, unknown>;
+    if (omni) {
+      const imageList = [
+        { image_url: primary },
+        ...refs.map((r) => ({ image_url: r })),
+      ];
+      body = {
+        model_name: model,
+        image_list: imageList,
+        mode: 'std',
+        prompt: input.prompt,
+        aspect_ratio: input.aspectRatio,
+        duration: String(input.durationSeconds),
+      };
+      if (input.negativePrompt && input.negativePrompt.trim().length > 0) {
+        body.negative_prompt = input.negativePrompt;
+      }
+    } else {
+      // Legacy image2video: single-image only, fold negatives into prompt.
+      const promptWithNeg =
+        input.negativePrompt && input.negativePrompt.trim().length > 0
+          ? `${input.prompt}. NEGATIVE: ${input.negativePrompt}`
+          : input.prompt;
+      body = {
+        model_name: model,
+        image_list: [{ image: primary }],
+        mode: 'std',
+        prompt: promptWithNeg,
+        aspect_ratio: input.aspectRatio,
+        duration: String(input.durationSeconds),
+      };
+    }
+
+    // Structured trace for /admin/costs debugging — what we asked Kling
+    // for, in one log line, so we can audit drift cases retrospectively.
+    console.log(
+      `[kling i2v] scene=${input.sceneId} endpoint=${endpoint} model=${model} ` +
+        `refs=${1 + refs.length} negPrompt=${!!input.negativePrompt} ` +
+        `dur=${input.durationSeconds}s ar=${input.aspectRatio}`,
+    );
 
     const res = await klingFetch<KlingCreateResponse>(
       endpoint,
@@ -448,8 +481,8 @@ const SILENT_TALKING_HEAD_TOKENS = [
 ].join(', ');
 
 // Negative prompt — forbidden artifacts that ruin lipsync downstream.
-// Concatenated to the main prompt with a leading "NEGATIVE:" tag so
-// Kling treats them as explicit don'ts.
+// On Omni-Video this is sent as `negative_prompt`; on legacy i2v it's
+// folded into the main prompt with a "NEGATIVE:" tag.
 const SILENT_TALKING_HEAD_NEGATIVES = [
   'frozen face',
   'dead eyes',
@@ -469,6 +502,44 @@ const SILENT_TALKING_HEAD_NEGATIVES = [
   'mouth covered',
   'blurry face',
   'uncanny smile',
+].join(', ');
+
+// For PRODUCT / HANDS / LIFESTYLE scenes — the most common drift mode
+// is "Kling forgets the product and zooms into the avatar's face for a
+// silent talking shot". These negatives explicitly forbid that
+// behavior; they get sent as Omni's native `negative_prompt`, which
+// Kling weights more heavily than inline "NEGATIVE:" text.
+const NON_TALKING_NEGATIVES = [
+  'face zoom',
+  'talking selfie',
+  'cropped product',
+  'product disappearing',
+  'product out of frame',
+  'mouth speaking',
+  'lips moving',
+  'mouth opening',
+  'exaggerated facial movement',
+  'face-dominant framing',
+  'ignoring product',
+  'unstable composition',
+  'avatar staring at camera',
+  'dramatic head turn',
+  'crop-in to face',
+  'losing scene context',
+].join(', ');
+
+// Anti-drift block prepended to the positive prompt for non-talking
+// scenes. Omni respects positive prompt structure strongly — repeating
+// the "do not turn this into talking selfie" intent in plain English
+// here, in addition to the negative_prompt list, gives us belt + braces.
+const NON_TALKING_GUARD = [
+  'The creator is NOT speaking to the camera',
+  'mouth stays relaxed and closed throughout the clip',
+  'do not turn this into a selfie talking shot',
+  'do not zoom into the face',
+  'preserve the prepared composition exactly as shown in the reference image',
+  'the product must remain clearly visible from start to finish',
+  'the focus is the product and the action — not facial performance',
 ].join(', ');
 
 // Motion vocabulary per scene type. The default (talking-head) used to
@@ -511,6 +582,14 @@ function pickMotionToken(
   }
 }
 
+export interface KlingMotionPrompt {
+  /** Goes into the Omni `prompt` field. */
+  positive: string;
+  /** Goes into the Omni `negative_prompt` field (or appended to prompt
+   * with a NEGATIVE: tag on the legacy endpoint). */
+  negative: string;
+}
+
 export function buildKlingMotionPrompt(input: {
   cameraDirection?: string | null;
   performanceNote?: string | null;
@@ -525,7 +604,7 @@ export function buildKlingMotionPrompt(input: {
    * vocabulary so Kling animates what's REALLY in the frame.
    */
   motionAnalysis?: import('./motion-analysis').MotionAnalysis | null;
-}): string {
+}): KlingMotionPrompt {
   const cd = (input.cameraDirection ?? '').toLowerCase();
 
   let cameraToken = 'Static camera, eye-level, gentle handheld feel';
@@ -553,9 +632,7 @@ export function buildKlingMotionPrompt(input: {
   // derived preserve/avoid hints.
   if (input.motionAnalysis) {
     const a = input.motionAnalysis;
-    // Replace generic motion with grounded primary action.
     parts[1] = `${a.primaryAction}${a.secondaryMotions.length > 0 ? ` (also: ${a.secondaryMotions.join(', ')})` : ''}`;
-    // Add scene-specific camera intent if it overrides our regex guess.
     if (a.cameraIntent && a.cameraIntent.length > 5) {
       parts[0] = `${cameraToken}. ${a.cameraIntent}`;
     }
@@ -567,12 +644,21 @@ export function buildKlingMotionPrompt(input: {
     }
   }
 
+  // Talking vs non-talking: each gets its own positive guard block AND
+  // its own negative list. Non-talking is the more common drift mode
+  // (Kling collapses product scenes into face-talking selfies), so we
+  // front-load the anti-drift guard before the camera/motion tokens.
   if (input.requiresLipSync) {
-    // For talking-head: append the speaking-performance block AND keep
-    // the analysis-derived motion (so we get both "mouth speaks" and
-    // "hand gesture as analyzed in the frame"). Negatives still apply.
     parts.push(SILENT_TALKING_HEAD_TOKENS);
-    parts.push(`NEGATIVE: ${SILENT_TALKING_HEAD_NEGATIVES}`);
+    return {
+      positive: parts.join('. ') + '.',
+      negative: SILENT_TALKING_HEAD_NEGATIVES,
+    };
   }
-  return parts.join('. ') + '.';
+  // Non-talking: prepend the anti-face-zoom guard so it leads the prompt.
+  parts.unshift(NON_TALKING_GUARD);
+  return {
+    positive: parts.join('. ') + '.',
+    negative: NON_TALKING_NEGATIVES,
+  };
 }

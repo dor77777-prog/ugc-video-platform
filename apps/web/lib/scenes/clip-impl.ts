@@ -223,6 +223,31 @@ async function generateSceneClipImplInner(
           sceneType: scene.sceneType,
         });
 
+  // ── Lipsync cap ────────────────────────────────────────────────────────
+  // UGC ads work best when only scene 1 (optionally scene 2) is talking
+  // head — the rest should be product / hands / lifestyle. Without this
+  // cap the LLM occasionally classifies later scenes as selfie_talking
+  // and we end up with 4 talking shots in a row, which (a) burns lipsync
+  // credits unnecessarily and (b) reads as a low-quality ad. We only
+  // apply the cap to AUTO-derived routing — if the user explicitly
+  // toggled "Lipsync" on the per-scene UI we honor that choice.
+  const LIPSYNC_MAX_SCENE_ORDER = 1; // scenes 1-2 (zero-indexed: 0, 1)
+  if (
+    explicitRequiresLipSync == null &&
+    routing.requiresLipSync &&
+    scene.sceneOrder > LIPSYNC_MAX_SCENE_ORDER
+  ) {
+    console.log(
+      `[clip] scene=${sceneId} order=${scene.sceneOrder} — auto-routed as ` +
+        `${routing.sceneGenerationType} but lipsync cap forces silent path ` +
+        `(only scenes 1-${LIPSYNC_MAX_SCENE_ORDER + 1} get lipsync). ` +
+        `User can override via the LipSync toggle.`,
+    );
+    routing.requiresLipSync = false;
+    routing.sceneGenerationType = 'broll';
+    routing.faceVisibility = 'partial_face';
+  }
+
   // Talking-head pipeline needs the scene's voiceUrl resolvable from the
   // public internet. If voice isn't ready or PUBLIC_BASE_URL isn't set,
   // we can still do the i2v and skip lipsync. The composer will mux the
@@ -452,6 +477,29 @@ async function generateSceneClipImplInner(
     motionAnalysis,
   });
 
+  // Multi-reference for non-talking scenes: feed Kling Omni the product
+  // photo as a SECONDARY reference alongside the prepared scene image.
+  // This is the single biggest fix for product-disappearing drift —
+  // Omni weights image_list[0] highest (the prepared frame) but uses
+  // image_list[1+] to lock identity of the secondary subject (the
+  // product). Talking-head scenes don't need this — the avatar IS the
+  // subject and adding extra refs confuses framing.
+  const productRefUrl = (() => {
+    if (routing.requiresLipSync) return null;
+    const data = scene.script.project.productData as Record<string, unknown> | null;
+    const hero = data && typeof data.heroImageUrl === 'string' ? data.heroImageUrl : null;
+    return hero || null;
+  })();
+
+  // One log line summarizing the routing decision for /admin/costs
+  // forensics. Lets us answer "why did Kling drift on this scene?"
+  // without having to re-derive the inputs.
+  console.log(
+    `[clip] scene=${sceneId} type=${routing.sceneGenerationType} ` +
+      `lipsync=${routing.requiresLipSync} productRef=${!!productRefUrl} ` +
+      `motionAnalysis=${!!motionAnalysis}`,
+  );
+
   // ── Stage 1 — silent image-to-video ────────────────────────────────────
   // Match the Kling clip length to the voice duration so the audio mux
   // doesn't have to lean on tpad (visual freeze) for normal-length
@@ -476,7 +524,9 @@ async function generateSceneClipImplInner(
   try {
     i2vResult = await klingProvider.generateImageToVideo({
       imageUrl: scene.imageUrl!, // null-checked in outer function before in-flight set
-      prompt: motionPrompt,
+      prompt: motionPrompt.positive,
+      negativePrompt: motionPrompt.negative,
+      referenceImageUrls: productRefUrl ? [productRefUrl] : undefined,
       durationSeconds: clipDuration,
       aspectRatio: '9:16',
       sceneId,
@@ -515,6 +565,11 @@ async function generateSceneClipImplInner(
     | null = null;
 
   if (needsLipSync && scene.voiceUrl) {
+    console.log(
+      `[clip] scene=${sceneId} order=${scene.sceneOrder} — entering lipsync ` +
+        `stage (provider=${process.env.LIPSYNC_PROVIDER ?? 'kling'} model=` +
+        `${process.env.KLING_LIPSYNC_MODEL ?? 'kling-lip-sync-v1'})`,
+    );
     // Save the silent clip first so we can hand a public URL to Kling.
     const silentStorage = await getStorage();
     const silentFilename = `${scene.id}-silent-${Date.now()}.mp4`;
@@ -716,7 +771,7 @@ async function generateSceneClipImplInner(
                 }
               : null,
           lipSyncSkipReason,
-          motionPrompt,
+          motionPrompt: { positive: motionPrompt.positive, negative: motionPrompt.negative },
         },
       },
     }),

@@ -24,10 +24,24 @@ export type AspectRatio = '9:16' | '1:1' | '16:9';
 export type ClipDurationSeconds = 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
 
 export interface ImageToVideoInput {
-  /** Public URL or app-relative /uploads/... path. */
+  /** Public URL or app-relative /uploads/... path. Primary scene image. */
   imageUrl: string;
   /** Free-text motion direction (camera + subtle action). */
   prompt: string;
+  /**
+   * Negative prompt — explicit don'ts. On Omni-Video this is sent as the
+   * native `negative_prompt` field; on legacy image2video it's appended to
+   * `prompt` with a "NEGATIVE:" tag (best-effort, weaker enforcement).
+   */
+  negativePrompt?: string;
+  /**
+   * Additional reference images (e.g. the product photo for a product-demo
+   * scene). Sent to Omni-Video as extra entries in `image_list` so Kling
+   * preserves the product's identity. Ignored on the legacy image2video
+   * endpoint (single-image only). Order matters: refs should be listed
+   * after `imageUrl` since Kling weights the first entry highest.
+   */
+  referenceImageUrls?: string[];
   /** Clip length in seconds (3-10; Kling supports the broader range too). */
   durationSeconds: ClipDurationSeconds;
   aspectRatio: AspectRatio;
