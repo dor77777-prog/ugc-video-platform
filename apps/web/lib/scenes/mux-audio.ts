@@ -113,3 +113,47 @@ export async function readUrlAsBuffer(url: string): Promise<Buffer> {
   if (!res.ok) throw new MuxError(`Failed to fetch ${url}: HTTP ${res.status}`);
   return Buffer.from(await res.arrayBuffer());
 }
+
+// Measure a media file's actual duration in seconds via ffprobe. Used
+// after Kling Lip-Sync to verify the output isn't truncated relative
+// to the input voice MP3 — Kling occasionally returns a clip that's
+// SHORTER than the voice, which manifests as "speech ends mid-word
+// even though the system showed clip ≥ voice".
+export async function probeDurationSeconds(bytes: Buffer): Promise<number> {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'tachles-probe-'));
+  try {
+    const filePath = path.join(tmp, 'media');
+    await fs.writeFile(filePath, bytes);
+    const out = await new Promise<string>((resolve, reject) => {
+      const p = spawn('ffprobe', [
+        '-v',
+        'error',
+        '-show_entries',
+        'format=duration',
+        '-of',
+        'default=noprint_wrappers=1:nokey=1',
+        filePath,
+      ]);
+      let stdout = '';
+      let stderr = '';
+      p.stdout.on('data', (d) => (stdout += d.toString()));
+      p.stderr.on('data', (d) => (stderr += d.toString()));
+      p.on('error', (err) => reject(new MuxError(`ffprobe spawn: ${err.message}`)));
+      p.on('close', (code) => {
+        if (code === 0) resolve(stdout.trim());
+        else reject(new MuxError(`ffprobe exited ${code}: ${stderr.slice(-200)}`));
+      });
+    });
+    const seconds = parseFloat(out);
+    if (!Number.isFinite(seconds)) {
+      throw new MuxError(`ffprobe returned non-numeric duration: "${out}"`);
+    }
+    return seconds;
+  } finally {
+    try {
+      await fs.rm(tmp, { recursive: true, force: true });
+    } catch {
+      /* best-effort */
+    }
+  }
+}

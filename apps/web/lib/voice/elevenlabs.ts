@@ -31,6 +31,7 @@
 // stability.
 
 import { LlmConfigError } from '../llm/scripts';
+import { probeDurationSeconds } from '../scenes/mux-audio';
 
 const ELEVENLABS_API_BASE = 'https://api.elevenlabs.io/v1';
 const SINGLE_CALL_TIMEOUT_MS = 90_000; // 5s of audio rarely takes >30s
@@ -134,12 +135,35 @@ export async function generateHebrewVoiceover(
 
   const arrayBuffer = await res.arrayBuffer();
   const audioBytes = Buffer.from(arrayBuffer);
-  // ElevenLabs's REST endpoint doesn't return audio metadata; estimate from
-  // text length. Hebrew at natural pace ≈ 14 chars/sec including spaces.
-  // The estimate is good enough for credit/cost display; the actual MP3
-  // duration is read from the file later by ffprobe (or skipped — not
-  // critical for the UI).
-  const durationSeconds = Math.max(2, Math.min(20, input.text.length / 14));
+  // CRITICAL — measure the REAL MP3 duration via ffprobe instead of
+  // estimating from text length.
+  //
+  // The old `text.length / 14` heuristic was wrong by 30-50% for the
+  // calmer voices (Loulou / Azu / Saanu / Monika Sogam): they speak
+  // slower than the average 14 chars/s, so a 100-char line that the
+  // estimate said was 7.1s actually came back as a 9.5s MP3. Downstream
+  // pickClipDuration sized the Kling i2v silent clip for the WRONG
+  // duration (8s when it should have been 10s); Kling Lip-Sync v1's
+  // audio2video mode then truncated the speech mid-word at the i2v
+  // boundary. From the user's POV the clip "cut off in the middle of
+  // a sentence" even though the dashboard showed clip ≥ voice (it WAS
+  // ≥ the *estimate* — just not ≥ reality).
+  //
+  // Probing via ffprobe adds ~50-150ms per voice generation but
+  // eliminates the entire class of "speech truncated by lipsync" bugs
+  // because every downstream consumer now reads the true duration.
+  let durationSeconds: number;
+  try {
+    durationSeconds = await probeDurationSeconds(audioBytes);
+  } catch (err) {
+    // ffprobe failure is non-fatal — fall back to the rough estimate
+    // so the credit display still has a number. Log so we notice.
+    console.warn(
+      `[elevenlabs] ffprobe failed on generated MP3 — falling back to text-length estimate:`,
+      (err as Error).message,
+    );
+    durationSeconds = Math.max(2, Math.min(20, input.text.length / 14));
+  }
 
   return {
     audioBytes,
