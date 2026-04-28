@@ -634,13 +634,26 @@ export function SceneClipCard(props: SceneClipCardProps) {
           {props.textHebrew}
         </div>
 
-        {/* Clip preview area — takes priority when present */}
+        {/* Clip preview area — takes priority when present. During regen
+            we KEEP the existing clip visible and overlay a small badge
+            so the user can still play/preview the old result while the
+            new one renders. (Replacing the player with a spinner during
+            a 2-3 minute regen kills the workflow.) */}
         {hasClip ? (
-          <VideoPreview
-            src={effectiveClipUrl!}
-            poster={props.imageUrl ?? undefined}
-            durationSeconds={props.clipDurationSeconds ?? null}
-          />
+          <div className="relative">
+            <VideoPreview
+              src={effectiveClipUrl!}
+              poster={props.imageUrl ?? undefined}
+              durationSeconds={props.clipDurationSeconds ?? null}
+            />
+            {showClipWorking && (
+              <div className="absolute top-2 right-2 rounded-md bg-black/70 text-white text-[11px] px-2 py-1 flex items-center gap-1.5 shadow-lg">
+                <span className="animate-pulse">🎬</span>
+                <span>מנפיש מחדש…</span>
+                <ElapsedTimer keyValue={props.sceneId + props.clipGenerationCount} />
+              </div>
+            )}
+          </div>
         ) : (
           /* Fallback: scene image (or empty state) */
           <div className="relative aspect-[9/16] rounded-md overflow-hidden bg-muted border border-border">
@@ -676,28 +689,40 @@ export function SceneClipCard(props: SceneClipCardProps) {
           </div>
         )}
 
-        {/* Voice row */}
+        {/* Voice row — keep the existing audio playable during a regen so
+            the user can A/B compare. A small "regenerating" badge sits on
+            top of the player; the spinner-only view is only used when
+            there's NO existing voice yet (first generation). */}
         <div className="space-y-2">
-          {hasVoice && !showVoiceWorking ? (
+          {hasVoice ? (
             <>
-              <AudioPreview
-                src={effectiveVoiceUrl!}
-                durationSeconds={props.voiceDurationSeconds ?? null}
-              />
+              <div className="relative">
+                <AudioPreview
+                  src={effectiveVoiceUrl!}
+                  durationSeconds={props.voiceDurationSeconds ?? null}
+                />
+                {showVoiceWorking && (
+                  <div className="absolute top-1 right-1 rounded bg-primary/90 text-primary-foreground text-[10px] px-1.5 py-0.5 flex items-center gap-1 shadow-sm">
+                    <span className="animate-pulse">🎙️</span>
+                    <span>מתחדש…</span>
+                    <ElapsedTimer keyValue={props.sceneId + props.voiceGenerationCount} />
+                  </div>
+                )}
+              </div>
               <form action={voiceFormAction}>
                 <Button
                   type="submit"
                   size="sm"
                   variant="outline"
                   className="w-full"
-                  disabled={!canGenerateVoice}
+                  disabled={!canGenerateVoice || showVoiceWorking}
                   title={
                     !props.voiceSelected
                       ? 'בחר קול בראש העמוד לפני שמרגנרים voice-over'
                       : 'יוצר voice חדש לפי הקול הנוכחי שנבחר ב-VoicePicker'
                   }
                 >
-                  ↻ צור voice-over מחדש
+                  {showVoiceWorking ? 'מתחדש…' : '↻ צור voice-over מחדש'}
                 </Button>
               </form>
             </>

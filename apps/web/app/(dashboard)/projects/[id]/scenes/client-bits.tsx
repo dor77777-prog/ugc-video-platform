@@ -419,7 +419,9 @@ export function SceneCard(props: SceneCardProps) {
               <span className="text-xs text-muted-foreground">תמונה עדיין לא נוצרה</span>
             </div>
           )}
-          {showGeneratingOverlay && (
+          {showGeneratingOverlay && !hasImage && (
+            // First-time generation: full overlay with progress (no image
+            // exists yet to keep visible).
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-center p-4 bg-primary/5 backdrop-blur-[1px]">
               <div className="text-4xl animate-shimmer-overlay">✨</div>
               <div className="text-sm font-semibold">ה-AI יוצר תמונה…</div>
@@ -433,6 +435,16 @@ export function SceneCard(props: SceneCardProps) {
               <div className="text-[10px] text-muted-foreground/70 max-w-[80%]">
                 gpt-image-2 בדרך כלל 40–70 שניות עם תמונות רפרנס.
               </div>
+            </div>
+          )}
+          {showGeneratingOverlay && hasImage && (
+            // Regen: keep the existing image fully visible — just a small
+            // corner badge so the user can still see what they're
+            // replacing while the new one renders.
+            <div className="absolute top-2 right-2 rounded-md bg-black/70 text-white text-[11px] px-2 py-1 flex items-center gap-1.5 shadow-lg">
+              <span className="animate-pulse">✨</span>
+              <span>מתחדשת…</span>
+              <ElapsedTimer keyValue={props.sceneId + props.imageGenerationCount} />
             </div>
           )}
         </div>
