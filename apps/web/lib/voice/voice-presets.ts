@@ -161,6 +161,32 @@ export const VOICE_PRESETS: VoicePreset[] = [
     sampleUrl: '/api/voice/sample/vnewfQdVVk9Y9DZWVRNm',
     description: 'רגועה ומלוטשת. מתאים למדיטציה, שינה, קוסמטיקה טבעית.',
   },
+  // ── Female · Mature voices ────────────────────────────────────────────
+  // Older / wiser timbres for product categories where authority +
+  // life experience helps (parenting, supplements, finance, wellness).
+  // Multilingual v2 handles the Hebrew character even though the source
+  // voices are tagged with non-Hebrew accents — same as the rest of
+  // this list.
+  {
+    id: 'loulou_narrator',
+    displayName: 'Loulou — Social Media Narrator',
+    voiceId: '1T2MOlQA0Xp3hNv1dBxp',
+    gender: 'female',
+    ageRange: '50+',
+    energy: 'warm',
+    sampleUrl: '/api/voice/sample/1T2MOlQA0Xp3hNv1dBxp',
+    description: 'אישה בוגרת, חמה ואותנטית. מתאים להמלצות אישיות, סיפורי אמא/דודה, פרודוקטים להורים.',
+  },
+  {
+    id: 'azu_soft_melodic',
+    displayName: 'Azu — Calm, Soft and Melodic',
+    voiceId: 'D3ws14YxTqcjPaXEOehR',
+    gender: 'female',
+    ageRange: '50+',
+    energy: 'calm',
+    sampleUrl: '/api/voice/sample/D3ws14YxTqcjPaXEOehR',
+    description: 'רכה, איטית ומחושבת. מתאים לסיפורים אינטימיים, וולנס, supplements, מותגים בוגרים.',
+  },
   // ── Male · UGC creators ────────────────────────────────────────────────
   {
     id: 'brad_indoor_ugc',
