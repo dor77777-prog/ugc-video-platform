@@ -76,39 +76,29 @@ export const ffmpegCompositionProvider: CompositionProvider & {
         localPaths.push(dest);
       }
 
-      // 2. Build a concat-demuxer list file.
-      const listPath = path.join(tmpRoot, 'concat.txt');
-      await fs.writeFile(
-        listPath,
-        localPaths.map((p) => `file '${p.replace(/'/g, "'\\''")}'`).join('\n'),
-        'utf8',
-      );
-
-      // 3. Build the ASS captions file.
+      // 2. Build the ASS captions file (always — cheap; we only apply
+      //    it conditionally to the final video filter chain).
       const assPath = path.join(tmpRoot, 'captions.ass');
       await fs.writeFile(assPath, buildAssFile(scenes), 'utf8');
 
-      // 4. Run ffmpeg.
-      const concatOnly = path.join(tmpRoot, 'concat.mp4');
-      await runFfmpeg(
-        [
-          '-y',
-          '-f',
-          'concat',
-          '-safe',
-          '0',
-          '-i',
-          listPath,
-          '-c',
-          'copy',
-          concatOnly,
-        ],
-      );
-
-      // Burn the captions in (re-encode required for subtitle filter).
-      // If musicUrl is set + the file exists, mix it in at -18 dB under
-      // the voice track. The voice stays the dominant audio; music only
-      // adds atmosphere.
+      // 3. Run a SINGLE ffmpeg pass that concatenates + re-encodes +
+      //    optionally burns captions and mixes music.
+      //
+      // Why not the previous two-pass concat-demuxer + re-encode?
+      // The concat demuxer with `-c copy` requires every input clip to
+      // have byte-identical codec parameters (SAR, framerate, GOP,
+      // profile, audio sample rate, pixel format). When even ONE clip
+      // differs — e.g. mux-audio's tpad reset the timebase, or AAC
+      // picked a different profile — the demuxer produces a corrupted
+      // boundary that plays back as "freeze on the bad frame, then
+      // half-second loop for the rest of the video". The second pass
+      // then re-encodes the corruption verbatim.
+      //
+      // The concat FILTER (not demuxer) decodes every input first and
+      // operates on raw frames, so codec/SAR/framerate mismatches are
+      // resolved by the per-stream normalization filters below
+      // (fps=30, setsar=1, format=yuv420p, aresample=44100). One pass,
+      // one re-encode, no corrupted boundaries.
       const finalLocal = path.join(tmpRoot, 'final.mp4');
 
       // Resolve a local music path if the URL is /uploads/... or /music/...
@@ -131,27 +121,51 @@ export const ffmpegCompositionProvider: CompositionProvider & {
         ? `ass=${assPath.replace(/:/g, '\\:').replace(/'/g, "'\\''")}`
         : null;
 
-      // Build args dynamically: video filter only when captions on, music
-      // mix only when track present. Skipping both → simple re-encode
-      // (still needed because concat-copy is per-stream and we may have
-      // mixed codecs across input clips). The only non-negotiable cost
-      // is the AAC re-encode for the final container.
-      const args: string[] = ['-y', '-i', concatOnly];
+      // Build the filter graph dynamically.
+      //   - One -i per scene clip + optional music input at the end.
+      //   - Per-input normalization (vN: fps + setsar + yuv420p; aN:
+      //     aresample + stereo) so concat sees uniform streams.
+      //   - concat=n=N:v=1:a=1[vcat][acat] does the actual stitching.
+      //   - Optional captions filter on [vcat] → [vout].
+      //   - Optional music mix on [acat] + music input → [aout].
+      const N = localPaths.length;
+      const filterParts: string[] = [];
+      const concatPairs: string[] = [];
+      for (let i = 0; i < N; i++) {
+        // 9:16 UGC clips from Kling are 720×1280 / 30fps / yuv420p, but
+        // we don't trust that — explicit normalization is cheap (~1ms
+        // per frame on libx264 at preset=fast) and the safety net is
+        // worth it.
+        filterParts.push(`[${i}:v]fps=30,setsar=1,format=yuv420p[v${i}]`);
+        filterParts.push(`[${i}:a]aresample=44100,aformat=channel_layouts=stereo[a${i}]`);
+        concatPairs.push(`[v${i}][a${i}]`);
+      }
+      filterParts.push(`${concatPairs.join('')}concat=n=${N}:v=1:a=1[vcat][acat]`);
+
+      let videoOut = '[vcat]';
+      let audioOut = '[acat]';
+
+      if (escAss) {
+        filterParts.push(`${videoOut}${escAss}[vout]`);
+        videoOut = '[vout]';
+      }
+
+      if (musicLocalPath) {
+        // Music input lives at index N (after all the scene clips).
+        filterParts.push(`[${N}:a]volume=-18dB[bg]`);
+        filterParts.push(`${audioOut}[bg]amix=inputs=2:duration=first:dropout_transition=2[aout]`);
+        audioOut = '[aout]';
+      }
+
+      const args: string[] = ['-y'];
+      for (const p of localPaths) {
+        args.push('-i', p);
+      }
       if (musicLocalPath) {
         args.push('-stream_loop', '-1', '-i', musicLocalPath);
       }
-      if (musicLocalPath) {
-        args.push(
-          '-filter_complex',
-          // 0:a = voice (from concat), 1:a = music looped. Music -18 dB.
-          '[1:a]volume=-18dB[bg];[0:a][bg]amix=inputs=2:duration=first:dropout_transition=2[aout]',
-          '-map', '0:v',
-          '-map', '[aout]',
-        );
-      }
-      if (escAss) {
-        args.push('-vf', escAss);
-      }
+      args.push('-filter_complex', filterParts.join(';'));
+      args.push('-map', videoOut, '-map', audioOut);
       args.push(
         '-c:v', 'libx264',
         '-preset', 'fast',
@@ -160,6 +174,9 @@ export const ffmpegCompositionProvider: CompositionProvider & {
         '-b:a', '192k',
         '-movflags', '+faststart',
       );
+      // -shortest is only needed when music is mixed in (music loops
+      // forever; we want to cut at the voice track end). Without music
+      // the concat filter already controls the duration via [acat].
       if (musicLocalPath) args.push('-shortest');
       args.push(finalLocal);
 
