@@ -49,8 +49,8 @@ export default function NewProjectWizard() {
   const [additionalImages, setAdditionalImages] = useState<string[]>([]);
   const [aspectRatio, setAspectRatio] = useState<'9:16' | '1:1' | '16:9'>('9:16');
   const [durationSeconds, setDurationSeconds] = useState(15);
-  const [backgroundMusic, setBackgroundMusic] = useState(true);
-  const [captions, setCaptions] = useState(true);
+  const [backgroundMusic, setBackgroundMusic] = useState(false);
+  const [captions, setCaptions] = useState(false);
   const [category, setCategory] = useState<ProductCategoryId>('other');
 
   const handleExtract = async () => {

@@ -224,6 +224,13 @@ class KlingProvider implements VideoGenerationProvider {
         prompt: input.prompt,
         aspect_ratio: input.aspectRatio,
         duration: String(input.durationSeconds),
+        // CRITICAL: Omni-Video defaults to GENERATING ambient sound
+        // (steam hisses, hand-on-bottle clinks, room tone). For our
+        // pipeline that sound layers UNDER the ElevenLabs Hebrew voice
+        // and ruins the mix, OR — for silent scenes that have no voice
+        // mux — bleeds straight through to the final video. Kill it
+        // at the source.
+        sound: false,
       };
       if (input.negativePrompt && input.negativePrompt.trim().length > 0) {
         body.negative_prompt = input.negativePrompt;

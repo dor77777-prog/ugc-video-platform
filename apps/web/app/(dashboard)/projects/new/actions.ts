@@ -16,8 +16,11 @@ const inputSchema = z.object({
   additionalImages: z.array(z.string().url()).default([]),
   aspectRatio: z.enum(['9:16', '1:1', '16:9']).default('9:16'),
   durationSeconds: z.coerce.number().int().min(5).max(120).default(15),
-  backgroundMusic: z.boolean().default(true),
-  captions: z.boolean().default(true),
+  // Both default OFF — bg music library hasn't been curated and the
+  // Hebrew RTL caption styling isn't production-ready. Wizard form
+  // mirrors these defaults. Will flip to true once both are fixed.
+  backgroundMusic: z.boolean().default(false),
+  captions: z.boolean().default(false),
   category: z.string().default('other'),
   // Raw scraper output preserved verbatim for audit / regeneration.
   rawScrape: z.unknown().optional(),

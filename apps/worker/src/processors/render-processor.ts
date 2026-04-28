@@ -48,7 +48,6 @@ export async function processRenderJob(job: Job<RenderJobPayload>) {
 
     // Step 2 — composition (concat + optional captions/music).
     await advance(renderJobId, RenderJobStatus.composing_video, 50, job);
-    const productData = (renderJob.project.productData as Record<string, unknown> | null) ?? {};
 
     // Music is OFF by default — the auto-default track sounded bad and
     // burned a free-music library hasn't been curated yet. The toggle
@@ -58,13 +57,17 @@ export async function processRenderJob(job: Job<RenderJobPayload>) {
     //   and a picker in Step 1, then re-enable here.
     const musicUrl: string | null = null;
 
-    // Captions are OFF by default — burned ASS overlay didn't look good
-    // for Hebrew at our typeface/size. The toggle in Step 1 (productData.captions)
-    // can re-enable per project once the styling is acceptable. For now,
-    // viewers hear the voice — the ad still works without captions.
+    // Captions are HARD-DISABLED until the Hebrew RTL styling is
+    // production-ready — the burned ASS overlay looked worse than no
+    // captions at all. The Step-1 toggle (productData.captions) and
+    // the buildAssFile pipeline are kept intact so we can re-enable
+    // with one line once the typography is fixed. Until then we ignore
+    // the per-project flag entirely. Many existing projects were
+    // created with the old default of true, which would otherwise
+    // burn captions silently — explicit override is safer.
     // TODO(captions): word-by-word sync via ElevenLabs character timestamps
     //   + better RTL bidi + outline + fade-in/out.
-    const enableCaptions = productData.captions === true; // default false
+    const enableCaptions = false;
 
     const composition = await ffmpegCompositionProvider.compose({
       avatarVideoUrl: '', // unused in the new flow
