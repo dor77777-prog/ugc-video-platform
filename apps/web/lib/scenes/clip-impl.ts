@@ -72,10 +72,22 @@ function pickClipDuration(
   // user who picked "15s total" gets ~3s scenes, not stretched 5s ones.
   // We still take max(scripted, voice+margin) — never cut off speech.
   const target = Math.max(v + 0.5, scriptedDurationSeconds ?? 0, 3);
-  // Snap to nearest valid Kling duration.
-  const allowed: import('@/lib/animation/types').ClipDurationSeconds[] = requiresLipSync
-    ? [3, 4, 5, 6] // talking-head ceiling
-    : [3, 4, 5, 6, 7, 8, 9, 10];
+  // CRITICAL — DO NOT cap talking-head at 6s.
+  // Kling Lip-Sync v1's OUTPUT duration = INPUT VIDEO duration. If the
+  // voice MP3 is 7.5s and we feed Lip-Sync a 6s silent clip, the audio
+  // gets truncated mid-word inside the synced output. The user sees
+  // "speech ended mid-sentence even though clip duration ≥ voice
+  // duration" because clipDurationSeconds is set to the lipsync output
+  // (6s) — but the ORIGINAL voice was 7.5s.
+  //
+  // Both talking-head and b-roll now span the full Kling enum [3..10].
+  // The aesthetic preference for short talking shots is now enforced
+  // upstream by the per-mode word budgets (15s mode: ≤50 words total,
+  // 30s mode: ≤110), not by silently chopping audio at clip-pick time.
+  const allowed: import('@/lib/animation/types').ClipDurationSeconds[] = [
+    3, 4, 5, 6, 7, 8, 9, 10,
+  ];
+  void requiresLipSync;
   for (const d of allowed) {
     if (d >= target) return d;
   }
