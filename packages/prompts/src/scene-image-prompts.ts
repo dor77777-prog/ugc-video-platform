@@ -26,10 +26,18 @@ export interface SceneImagePromptInput {
   productPresent?: boolean;
 }
 
+// Camera/lens specs are added up-front so gpt-image-2 commits to a phone-camera
+// aesthetic before reading the brief — pattern lifted from awesome-gpt-image-2
+// "High-Fidelity Fashion Photography" (No.8): aspect, focal length, aperture,
+// grain, depth — all stated in one sentence so the model doesn't drift to
+// "stock photo" / "ad banner" looks.
 const ASPECT_OPENER: Record<SceneImagePromptInput['aspectRatio'], string> = {
-  '9:16': 'A realistic vertical smartphone photo',
-  '1:1': 'A realistic square smartphone photo',
-  '16:9': 'A realistic horizontal cinematic photo',
+  '9:16':
+    'Raw high-fidelity vertical phone photo, 9:16, eye-level, ~35mm equivalent, f/4, sharp subject, natural depth, authentic phone-camera grain',
+  '1:1':
+    'Raw high-fidelity square phone photo, 1:1, eye-level, ~35mm equivalent, f/4, sharp subject, natural depth, authentic phone-camera grain',
+  '16:9':
+    'Raw high-fidelity horizontal cinematic photo, 16:9, eye-level, ~35mm equivalent, f/2.8, sharp subject, natural depth, subtle film grain',
 };
 
 // Detect framing cues in the LLM-written brief and add an explicit composition
@@ -40,7 +48,7 @@ function detectFramingHint(brief: string): string | null {
     return 'Framing: MIRROR SELFIE — the person stands in front of a mirror and holds their phone at chest height, arm slightly extended; the phone is clearly visible in their hand; the view is the reflection (we see them looking at the mirror with the phone visible).';
   }
   if (/\bselfie\b/i.test(brief)) {
-    return "Framing: SELFIE — the person holds their phone at arm's length with the camera pointed at themselves; the phone-holding arm is visible at the edge of the frame; eye contact with the camera, slight upward angle.";
+    return "Framing: SELFIE — the person holds their phone at arm's length with a slight upward angle; the phone-holding arm is clearly visible at the bottom-right edge of the frame; mild wide-angle phone-camera distortion (the closer hand and forehead read slightly larger); direct eye contact with the lens; candid casual energy.";
   }
   if (/(\bpov\b|point of view|close[- ]up of (my|her|his) hands?)/i.test(brief)) {
     return "Framing: first-person POV — camera held by the person, looking down at their own hands and the action; we don't see the person's face, we see what they see.";
@@ -69,8 +77,9 @@ export function buildScenePrompt(input: SceneImagePromptInput): string {
       framingHint ?? '',
       ``,
       `IDENTITY LOCK (most important):`,
-      `- Use Image 1 as the ground truth for the person — same face, eyes, skin tone, hair color, hair style, age.`,
-      `- If the scene description above mentions any character traits (age, gender, hair color, skin tone), IGNORE them. Image 1 is the only source of truth.`,
+      `- Use Image 1 as the ground truth for the person. Preserve ALL facial features: eye shape, eye color, brow shape and density, nose shape, mouth shape, jawline, cheekbones, hairline, hair density, hair color, exact hairstyle, skin tone, and apparent age.`,
+      `- Bio-fidelity skin: visible pores, vellus hair, real hydration, refined natural highlights — do NOT smooth, retouch, or airbrush.`,
+      `- If the scene description above mentions any character traits (age, gender, ethnicity, hair color, skin tone), IGNORE them. Image 1 is the only source of truth.`,
       `- Do NOT generate a different person.`,
       ``,
       productPresent

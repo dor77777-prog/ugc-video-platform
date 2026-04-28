@@ -5,7 +5,7 @@
 // (unlike real-people stock photos, where its safety policies cause drift).
 
 export type AvatarGender = 'male' | 'female';
-export type AvatarAgeRange = '20-25' | '25-30' | '30-40' | '40-50' | '50+';
+export type AvatarAgeRange = '18-20' | '20-25' | '25-30' | '30-40' | '40-50' | '50+';
 export type AvatarStyle = 'casual' | 'sporty' | 'professional' | 'lifestyle';
 
 export interface AvatarProfile {
@@ -41,6 +41,20 @@ export const AVATAR_CATALOG: AvatarProfile[] = [
   { id: 'avi', name: 'אבי', gender: 'male', ageRange: '30-40', style: 'casual', region: 'Ramat Gan', imageUrl: local('avi') },
   { id: 'gil', name: 'גיל', gender: 'male', ageRange: '40-50', style: 'professional', region: 'Tel Aviv', imageUrl: local('gil') },
   { id: 'moshe', name: 'משה', gender: 'male', ageRange: '50+', style: 'lifestyle', region: 'Jerusalem', imageUrl: local('moshe') },
+
+  // ── New diverse Israeli additions ──────────────────────────────────────────
+  // Female · 18-30
+  { id: 'yael', name: 'יעל', gender: 'female', ageRange: '18-20', style: 'casual', region: 'Be\'er Sheva', imageUrl: local('yael') },
+  { id: 'adi', name: 'עדי', gender: 'female', ageRange: '20-25', style: 'sporty', region: 'Tel Aviv', imageUrl: local('adi') },
+  { id: 'inbar', name: 'ענבר', gender: 'female', ageRange: '20-25', style: 'lifestyle', region: 'Tel Aviv', imageUrl: local('inbar') },
+  { id: 'avigail', name: 'אביגיל', gender: 'female', ageRange: '25-30', style: 'professional', region: 'Modi\'in', imageUrl: local('avigail') },
+  // Female · 30-50
+  { id: 'sapir', name: 'ספיר', gender: 'female', ageRange: '30-40', style: 'casual', region: 'Tel Aviv', imageUrl: local('sapir') },
+  { id: 'hila', name: 'הילה', gender: 'female', ageRange: '40-50', style: 'lifestyle', region: 'Galilee', imageUrl: local('hila') },
+  // Male · 18-50
+  { id: 'tomer', name: 'תומר', gender: 'male', ageRange: '18-20', style: 'casual', region: 'Eilat', imageUrl: local('tomer') },
+  { id: 'itay', name: 'איתי', gender: 'male', ageRange: '30-40', style: 'casual', region: 'Haifa', imageUrl: local('itay') },
+  { id: 'yosef', name: 'יוסף', gender: 'male', ageRange: '50+', style: 'lifestyle', region: 'Jerusalem', imageUrl: local('yosef') },
 ];
 
 export function findAvatar(id: string | null | undefined): AvatarProfile | null {
@@ -57,6 +71,7 @@ export function describeAvatar(a: AvatarProfile): string {
 
 function ageDescriptor(r: AvatarAgeRange): string {
   switch (r) {
+    case '18-20': return 'late-teens';
     case '20-25': return 'early-twenties';
     case '25-30': return 'late-twenties';
     case '30-40': return 'thirties';
@@ -67,4 +82,4 @@ function ageDescriptor(r: AvatarAgeRange): string {
 
 // Filter helpers used by the UI.
 export const ALL_GENDERS: AvatarGender[] = ['female', 'male'];
-export const ALL_AGE_RANGES: AvatarAgeRange[] = ['20-25', '25-30', '30-40', '40-50', '50+'];
+export const ALL_AGE_RANGES: AvatarAgeRange[] = ['18-20', '20-25', '25-30', '30-40', '40-50', '50+'];

@@ -123,6 +123,8 @@ visual_prompt_english — חוק חדש וחשוב
 - "messy real-life Tuesday morning"
 - "golden-hour kitchen counter glow"
 - "documentary-style candid"
+- "iPhone-camera realism, authentic phone grain, mild wide-angle distortion"
+- "natural skin micro-detail (pores, vellus hair, no airbrush)"
 
 ═══════════════════════════════════════════
 דוגמאות לויזואל פרומפט מצוין (סגנון מומלץ — אל תעתיק מילה במילה)

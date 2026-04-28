@@ -1,6 +1,6 @@
 # tachles · STATUS
 
-מסמך חי — מה מומש, מה בעבודה, מה חסר. התעדכן בקומיט הזה (2026-04-28).
+מסמך חי — מה מומש, מה בעבודה, מה חסר. **עדכון אחרון: 2026-04-28** (אחרי הרחבת קטלוג האווטארים ל-25 דמויות + שיפורי פרומפטים מבוססי `awesome-gpt-image-2`).
 
 נקרא כך:
 - ✅ מומש ועובד
@@ -8,6 +8,8 @@
 - ⏳ מתוכנן בקומיט הבא או הקרוב
 - ❌ עוד לא התחיל / out-of-scope לעכשיו
 - 👤 ממתין למידע ממך
+
+> **תמונת מצב גבוהה (אפריל 2026):** שלבים 1-4 של ה-Wizard (מוצר → אווטאר → תסריט → תמונות סצנה) **חיים, אמיתיים, בלי מוקים**, עם OpenAI אמיתי. השלבים שעוד מוקים/חסרים: **5 קריינות, 6 וידאו לסצנה, 7 הרכבה סופית**. הצינור (BullMQ + Worker) קיים ועובד עם providers מוקיים — מוכן להחליף את כל אחד בנפרד עם ספק אמיתי.
 
 ---
 
@@ -96,12 +98,20 @@
 
 | נושא | סטטוס |
 |------|--------|
-| גריד עם 16 אווטארים | 🟡 placeholders (randomuser.me) |
-| **קטלוג מותאם של דמויות אמיתיות עם שמות/גילאים** | 👤 ממתין לרשימה ממך |
-| פילטרים: מגדר, טווח גיל | ✅ |
-| בחירה ושמירה | ✅ |
+| גריד עם **25 אווטארי AI ישראליים** (16 מקוריים + 9 חדשים מגוונים) | ✅ |
+| ייצור חד-פעמי ע״י gpt-image-2 (`scripts/generate-avatar-portraits.ts`, idempotent) | ✅ |
+| קבצי PNG ב-`apps/web/public/avatars/{id}.png` (1024×1536) | ✅ |
+| גיוון: מזרחי, תימני, אתיופי, רוסי, אשכנזי, דתי-לאומי (מטפחת), חילוני | ✅ |
+| גיוון אזורי: ת״א, חיפה, ירושלים, רמת גן, מודיעין, באר שבע, אילת, גליל | ✅ |
+| גיוון גילאי: 18-58, כולל טווח חדש `18-20` | ✅ |
+| גיוון סגנון: casual / sporty / professional / lifestyle | ✅ |
+| פרומפטים אישיים מבוססי `awesome-gpt-image-2` (lens specs, bio-fidelity skin) | ✅ |
+| פילטרים בממשק: מגדר, טווח גיל | ✅ |
+| בחירה ושמירה (`Project.productData.selectedAvatarId`) | ✅ |
+| Avatar הוא ה-single source of truth לזהות בכל הסצנות (Image 1) | ✅ |
 | העלאת אווטאר ידני (custom upload) | ❌ |
 | HeyGen integration (קטלוג מקצועי) | ❌ |
+| Avatar model נפרד ב-DB (כרגע ב-JSON של Project) | ❌ (לא קריטי) |
 
 ### 5.3 שלב 3 · תסריט (`/projects/[id]/scripts`)
 
@@ -112,8 +122,13 @@
 | System prompt חזק עם דוגמאות hooks אמיתיים בעברית + עצירת קלישאות | ✅ |
 | כללי TTS (מספרים במילים, ללא קיצורים אנגליים, ללא אימוג'ים) | ✅ |
 | כללי רציפות בין סצנות (visual_prompt_english) | ✅ |
-| בחירת תסריט (selectedScriptId על Project) | ✅ |
-| **עריכה ידנית של hook / cta / טקסט סצנות / משך** | ✅ |
+| **Category-aware visual prompts** (skincare/fitness/fashion/food/tech/wellness/baby/cleaning/jewelry/supplements) | ✅ |
+| Pose & Framing dictionary (mirror selfie / selfie POV / over-shoulder / close-up / wide / top-down / before-after) | ✅ |
+| Mood vocabulary (12 פראזות מוכנות, כולל iPhone-camera realism + skin micro-detail) | ✅ |
+| 5 דוגמאות `visual_prompt_english` per category + anti-example | ✅ |
+| Avatar description מוזרק לפרומפט (תיאור Reference, לא בתוך visual_prompt) | ✅ |
+| בחירת תסריט (`selectedScriptId` על Project) | ✅ |
+| עריכה ידנית של hook / cta / טקסט סצנות / משך | ✅ |
 | Regenerate (1 קרדיט) | ✅ |
 | Progress indicator בייצור | ✅ |
 | כתיבה ידנית מאפס (במקום AI) | ❌ |
@@ -122,15 +137,20 @@
 
 | נושא | סטטוס |
 |------|--------|
-| gpt-image-2 medium @ 1024×1792 (true 9:16) | ✅ |
-| Multi-image input: avatar + previous scene + product | ✅ |
-| נעילת סצנה N עד שסצנה N-1 קיימת (אכיפת רציפות) | ✅ |
+| gpt-image-2 medium @ 1024×1536 portrait (true 9:16) | ✅ |
+| Multi-image input: **avatar (Image 1, identity anchor) + product (Image 2)** | ✅ |
+| Avatar = single source of truth — בוטל reference לסצנה הקודמת (זהות יציבה יותר) | ✅ |
+| **Identity Lock block** (preserve eye/brow/nose/jaw/hairline/hair density/skin tone) | ✅ |
+| **Bio-fidelity skin tokens** (pores, vellus hair, hydration, no airbrush) | ✅ |
+| Lens specs ב-opener (35mm, f/4, authentic phone-camera grain) | ✅ |
+| Auto-detect framing מתוך הברייף: mirror-selfie / selfie / POV / over-shoulder / close-up | ✅ |
 | כפתור "צור" לכל סצנה בנפרד | ✅ |
+| **One-click "Generate all scenes"** — סדרתי, עם live progress | ✅ |
 | עריכת `visual_prompt_english` ידנית לכל סצנה | ✅ |
 | Regenerate (1 קרדיט לכל ניסיון) | ✅ |
 | Progress overlay על אזור התמונה | ✅ |
 | Streaming partial images (`partial_images` param) | ❌ (אופטימיזציה עתידית) |
-| שמירת תמונות ב-cloud storage | ❌ (כרגע local fs בלבד — לא יעבוד ב-prod) |
+| שמירת תמונות ב-cloud storage | ❌ (כרגע `apps/web/public/uploads/` — לא יעבוד ב-prod) |
 
 ### 5.5 שלב 5 · קריינות (`ElevenLabs` voice-over per scene)
 
@@ -237,11 +257,12 @@
 
 ## 11. Open questions (החלטות תכן שעוד לא סגורות)
 
-- **ספק וידאו**: Kling 2.0 / Runway Gen-4 / Luma / Pika? — 👤 ממתין להחלטה
+- **ספק וידאו (image→video)**: Kling 2.0 / Runway Gen-4 / Luma / Pika / Sora? — 👤 ממתין להחלטה
 - **תוכניות חבילה**: לאשר טבלת קרדיטים ($0.50/credit, 18/video)? — 👤
-- **אווטאר ידני**: לאפשר העלאה? או רק קטלוג סגור? — 👤
-- **רגנרציה על תקלה**: האם להחזיר קרדיט אוטומטית או רק אחרי תמיכה? — 👤
+- **אווטאר ידני**: לאפשר העלאה? קטלוג של 25 כרגע — מספיק? — 👤
+- **רגנרציה על תקלה**: להחזיר קרדיט אוטומטית או רק אחרי תמיכה? — 👤
 - **משך וידאו ברירת מחדל**: 15s או 30s? — 👤
+- **TTS provider**: ElevenLabs (איכות גבוהה, יקר) או Azure/Google Hebrew (זול, פחות טבעי)? — 👤
 
 ---
 

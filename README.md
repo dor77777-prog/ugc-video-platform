@@ -3,17 +3,39 @@
 Hebrew-first AI platform for generating UGC video ads from product URLs.
 Brand tagline: **מודעות וידאו שמוכרות. תכל'ס.**
 
-The product extractor, OpenAI script engine, and real provider integrations (ElevenLabs /
-HeyGen / Kling / Runway / Creatomate) are intentionally **not** implemented yet — everything
-ships behind a mock provider so the queue + DB + UI flow can be exercised end to end
-before any external API costs are paid.
+## Current state (April 2026)
+
+The wizard is end-to-end functional through **scene-image generation** with real OpenAI:
+
+- ✅ **Step 1 — Product**: real Shopify/JSON-LD/OG/microdata scraper, with SSRF protection.
+- ✅ **Step 2 — Avatar**: 25 AI-generated Israeli portraits (Mizrahi / Yemeni / Ethiopian /
+  Russian / Ashkenazi / dati-leumi; ages 18-58; Tel Aviv, Haifa, Jerusalem, Be'er Sheva,
+  Eilat, Modi'in, Galilee). Each portrait is the **single source of truth** for that
+  character's identity in every downstream scene.
+- ✅ **Step 3 — Scripts**: 6 Hebrew UGC scripts via `gpt-5.4-mini`, structured outputs,
+  category-aware visual prompts (skincare / fitness / fashion / food / tech / wellness /
+  jewelry / supplements). Hooks, CTAs, and TTS-friendly Hebrew rules baked in.
+- ✅ **Step 4 — Scene images**: `gpt-image-2` at 1024×1536 portrait, with the avatar as
+  Image 1 (identity anchor) and the product as Image 2. Prompt builder uses
+  `awesome-gpt-image-2` patterns: lens specs, bio-fidelity skin tokens, identity-lock
+  block, automatic mirror-selfie / selfie / POV / over-shoulder framing detection.
+  One-click "generate all scenes" with live progress.
+
+Steps that are still mocked or pending (next modules to ship):
+
+- ⏳ **Step 5 — Voice-over** (ElevenLabs Hebrew TTS, per scene).
+- ⏳ **Step 6 — Image → Video** (provider TBD: Kling / Runway / Luma / Pika).
+- ⏳ **Step 7 — Final composition** (Creatomate concat + music + RTL captions).
+
+The render queue (BullMQ + worker) is wired and runs end-to-end with mock providers, so
+each real provider can be swapped in independently without touching the orchestration.
 
 ## Stack
 
 - **apps/web** — Next.js 15 App Router, Tailwind, shadcn/ui, RTL Hebrew
-- **apps/worker** — Node.js BullMQ worker, mock provider pipeline
+- **apps/worker** — Node.js BullMQ worker (image→video / TTS / composition still mocked)
 - **packages/shared** — TypeScript types + Zod schemas
-- **packages/prompts** — LLM system prompt + JSON schema (placeholders)
+- **packages/prompts** — Hebrew script system prompt, scene-image prompt builder (`awesome-gpt-image-2` patterns), strict JSON schema for the LLM
 - **prisma** — PostgreSQL schema (Supabase-compatible)
 
 ```
@@ -187,6 +209,7 @@ Run from the repo root.
 | `npm run prisma:migrate`    | Create + apply a dev migration                  |
 | `npm run prisma:studio`     | Open Prisma Studio (DB GUI)                     |
 | `npm run test:render`       | Enqueue a sample render job (smoke test)        |
+| `cd apps/web && npx tsx scripts/generate-avatar-portraits.ts` | (Re)generate the 25-avatar catalog via gpt-image-2. Idempotent — skips files that already exist in `public/avatars/`. ~$0.04 per missing avatar. |
 
 ## API routes (web)
 
@@ -235,32 +258,42 @@ The render pipeline writes proper `Asset` rows to Postgres for each step and upd
 `RenderJob.status` + `progressPercent` exactly as the real version will. Only the
 output URLs are fake.
 
-## What is NOT in this foundation
+## What is shipped vs. still pending
 
-By design — these are the next modules to build, not gaps to patch:
+✅ **Already real (no mocks):**
 
-- ❌ Product scraper (Shopify / Open Graph / Cheerio)
-- ❌ OpenAI script engine
-- ❌ Hebrew TTS normalization middleware
-- ❌ Real ElevenLabs / HeyGen / Kling / Runway / Creatomate adapters
-- ❌ Auth (Supabase Auth)
-- ❌ Storage uploads (Supabase Storage / S3)
-- ❌ Credits / billing
-- ❌ Full project dashboard UI
+- Product scraper (Shopify / JSON-LD / Open Graph / microdata / Cheerio fallback) + SSRF protection
+- Supabase Auth (email + password, middleware refresh, first-user / `ADMIN_EMAILS` auto-promotion)
+- 25-avatar AI portrait catalog (`scripts/generate-avatar-portraits.ts`, idempotent)
+- OpenAI script engine (`gpt-5.4-mini`, structured outputs, 6 angles, category-aware)
+- OpenAI scene-image engine (`gpt-image-2` at 1024×1536, awesome-gpt-image-2 prompt patterns)
+- Admin dashboard (users / projects / renders / queue / costs)
+- Credits balance + per-action charging (5 free on signup, 1/script-gen, 1/scene-image)
+
+⏳ **Still pending (the next modules to ship):**
+
+- Hebrew TTS normalization middleware
+- Real ElevenLabs Hebrew voice-over per scene
+- Real image-to-video provider (Kling / Runway / Luma / Pika — TBD)
+- Real Creatomate composition (concat + music + RTL captions)
+- Cloud storage for generated assets (currently `apps/web/public/uploads/` — won't survive prod)
+- Stripe / Paddle billing (subscriptions)
+- Custom avatar upload (current catalog is closed)
+- Password reset, OAuth (Google/Apple), MFA
+- RLS in Supabase, rate limiting, structured logging (Pino), Sentry
 
 ## Recommended next module
 
-**Product Scraper** (`apps/web/lib/scraper/` + `POST /api/products/extract`).
+**Hebrew voice-over (ElevenLabs)** — Step 5 of the wizard. The image pipeline is locked
+in; pairing audio with each scene unblocks the rest of the video pipeline.
 
-It's the first piece the user touches in the real flow, it has zero external paid
-dependencies, and it unblocks the script engine after it. Order from the spec:
+Suggested order:
 
-1. Product Scraper
-2. LLM Script Engine
-3. Hebrew Middleware
-4. Real Composition (Creatomate)
-5. Real TTS (ElevenLabs)
-6. Real Avatar (HeyGen)
-7. Real B-Roll (Kling / Runway)
+1. **Voice-over (ElevenLabs)** — per-scene MP3, voice consistency across scenes
+2. **Hebrew TTS normalization middleware** (numbers, currency, English abbreviations)
+3. **Image → Video** (pick one provider, wire the adapter)
+4. **Final composition (Creatomate)** — concat + music + RTL captions + downloadable MP4
+5. **Cloud storage** (Supabase Storage) — replace local fs writes
+6. **Stripe billing** — only after one real video has shipped end-to-end
 
-Build them one at a time. Don't start billing until at least one real video has shipped.
+For the full implementation status (what's done / partial / pending), see [STATUS.md](./STATUS.md).

@@ -87,6 +87,48 @@ const SPECS: AvatarSpec[] = [
     id: 'moshe',
     prompt: `Photorealistic candid portrait, vertical 9:16. A 58-year-old Israeli man in a Jerusalem courtyard with cream stone walls and bougainvillea behind him. Warm light olive skin, short clean white hair, full thick white beard, kind crinkly blue-gray eyes, soft warm smile. He wears a soft red flannel shirt. Late afternoon warm light. Wise, kind, lived-in. No text, no logos.`,
   },
+
+  // ── New diverse Israeli additions ──────────────────────────────────────────
+  // Each prompt opens with explicit phone-camera framing (awesome-gpt-image-2
+  // No.8 pattern) and asks for bio-fidelity skin so gpt-image-2 doesn't
+  // smooth/airbrush the face — important when these portraits become the
+  // identity reference for every downstream scene generation.
+  {
+    id: 'yael',
+    prompt: `Photorealistic candid portrait, vertical 9:16, shot on a real phone (iPhone 17 Pro vibe, ~35mm, f/4, authentic phone-camera grain). A 19-year-old Israeli woman with a Mizrahi look, in her sun-lit Be'er Sheva student apartment with a desk and books slightly out of focus behind her. Warm tan-olive skin, very long dark almost-black wavy hair past her shoulders, deep dark brown eyes, full natural eyebrows, a tiny silver nose stud, a relaxed half-smile. She wears an oversized cream university sweatshirt. Eye-level framing, soft side window light, late morning. Bio-fidelity skin: visible pores, faint cheek freckles, real micro-detail, no airbrush. Single subject centered. No text, no logos, no watermark.`,
+  },
+  {
+    id: 'adi',
+    prompt: `Photorealistic candid portrait, vertical 9:16, real phone camera (~35mm, f/4, authentic grain). A 21-year-old Ethiopian-Israeli woman on the Tel Aviv promenade after a morning run. Rich deep-brown skin, natural Type-4 coily hair pulled into a high puff with a thin black headband and a few escaping curls at the hairline, warm dark brown eyes, full lips, light sweat sheen on her temples, a delicate gold pendant on a thin chain, bright easy smile. She wears a fitted white tech-tank. Eye-level, mid-morning Mediterranean sunlight, blurred palm trees and a strip of sea behind her. Bio-fidelity skin: visible pores, hydrated highlights, real shine — no smoothing. Single subject centered. No text, no logos.`,
+  },
+  {
+    id: 'inbar',
+    prompt: `Photorealistic candid portrait, vertical 9:16, iPhone-camera realism (~35mm, f/4, soft authentic grain). A 24-year-old Russian-Israeli woman in a bright north-Tel-Aviv apartment with floor-to-ceiling windows. Very fair pale skin with cool undertone, long straight ash-blonde hair past her collarbones with a soft middle part, pale icy-blue eyes, faint freckles across the bridge of her nose, calm slightly serious expression, no makeup. She wears a plain pearl-gray fitted long-sleeve tee. Eye-level, soft overcast window light from her left. Bio-fidelity skin: vellus hair on cheeks, real pore texture, refined natural highlights — totally unretouched. Single subject centered. No text, no logos.`,
+  },
+  {
+    id: 'avigail',
+    prompt: `Photorealistic candid portrait, vertical 9:16, real phone camera (~35mm, f/4, authentic grain). A 29-year-old Israeli woman in a modest traditional dati-leumi style, in a bright Modi'in apartment with white walls and warm wood accents. Warm light olive skin, hair fully covered by a soft cream knit-tichel headwrap, a few stray light-brown strands at the temples, calm hazel-brown eyes, thin gold stud earrings, a small natural beauty mark near her right cheek, a composed half-smile. She wears a high-neck soft mauve long-sleeve top. Eye-level framing, soft afternoon window light. Bio-fidelity skin: visible pores, refined highlights, real hydration — no airbrush, no glamour. Single subject centered. No text, no logos.`,
+  },
+  {
+    id: 'sapir',
+    prompt: `Photorealistic candid portrait, vertical 9:16, iPhone 17 Pro vibe (~35mm, f/4, authentic grain). A 32-year-old Yemeni-Israeli woman in her sun-lit Florentin apartment in Tel Aviv. Warm deep olive skin, thick almost-black curly hair down past her shoulders with natural volume and frizz at the edges, large expressive dark brown eyes, defined dark eyebrows, a delicate gold filigree pendant on a thin chain, gentle genuine smile. She wears a relaxed black ribbed tank. Eye-level framing, late-afternoon golden window light catching the curls. Bio-fidelity skin: pores, faint laugh lines, real shine, no smoothing. Single subject centered. No text, no logos.`,
+  },
+  {
+    id: 'hila',
+    prompt: `Photorealistic candid portrait, vertical 9:16, real phone camera (~35mm, f/4, soft authentic grain). A 42-year-old Israeli woman on the porch of her Galilee kibbutz home, with olive trees and herb pots slightly blurred behind her. Warm tanned outdoors skin, sun-lightened wavy chestnut-brown hair to her shoulders with a few sun-bleached strands and faint flyaways, hazel-green eyes, fine sun-lines at the corners, no makeup, natural relaxed smile. She wears a faded sage-green linen button-up over a plain tee. Eye-level framing, late-afternoon golden hour. Bio-fidelity skin: pores, real freckles, sun-warmth — totally unretouched. Single subject centered. No text, no logos.`,
+  },
+  {
+    id: 'tomer',
+    prompt: `Photorealistic candid portrait, vertical 9:16, iPhone-camera realism (~35mm, f/4, authentic phone-camera grain). A 19-year-old Israeli man with a southern surfer look, on an Eilat beach late afternoon. Sun-tanned olive skin, sun-bleached medium-length wavy dark-blonde hair slightly damp from the sea, light hazel-green eyes, very faint stubble, a relaxed easy half-smile, a hint of salt and sand on his shoulders. He wears a soft sun-faded coral T-shirt. Eye-level framing, low warm Eilat sun lighting his face from the side, Red Sea blur in the background. Bio-fidelity skin: pores, real sun glow, fine sun-lines at the temples — no studio polish. Single subject centered. No text, no logos.`,
+  },
+  {
+    id: 'itay',
+    prompt: `Photorealistic candid portrait, vertical 9:16, real phone camera (~35mm, f/4, authentic grain). A 33-year-old Israeli man at home in a Haifa apartment with warm afternoon light. Light olive skin, short dark brown hair with a slight side wave and a couple of premature gray strands at the temples, neat short beard, warm brown eyes, a calm tired-but-content dad expression, a thin band ring on his left hand. He wears a soft heather-gray long-sleeve tee. Eye-level framing, soft side window light from the right. Bio-fidelity skin: pores, fine fatigue lines under the eyes, real warmth — totally unposed. Single subject centered. No text, no logos.`,
+  },
+  {
+    id: 'yosef',
+    prompt: `Photorealistic candid portrait, vertical 9:16, iPhone 17 Pro vibe (~35mm, f/4, authentic grain). A 52-year-old Israeli man with a Mizrahi look, in a Jerusalem-stone courtyard with a small lemon tree behind him. Warm tan-bronze skin, neat short salt-and-pepper hair (mostly dark with silver at the temples), full thick dark beard with visible gray patches, warm hazel-brown eyes, deep laugh lines, a small Star-of-David pendant on a leather cord, a gentle dignified smile. He wears a soft charcoal henley. Eye-level framing, late-afternoon warm light bouncing off cream stone walls. Bio-fidelity skin: pores, real sun lines, character — no airbrush. Single subject centered. No text, no logos.`,
+  },
 ];
 
 const OUTPUT_DIR = path.join(process.cwd(), 'public', 'avatars');
