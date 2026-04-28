@@ -12,14 +12,34 @@ The wizard is end-to-end functional through **scene-image generation** with real
   Russian / Ashkenazi / dati-leumi; ages 18-58; Tel Aviv, Haifa, Jerusalem, Be'er Sheva,
   Eilat, Modi'in, Galilee). Each portrait is the **single source of truth** for that
   character's identity in every downstream scene.
-- ✅ **Step 3 — Scripts**: 6 Hebrew UGC scripts via `gpt-5.4-mini`, structured outputs,
-  category-aware visual prompts (skincare / fitness / fashion / food / tech / wellness /
-  jewelry / supplements). Hooks, CTAs, and TTS-friendly Hebrew rules baked in.
-- ✅ **Step 4 — Scene images**: `gpt-image-2` at 1024×1536 portrait, with the avatar as
-  Image 1 (identity anchor) and the product as Image 2. Prompt builder uses
-  `awesome-gpt-image-2` patterns: lens specs, bio-fidelity skin tokens, identity-lock
-  block, automatic mirror-selfie / selfie / POV / over-shoulder framing detection.
-  One-click "generate all scenes" with live progress.
+- ✅ **Step 3 — Scripts (V2)**: 6 Hebrew UGC scripts via `gpt-5.4-mini`. **Creative
+  strategy engine** — every script declares 12 strategy fields (core insight, audience pain,
+  emotional trigger, product mechanism, main objection, persuasion angle, why-stop-scroll,
+  ugc situation, hook type, script promise, conversion goal, assumptions) before any
+  spoken text is written. **3 hook options per script** with an explicit selection +
+  reason. **Self-scoring on 8 axes** (hook strength / specificity / Israeli authenticity
+  / emotional pull / visual clarity / conversion potential / TTS naturalness /
+  no-generic-clichés); the wrapper **selectively regenerates in parallel** any script
+  that scores below 8 (capped at 3 concurrent regen calls). 12-phrase anti-cliché
+  blacklist enforced.
+- ✅ **Step 4 — Scene images**: `gpt-image-2` at 1024×1536 portrait, avatar as Image 1
+  (identity anchor) + product as Image 2. The prompt builder includes:
+  - **REALISM CHECK block** — anatomy (5 fingers, natural articulation), light direction
+    (single primary source, consistent shadows), surface contact (no floating objects),
+    architecture (90° walls), anti-AI tells (no plastic skin, no doll-eyes).
+  - **Mirror-selfie physics** — phone shows its BACK in the reflection, eyes look at the
+    mirror (so reflection looks at camera), real optics throughout.
+  - **3-layer safety pipeline** — (1) term sanitization (23 risky→safe rewrites, e.g.
+    `bodysuit`→`fitted base layer top`), (2) per-category modesty tokens for sensitive
+    categories (fashion / fitness / wellness), (3) auto-retry without product image +
+    aggressive modesty when gpt-image-2 returns `safety_violations`.
+  - **True parallel batch generation** — `POST /api/scenes/[id]/generate` Route Handler
+    + parallelism=2 in the client loop (Next.js Server Actions are serialized per-route,
+    so the loop uses `fetch()` to bypass that). 5 scenes ~2.5 min instead of 5 min.
+  - **180s server timeout** + **200s client timeout** + **classified error display**
+    (safety / timeout / credits / generic) so failures never leave the UI hanging.
+  - **Live UI updates** — `GET /api/scenes/[id]` polled every 2.5s during batch (or
+    burst-polled for 15s after a single-scene action). No manual refresh needed.
 
 Steps that are still mocked or pending (next modules to ship):
 
@@ -29,6 +49,9 @@ Steps that are still mocked or pending (next modules to ship):
 
 The render queue (BullMQ + worker) is wired and runs end-to-end with mock providers, so
 each real provider can be swapped in independently without touching the orchestration.
+
+For the full API surface, architecture diagrams, and per-feature status, see
+[STATUS.md](./STATUS.md).
 
 ## Stack
 
@@ -210,12 +233,25 @@ Run from the repo root.
 | `npm run prisma:studio`     | Open Prisma Studio (DB GUI)                     |
 | `npm run test:render`       | Enqueue a sample render job (smoke test)        |
 | `cd apps/web && npx tsx scripts/generate-avatar-portraits.ts` | (Re)generate the 25-avatar catalog via gpt-image-2. Idempotent — skips files that already exist in `public/avatars/`. ~$0.04 per missing avatar. |
+| `cd apps/web && npx tsx scripts/test-script-engine-v2.ts` | Run V2 fixtures (skincare / kitchen / tech) against real OpenAI. Asserts 148 properties per fixture: framework coverage, scene completeness, no forbidden cliché phrases, overall ≥ 8. ~$0.10–0.15 total. |
 
 ## API routes (web)
 
+### Health & extraction
 | Method | Path                              | Description                          |
 | ------ | --------------------------------- | ------------------------------------ |
 | GET    | `/api/health`                     | DB + Redis liveness check            |
+| POST   | `/api/products/extract`           | Body: `{ url }` → returns scraped product data + confidence + signals + warnings. SSRF-protected. |
+
+### Scenes (live polling + parallel batch)
+| Method | Path                              | Description                          |
+| ------ | --------------------------------- | ------------------------------------ |
+| GET    | `/api/scenes/:id`                 | Returns `{ imageUrl, imageGenerationCount, imageGeneratedAt }`. Used by SceneCard for live polling during batch generation. |
+| POST   | `/api/scenes/:id/generate`        | Generates a scene image via gpt-image-2 + safety pipeline + auto-retry. Returns `{ success, imageUrl?, error?, needsCredits?, safetyBlocked?, timedOut?, safetyRetryApplied? }`. **The "Generate all" loop in the UI calls this endpoint via `fetch()` instead of the equivalent server action — Next.js serializes server actions per-route, so this Route Handler is the parallel-friendly path.** |
+
+### Render queue (mock today)
+| Method | Path                              | Description                          |
+| ------ | --------------------------------- | ------------------------------------ |
 | POST   | `/api/render/start`               | Create a render job and enqueue it   |
 | GET    | `/api/render/:jobId/status`       | Get current status / progress / URL  |
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState, useState, useTransition } from 'react';
+import { useActionState, useEffect, useState, useTransition } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -11,6 +11,21 @@ import { ProgressBar } from '@/components/ui/progress-bar';
 import { ElapsedTimer } from '@/components/ui/elapsed-timer';
 import { cn } from '@/lib/utils';
 import { generateScriptsAction, updateScriptAction, type GenerateState } from './actions';
+
+// Time-based progress narrative for the V2 generator. The server side runs
+// one big LLM call (~40–60s) plus optional parallel regens (~15–25s), so
+// instead of a single "ה-AI חושב…" spinner we narrate the actual phases
+// the model goes through. Pure client-side cosmetic — the timings here
+// are calibrated against observed gpt-4o-mini latency for the V2 schema.
+const SCRIPT_PHASES: Array<{ atMs: number; label: string; emoji: string }> = [
+  { atMs: 0, label: 'מנתח את המוצר ואת הקהל…', emoji: '🧠' },
+  { atMs: 6_000, label: 'מגבש אסטרטגיה יצירתית לכל זווית…', emoji: '🎯' },
+  { atMs: 18_000, label: 'כותב 3 hooks לכל תסריט ובוחר את החזק ביותר…', emoji: '✍️' },
+  { atMs: 32_000, label: 'מנסח 4–5 סצנות לכל תסריט…', emoji: '🎬' },
+  { atMs: 50_000, label: 'מדרג איכות עצמית של 8 צירים…', emoji: '⭐' },
+  { atMs: 65_000, label: 'משכלל תסריטים שקיבלו ציון נמוך (במקביל)…', emoji: '🔁' },
+  { atMs: 85_000, label: 'כמעט שם — שמירה למסד נתונים…', emoji: '💾' },
+];
 
 export function GenerateButton({
   projectId,
@@ -24,6 +39,34 @@ export function GenerateButton({
     action,
     undefined,
   );
+
+  // Walk through SCRIPT_PHASES on a 1s tick while the action is in flight
+  // so the user gets meaningful per-phase progress instead of one long spinner.
+  const [phaseIndex, setPhaseIndex] = useState(0);
+  useEffect(() => {
+    if (!pending) {
+      setPhaseIndex(0);
+      return;
+    }
+    const startedAt = Date.now();
+    const tick = () => {
+      const elapsed = Date.now() - startedAt;
+      let next = 0;
+      for (let i = SCRIPT_PHASES.length - 1; i >= 0; i--) {
+        const phase = SCRIPT_PHASES[i];
+        if (phase && elapsed >= phase.atMs) {
+          next = i;
+          break;
+        }
+      }
+      setPhaseIndex(next);
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [pending]);
+
+  const phase = SCRIPT_PHASES[phaseIndex];
 
   return (
     <div className="space-y-3">
@@ -41,15 +84,19 @@ export function GenerateButton({
         </Button>
       </form>
 
-      {pending && (
+      {pending && phase && (
         <div className="rounded-md border border-primary/30 bg-primary/[0.04] p-4 max-w-md mx-auto space-y-3">
           <div className="flex items-center gap-2 text-sm font-medium">
-            <span className="animate-shimmer-overlay text-lg">✨</span>
-            <span>ה-AI כותב 6 תסריטים בעברית, בזוויות שונות…</span>
+            <span className="animate-shimmer-overlay text-lg">{phase.emoji}</span>
+            <span>{phase.label}</span>
           </div>
           <ProgressBar />
           <div className="flex items-center justify-between text-xs text-muted-foreground">
-            <span>בדרך כלל לוקח 5–15 שניות</span>
+            <span>
+              שלב {phaseIndex + 1} מתוך {SCRIPT_PHASES.length}
+              {' · '}
+              סך הכל ~60–90 שניות
+            </span>
             <ElapsedTimer />
           </div>
         </div>

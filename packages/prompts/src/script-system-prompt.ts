@@ -169,6 +169,7 @@ visual_prompt_english — חוקי קטגוריה
 4. **Lighting / mood** — soft morning daylight / warm bathroom lamp / golden-hour window glow.
 5. **Outfit** — אם רלוונטי לסצנה.
 6. **Continuity** — אם הסצנה ממשיכה את הקודמת: "same kitchen as scene 1, same outfit". אם הקטגוריה דורשת שינוי (אופנה, פיטנס, יופי) — לציין.
+7. **פיזיקה ואנטומיה (חובה)** — תכתוב פעולה אפשרית פיזית. לא "ידיים מחזיקות מוצר באוויר" — אלא "left hand grips the bottle by the cap, fingers wrapped around the neck, thumb visible, resting partially on the counter". לא "selfie במראה" סתם — אלא "mirror selfie at vanity, phone held in right hand at chest height, the back of the phone faces the mirror so the lens module is visible in the reflection". כל פעולה צריכה אחיזה אמיתית, מגע אמיתי עם משטח, וכיוון אור עקבי.
 
 הקטגוריה של המוצר תינתן לך בפרומפט המשתמש:
 
@@ -199,6 +200,9 @@ visual_prompt_english — חוקי קטגוריה
 - "documentary-style candid"
 - "iPhone-camera realism, authentic phone grain, mild wide-angle distortion"
 - "natural skin micro-detail (pores, vellus hair, no airbrush)"
+- "anatomically correct hands gripping the product with visible knuckles"
+- "single consistent light source, all shadows in one direction"
+- "phone visible in hand with proper grip; arm and elbow visible in frame"
 
 ═══════════════════════════════════════════
 2 דוגמאות מלאות לסגנון V2 (השראה — לא להעתיק)

@@ -282,46 +282,57 @@ export async function generateScripts(input: ProductInput): Promise<ScriptGenera
     .filter((x) => x.overall < QUALITY_THRESHOLD)
     .sort((a, b) => a.overall - b.overall);
 
-  const regenStarted: number[] = [];
-  for (const { index } of indexedByScore) {
-    if (regenCalls >= REGEN_BUDGET) break;
-    const original = parsed.scripts[index];
-    if (!original) continue;
-    const regenPrompt = buildRegenUserPrompt(input, original);
-    try {
-      const regenResp = await openai.chat.completions.create({
-        model,
-        messages: [
-          { role: 'system', content: SCRIPT_SYSTEM_PROMPT },
-          { role: 'user', content: regenPrompt },
-        ],
-        response_format: {
-          type: 'json_schema',
-          json_schema: {
-            name: 'single_script_response',
-            strict: true,
-            schema: SINGLE_SCRIPT_JSON_SCHEMA as unknown as Record<string, unknown>,
-          },
-        },
-      });
-      regenCalls++;
-      regenStarted.push(index);
-      totalInputTokens += regenResp.usage?.prompt_tokens ?? 0;
-      totalOutputTokens += regenResp.usage?.completion_tokens ?? 0;
-      const regenContent = regenResp.choices[0]?.message?.content;
-      if (!regenContent) continue;
-      const regenParsed = JSON.parse(regenContent) as LlmRegenResponse;
-      if (!regenParsed.script) continue;
+  // Run all eligible regens in parallel (capped at REGEN_BUDGET). Each regen
+  // is an independent OpenAI call rewriting one script; they don't depend on
+  // each other, so Promise.all collapses what used to be sequential 30–60s
+  // into a single ~15-25s wall-clock chunk.
+  const regenTargets = indexedByScore.slice(0, REGEN_BUDGET);
+  const regenStarted: number[] = regenTargets.map((t) => t.index);
 
-      // Replace only if the new script scores higher than the original.
-      const newOverall = regenParsed.script.quality_score?.overall ?? 0;
-      const oldOverall = original.quality_score?.overall ?? 0;
-      if (newOverall >= oldOverall) {
-        parsed.scripts[index] = regenParsed.script;
+  const regenResults = await Promise.all(
+    regenTargets.map(async ({ index }) => {
+      const original = parsed.scripts[index];
+      if (!original) return null;
+      const regenPrompt = buildRegenUserPrompt(input, original);
+      try {
+        const regenResp = await openai.chat.completions.create({
+          model,
+          messages: [
+            { role: 'system', content: SCRIPT_SYSTEM_PROMPT },
+            { role: 'user', content: regenPrompt },
+          ],
+          response_format: {
+            type: 'json_schema',
+            json_schema: {
+              name: 'single_script_response',
+              strict: true,
+              schema: SINGLE_SCRIPT_JSON_SCHEMA as unknown as Record<string, unknown>,
+            },
+          },
+        });
+        const regenContent = regenResp.choices[0]?.message?.content;
+        if (!regenContent) return { index, original, regenResp, parsed: null };
+        const regenParsed = JSON.parse(regenContent) as LlmRegenResponse;
+        return { index, original, regenResp, parsed: regenParsed };
+      } catch (err) {
+        // Don't fail the whole generation if a single regen errors out.
+        console.warn(`[scripts] regen for index ${index} failed:`, (err as Error).message);
+        return null;
       }
-    } catch (err) {
-      // Don't fail the whole generation if regen fails — keep the original script.
-      console.warn(`[scripts] regen for index ${index} failed:`, (err as Error).message);
+    }),
+  );
+
+  for (const r of regenResults) {
+    if (!r) continue;
+    regenCalls++;
+    totalInputTokens += r.regenResp.usage?.prompt_tokens ?? 0;
+    totalOutputTokens += r.regenResp.usage?.completion_tokens ?? 0;
+    if (!r.parsed?.script) continue;
+    // Replace only if the new script scores higher than the original.
+    const newOverall = r.parsed.script.quality_score?.overall ?? 0;
+    const oldOverall = r.original.quality_score?.overall ?? 0;
+    if (newOverall >= oldOverall) {
+      parsed.scripts[r.index] = r.parsed.script;
     }
   }
 

@@ -3,151 +3,46 @@
 import { revalidatePath } from 'next/cache';
 import { prisma } from '@/lib/db';
 import { getOrCreateAppUser } from '@/lib/auth/sync-user';
-import { findAvatar } from '@/lib/avatars/catalog';
-import { describeAvatar } from '@/lib/avatars/catalog';
-import { generateSceneImage, type AspectRatio } from '@/lib/llm/scene-images';
-import { LlmConfigError } from '@/lib/llm/scripts';
-import { getStorage } from '@/lib/storage';
-import { recordApiCall } from '@/lib/usage/log';
-import { priceOpenAiImage } from '@/lib/usage/pricing';
-
-const COST_PER_SCENE_IMAGE = 1;
+import { generateSceneImageImpl } from '@/lib/scenes/generate-impl';
 
 export type GenerateSceneImageState =
-  | { error?: string; needsCredits?: boolean }
+  | {
+      error?: string;
+      needsCredits?: boolean;
+      safetyBlocked?: boolean;
+      timedOut?: boolean;
+      safetyRetryApplied?: boolean; // soft notice: scene generated but product image was dropped
+    }
   | undefined;
 
+// Server action used by the SINGLE-scene "Create" button on a SceneCard
+// (via useActionState). The "Generate all" loop calls the parallel-friendly
+// Route Handler at POST /api/scenes/[id]/generate instead, since Next.js
+// serializes server actions per-route and Promise.all over them runs
+// sequentially.
 export async function generateSceneImageAction(
   sceneId: string,
   _prev: GenerateSceneImageState,
   _formData: FormData,
 ): Promise<GenerateSceneImageState> {
   const { dbUser } = await getOrCreateAppUser();
+  const project = await prisma.scene
+    .findUnique({ where: { id: sceneId }, select: { script: { select: { projectId: true } } } })
+    .then((s) => s?.script.projectId);
 
-  const scene = await prisma.scene.findUnique({
-    where: { id: sceneId },
-    include: {
-      script: {
-        include: {
-          project: {
-            include: {
-              scripts: {
-                include: { scenes: { orderBy: { sceneOrder: 'asc' } } },
-              },
-            },
-          },
-        },
-      },
-    },
-  });
-  if (!scene) return { error: 'הסצנה לא נמצאה' };
-  if (scene.script.project.userId !== dbUser.id) return { error: 'אין הרשאה' };
+  const result = await generateSceneImageImpl(sceneId, dbUser.id);
 
-  // Note: scenes are now independent (each anchored on the avatar reference),
-  // so we no longer require scene N-1 before scene N. The "Generate all"
-  // button on the page generates them in sequence, but a user can also
-  // regenerate any scene at any time.
+  if (project) revalidatePath(`/projects/${project}/scenes`);
 
-  if (dbUser.creditsBalance < COST_PER_SCENE_IMAGE) {
-    return { error: 'אין מספיק קרדיטים', needsCredits: true };
+  if (!result.success) {
+    return {
+      error: result.error,
+      needsCredits: result.needsCredits,
+      safetyBlocked: result.safetyBlocked,
+      timedOut: result.timedOut,
+    };
   }
-
-  const project = scene.script.project;
-  const data = (project.productData as Record<string, unknown> | null) ?? {};
-
-  const heroImageUrl = (typeof data.heroImageUrl === 'string' ? data.heroImageUrl : null);
-  const aspectRatio = (typeof data.aspectRatio === 'string' ? data.aspectRatio : '9:16') as AspectRatio;
-  const selectedAvatar = findAvatar(typeof data.selectedAvatarId === 'string' ? data.selectedAvatarId : null);
-
-  // Total scenes in this script for "Scene N of M" framing.
-  const totalScenes = await prisma.scene.count({ where: { scriptId: scene.scriptId } });
-
-  let result;
-  try {
-    result = await generateSceneImage({
-      productImageUrl: heroImageUrl,
-      avatarImageUrl: selectedAvatar?.imageUrl ?? null,
-      promptInput: {
-        productName: project.productName ?? 'Product',
-        productBrand: typeof data.brand === 'string' ? data.brand : null,
-        productDescription: typeof data.description === 'string' ? data.description : null,
-        sceneVisualBrief: scene.visualPromptEnglish,
-        sceneOrder: scene.sceneOrder,
-        totalScenes,
-        sceneType: scene.sceneType,
-        aspectRatio,
-        avatarPresent: !!selectedAvatar,
-        productPresent: !!heroImageUrl,
-        avatarDescription: selectedAvatar ? describeAvatar(selectedAvatar) : '',
-      },
-      quality: 'medium',
-    });
-  } catch (err) {
-    await recordApiCall({
-      provider: 'openai',
-      operation: 'image_gen',
-      model: process.env.OPENAI_IMAGE_MODEL || 'gpt-image-2',
-      costUsd: 0,
-      success: false,
-      errorMessage: (err as Error).message,
-      userId: dbUser.id,
-      projectId: project.id,
-    });
-    if (err instanceof LlmConfigError) return { error: err.message };
-    return { error: `יצירת התמונה נכשלה: ${(err as Error).message}` };
-  }
-
-  // Log successful image-gen call with cost computed from quality + size.
-  await recordApiCall({
-    provider: 'openai',
-    operation: 'image_gen',
-    model: result.model,
-    costUsd: priceOpenAiImage(result.model, result.quality, result.size),
-    units: 1,
-    durationMs: result.durationMs,
-    success: true,
-    userId: dbUser.id,
-    projectId: project.id,
-  });
-
-  // Persist the image to storage.
-  const storage = await getStorage();
-  const bytes = Buffer.from(result.base64, 'base64');
-  const filename = `${scene.id}-${Date.now()}.png`;
-  const { url } = await storage.putBytes({
-    folder: `scenes/${project.id}`,
-    filename,
-    data: bytes,
-    contentType: 'image/png',
-  });
-
-  await prisma.$transaction([
-    prisma.scene.update({
-      where: { id: sceneId },
-      data: {
-        imageUrl: url,
-        imagePromptUsed: result.promptUsed,
-        imageGeneratedAt: new Date(),
-        imageGenerationCount: { increment: 1 },
-        imageProvider: result.model,
-      },
-    }),
-    prisma.user.update({
-      where: { id: dbUser.id },
-      data: { creditsBalance: { decrement: COST_PER_SCENE_IMAGE } },
-    }),
-    prisma.asset.create({
-      data: {
-        projectId: project.id,
-        type: 'product_image', // closest existing type; will refactor when we add scene_image enum value
-        provider: result.model,
-        url,
-        metadata: { sceneId: scene.id, sceneOrder: scene.sceneOrder, quality: result.quality, size: result.size },
-      },
-    }),
-  ]);
-
-  revalidatePath(`/projects/${project.id}/scenes`);
+  if (result.safetyRetryApplied) return { safetyRetryApplied: true };
   return undefined;
 }
 
