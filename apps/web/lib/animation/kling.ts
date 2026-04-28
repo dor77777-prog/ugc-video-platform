@@ -224,14 +224,15 @@ class KlingProvider implements VideoGenerationProvider {
         prompt: input.prompt,
         aspect_ratio: input.aspectRatio,
         duration: String(input.durationSeconds),
-        // CRITICAL: Omni-Video defaults to GENERATING ambient sound
-        // (steam hisses, hand-on-bottle clinks, room tone). For our
-        // pipeline that sound layers UNDER the ElevenLabs Hebrew voice
-        // and ruins the mix, OR — for silent scenes that have no voice
-        // mux — bleeds straight through to the final video. Kill it
-        // at the source.
-        sound: false,
       };
+      // `sound: false` was sent here previously to suppress Omni's
+      // ambient-sound generation, but Kling code 1201 ("Failed to
+      // resolve the request body") came back — `sound` isn't a
+      // documented field on /v1/videos/omni-video. Removed.
+      // Audio is replaced downstream by the ElevenLabs voice mux for
+      // every scene that has a voiceUrl, so for our pipeline this is
+      // moot in practice. If we ever ship silent-no-voice scenes,
+      // strip Kling's audio with `ffmpeg -an` instead.
       if (input.negativePrompt && input.negativePrompt.trim().length > 0) {
         body.negative_prompt = input.negativePrompt;
       }
@@ -253,10 +254,25 @@ class KlingProvider implements VideoGenerationProvider {
 
     // Structured trace for /admin/costs debugging — what we asked Kling
     // for, in one log line, so we can audit drift cases retrospectively.
+    // We log the body SHAPE (keys + truncated lengths) but never the
+    // full base64 payloads or the prompt text — keeps the log readable
+    // and avoids dumping a 3MB log line per scene.
+    const bodyShape = Object.keys(body).reduce<Record<string, string>>((acc, k) => {
+      const v = body[k];
+      if (k === 'image_list' && Array.isArray(v)) {
+        acc[k] = `[${v.length} ref${v.length === 1 ? '' : 's'}]`;
+      } else if (typeof v === 'string') {
+        acc[k] = v.length > 60 ? `<${v.length} chars>` : v;
+      } else {
+        acc[k] = String(v);
+      }
+      return acc;
+    }, {});
     console.log(
       `[kling i2v] scene=${input.sceneId} endpoint=${endpoint} model=${model} ` +
         `refs=${1 + refs.length} negPrompt=${!!input.negativePrompt} ` +
-        `dur=${input.durationSeconds}s ar=${input.aspectRatio}`,
+        `dur=${input.durationSeconds}s ar=${input.aspectRatio} ` +
+        `body=${JSON.stringify(bodyShape)}`,
     );
 
     const res = await klingFetch<KlingCreateResponse>(
