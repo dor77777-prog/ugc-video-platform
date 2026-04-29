@@ -33,9 +33,10 @@ function buildScriptRawJson(s: GeneratedScript): Record<string, unknown> {
     selectedHook: s.selectedHook,
     hookReason: s.hookReason,
     qualityScore: s.qualityScore,
+    musicProfile: s.musicProfile,
     framework: s.framework,
     regenerated: s.regenerated,
-    schemaVersion: 2,
+    schemaVersion: 3,
   };
 }
 

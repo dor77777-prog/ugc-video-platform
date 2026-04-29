@@ -38,6 +38,7 @@ import { deriveSceneRouting } from '@/lib/animation/scene-routing';
 import { videoModeFromProductData } from '@/lib/video-mode';
 import {
   creditsForClip,
+  creditsForOperation,
   getPlanConfig,
   FIRST_REGEN_FREE,
   PER_OPERATION_CREDITS,
@@ -693,14 +694,29 @@ async function generateSceneClipImplInner(
     contentType: 'video/mp4',
   });
 
-  // V6 policy: clips are NOT first-regen-free (Kling cost too high).
-  // The previousCount-aware branch is preserved + gated on
-  // FIRST_REGEN_FREE so policy flips with one constant change. Provider-
-  // failure refunds still apply via the catch blocks above.
+  // V8 (2026-04-29): split the clip charge into two line items so
+  // PixVerse credits aren't burned when the face-gate skips lipsync.
+  //   1. Kling i2v charge — UNCONDITIONAL once Kling returned a clip.
+  //      Since the i2v call already succeeded (we only reach this
+  //      point on success), the user pays for it whether or not
+  //      lipsync ran later.
+  //   2. PixVerse lipsync charge — ONLY when PixVerse actually
+  //      produced a synced clip (lipSyncTaskId is non-null AND
+  //      lipSyncSkipReason is null).
+  //
+  // First-regen-free still applies to the Kling line item per
+  // FIRST_REGEN_FREE.kling_i2v_clip (currently false). It NEVER
+  // applies to the PixVerse line item — lipsync regens are paid.
+  // Provider-failure refunds (timeouts, 5xx) come through the catch
+  // blocks above and bypass this map.
   const previousCount = scene.clipGenerationCount ?? 0;
-  const clipOpKey = needsLipSync ? 'clip_lipsync' : 'clip_broll';
-  const isFirstRegen = previousCount === 1 && FIRST_REGEN_FREE[clipOpKey];
-  const charge = isFirstRegen ? 0 : creditCost;
+  const klingCredits = creditsForOperation('kling_i2v_clip');
+  const pixverseRan = lipSyncTaskId != null && lipSyncSkipReason == null;
+  const pixverseCredits = pixverseRan
+    ? creditsForOperation('pixverse_lipsync_scene')
+    : 0;
+  const isFirstRegen = previousCount === 1 && FIRST_REGEN_FREE.kling_i2v_clip;
+  const klingCharge = isFirstRegen ? 0 : klingCredits;
 
   await prisma.$transaction([
     prisma.scene.update({
@@ -722,8 +738,10 @@ async function generateSceneClipImplInner(
     }),
     ...buildCreditMutationOps(prisma, {
       userId,
-      amount: -charge,
-      reason: isFirstRegen ? 'first_regen_free:scene_clip' : 'spent:scene_clip',
+      amount: -klingCharge,
+      reason: isFirstRegen
+        ? 'first_regen_free:kling_i2v_clip'
+        : 'spent:kling_i2v_clip',
       ref: sceneId,
       metadata: {
         previousCount,
@@ -733,6 +751,18 @@ async function generateSceneClipImplInner(
         lipSyncSkipReason,
       },
     }),
+    ...(pixverseRan
+      ? buildCreditMutationOps(prisma, {
+          userId,
+          amount: -pixverseCredits,
+          reason: 'spent:pixverse_lipsync_scene',
+          ref: sceneId,
+          metadata: {
+            taskId: lipSyncTaskId,
+            faceVisibility: routing.faceVisibility,
+          },
+        })
+      : []),
     prisma.asset.create({
       data: {
         projectId,

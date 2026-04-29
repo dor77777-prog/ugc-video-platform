@@ -1,11 +1,14 @@
 # tachles · STATUS
 
-מסמך חי — מה מומש, מה בעבודה, מה חסר. **עדכון אחרון: 2026-04-29** (V7 — PixVerse הוא ספק LipSync היחיד; face-gate אוטומטי; Kling/Sync/ElevenLabs/Mock LipSync ו-TalkingSceneProvider variants הוסרו).
+מסמך חי — מה מומש, מה בעבודה, מה חסר. **עדכון אחרון: 2026-04-29** (V8 — PixVerse pricing מיושר ($0.071/scene במקום $0.30), `lib/pricing/provider-costs.ts` חדש, charge logic מפוצל: Kling i2v נחייב תמיד, PixVerse רק אם רץ).
 
 ## 🆕 מה חדש מ-V4 ואילך (סיכום מצטבר)
 
 | ציון | תאריך | מה זה |
 |------|-------|--------|
+| **V10** | 2026-04-29 | **כתוביות עברית מסונכרנות**. הוסר ה-chunking הפרופורציונלי הישן (5 מילים לפי נתח זמן) — הוא היה מקור התופעה של "כתוביות קפואות לא מסונכרנות". הצינור החדש: ElevenLabs `with-timestamps` מחזיר `alignment.characters` עם זמני התחלה/סיום ברמת התו → `charactersToWords` (Hebrew-aware) → `chunkCaptions` (2-5 מילים, ≤2 שורות, 18 תווים/שורה, min 650ms / max 2200ms, פיצול על פיסוק חזק/חלש). הספרייה ב-`packages/shared/src/captions/`. נשמר ל-Scene (`wordTimingsJson`, `captionChunksJson`, `captionsGeneratedAt` — מיגרציה `v10_scene_captions`). ה-renderer בונה ASS גלובלי דרך `buildAssFromChunks` — Heebo Bold, gradient white-on-black-outline, `\fad(100,100)` fade in/out, bottom-center עם 210px margin (boost 40px כשיש lipsync או product-low), libass טיפול ב-bidi. ה-Step-1 toggle (`productData.captions`) הוא המאסטר. סצנות בלי alignment **לא מקבלות captions** במקום fallback פרופורציונלי. `RenderJob.providerPayloadJson.captions` כולל timingSource, totalChunks, perSceneCount, warnings, font. |
+| **V9** | 2026-04-29 | **Background music פעיל**. הספרייה המקומית `apps/web/public/music/` (17 טראקים Mixkit, royalty-free) מנוהלת ב-`packages/shared/src/music/music-library.ts`. סקריפט-LLM מחזיר עכשיו `music_profile` (mood/energy/style/target_volume/duck) שנכנס ל-script-json-schema. ה-renderer בוחר טראק אוטומטית דרך `selectMusicTrack` — bias ל-low/medium energy, hard penalty על high-energy מול beauty/wellness/baby/jewelry/premium, fallback בטוח כשאין match חזק. ה-ffmpeg composition עכשיו מבצע loop + trim ל-final-video duration, fade-in 300ms, volume נמוך (0.08 ברירת מחדל, hard-clamped ל-0.04-0.20), ו-fade-out חובה של 2 שניות בסוף. ה-Step-1 toggle (`productData.backgroundMusic`) מכבד עכשיו, ו-`RenderJob.providerPayloadJson.music` מכיל debug metadata (track, reason, volume, license, fade durations) ל-admin. |
+| **V8** | 2026-04-29 | **Pricing מיושר ל-PixVerse**. הוקם `lib/pricing/provider-costs.ts` כמקור אמת מרכזי לעלויות ספק (`PROVIDER_COST_ESTIMATES_USD`, `PIXVERSE_COST_MODEL`, `VIDEO_COST_ESTIMATES`, `OPERATION_CREDIT_PRICING`) — כל קבוע overridable מ-env. PixVerse עלות עודכנה מ-$0.30 ל-**$0.071/scene** (16 PixVerse credits @ $0.00444). **Operation pricing מפוצל**: `kling_i2v_clip = 15` credits, `pixverse_lipsync_scene = 2` credits — נחייבים בנפרד ב-`clip-impl.ts` כך ש-PixVerse credits לא נשרפים כש-face-gate דוחה את הסצנה. הסרנו את ה-12-credits-per-render-revenue ההיסטורי מ-`/admin/costs` (היה מבוסס על $0.50/credit ישן). 1 credit = **$0.10 list**, ו-`effectiveCreditValueUsd(plan)` מחזיר את ה-$/credit האפקטיבי לסבסקרייברס (Creator $0.098, Brand $0.0828, Agency $0.0832). הוספו טבלאות ב-`/admin/costs` לעלות ספק / תמחור פעולה / אומדן וידאו / כלכלת תוכניות / מודל PixVerse. **15s ≈ $3.62 / 30s ≈ $4.57** עלות ספק. |
 | **V7** | 2026-04-29 | **PixVerse-only LipSync**. הוסרו: Kling LipSync v1, Sync.so, ElevenLabs Omnihuman, Mock provider, KlingAvatar v2 / advanced-lipsync / lipsync_v1 (כל ה-TalkingSceneProvider variants), `LIPSYNC_PROVIDER` / `KLING_LIPSYNC_*` / `KLING_TALKING_SCENE_PROVIDER` envs, ה-LipsyncProviderPicker UI, ושני ה-bakeoff endpoints. **Face-gate חדש** (`lib/animation/face-gate.ts`): gpt-4o-mini עם structured output מחליט אוטומטית אם סצנה ראויה ל-LipSync (full clear face + visible mouth) — אין יותר בחירת ספק ידנית. **Fallback policy**: אם PixVerse נכשל → סצנה משתמשת ב-Kling i2v output + audio נפרד. אין fallback לספק אחר. |
 | **V6** | 2026-04-29 | **Script streaming**: 6 calls מקבילים בנפרד, כל תסריט נשמר ל-DB ברגע שהוא מוכן, ה-UI מתעדכן לייב דרך `router.refresh()` כל 2.5s. **Avatar gender lock**: כל ה-spoken_text + on_screen_caption בלשון התואמת (זכר/נקבה) למגדר האווטאר. **30 קולות** ב-VoicePicker. |
 | **V5** | 2026-04-29 | **Israeli realism**: per-scene `environment_type`+`environment_style`+`israeli_environment_required`+`local_realism_notes`+`why_this_scene_exists`. Image-prompt boilerplate שדוחף את gpt-image-2 ל-outlets/switches ישראליים, מידות דירה, trissim, טקסט עברי/נייטרלי. **Creative_strategy** הורחב ב-5 שדות (`big_idea`, `specific_situation`, `product_role`, `proof_moment`, `why_this_is_different_from_other_scripts`). **Quality_score** 12 צירים. **5 hook_options** מ-archetype-ים שונים. |
@@ -88,28 +91,39 @@
 - Tunnel: cloudflared → `PUBLIC_BASE_URL` (regenerated when it drops)
 - Worker: BullMQ (`render` + `maintenance` queues; hourly Kling stuck-task sweep)
 
-**Cost per finished video — empirical (Apr 2026 user-account console):**
+**Cost per finished video — empirical (Apr 2026 user-account consoles):**
 
-Kling token economics: `$160 / 293 tokens = $0.546 / token`. Observed average **1.44 tokens / clip** across real generations → **$0.79 per i2v clip** (was previously modeled as $0.82 → updated). Lip-Sync charges +1 token per call = **+$0.55 per lipsync scene**.
+Kling token economics: `$160 / 293 tokens = $0.546 / token`. Observed average **1.44 tokens / clip** across real generations → **$0.79 per i2v clip**. (Kling LipSync v1 was $0.55/scene but is no longer used — V7 routed all lip-sync to PixVerse.)
 
-For a 5-scene video with 1 lipsync (15s mode) or 2 lipsync (30s mode):
+PixVerse pack economics: **$10 = 2,250 PixVerse credits** → `$0.00444 / PixVerse credit`. Observed **16 PixVerse credits per LipSync scene** → **$0.071 / scene**. Per-second equivalent at 4s ≈ `$0.018/s`.
+
+Constants live in [`apps/web/lib/pricing/provider-costs.ts`](apps/web/lib/pricing/provider-costs.ts) (env-overridable: `COST_*`, `PIXVERSE_PACKAGE_*`, `CREDIT_LIST_VALUE_USD`).
+
+For 4-scene 15s / 5-scene 30s videos with the V7 face-gate routing:
 
 | Item | 15s (4 scenes, 1 lipsync) | 30s (5 scenes, 2 lipsync) |
 |------|---------------------------|---------------------------|
-| Script (gpt) | $0.02 | $0.02 |
-| Images (gpt-image-2) | $0.16 (4 × $0.04) | $0.20 (5 × $0.04) |
-| Voices (ElevenLabs) | $0.04 | $0.05 |
-| Vision motion analysis | $0.005 | $0.005 |
-| **i2v (Kling)** | **$3.16** (4 × $0.79) | **$3.95** (5 × $0.79) |
-| **LipSync (Kling)** | **$0.55** (1 × $0.55) | **$1.09** (2 × $0.55) |
+| Script batch (gpt-5.4-mini) | $0.05 | $0.05 |
+| Images (gpt-image-2 medium) | $0.24 (4 × $0.06) | $0.30 (5 × $0.06) |
+| Voices (ElevenLabs Multilingual v2) | $0.08 (4 × $0.02) | $0.10 (5 × $0.02) |
+| Vision motion analysis (gpt-4o-mini) | $0.02 (4 × $0.005) | $0.025 (5 × $0.005) |
+| **i2v (Kling Omni v3)** | **$3.16** (4 × $0.79) | **$3.95** (5 × $0.79) |
+| **LipSync (PixVerse)** | **$0.071** (1 × $0.071) | **$0.142** (2 × $0.071) |
 | Composition (ffmpeg local) | $0 | $0 |
-| **Total** | **≈ $3.94** | **≈ $5.32** |
+| **Total provider cost** | **≈ $3.62** | **≈ $4.57** |
 
-Charged to user: 12 credits × $0.50 = $6 → **margin ≈ 35% on 15s, ≈ 11% on 30s**. Margin compression on 30s is real — bump pricing or cap lipsync to 1 scene for the lower tier.
+**Tachles credit list price: $0.10 / credit.**
+
+Typical 15s charge: `2 (script) + 8 (4 imgs) + 4 (4 voices) + 60 (4 Kling) + 2 (1 PixVerse) + 8 (final) = 84 credits → $8.40 list → ≈ 57% gross margin`.
+Typical 30s charge: `2 + 10 + 5 + 75 + 4 + 12 = 108 credits → $10.80 list → ≈ 58% gross margin`.
+
+For subscriber margin math, use **plan-effective credit value**, not the $0.10 list price (Creator $49/500 = $0.098, Brand $149/1800 = $0.0828, Agency $499/6000 = $0.0832 — see `effectiveCreditValueUsd()` in [`lib/plans.ts`](apps/web/lib/plans.ts)).
+
+PixVerse is charged **only when PixVerse actually ran** — face-gate skips → 0 PixVerse credits, only the 15-credit Kling i2v line is recorded. See [`lib/scenes/clip-impl.ts`](apps/web/lib/scenes/clip-impl.ts) for the split-charge logic.
 
 **Open issues:**
-- Music: **DISABLED** by default — auto-default track sounded bad and a curated free-music library hasn't been picked. Toggle in Step 1 still saved (`productData.backgroundMusic`) but the composer no-ops it. To re-enable: drop royalty-free tracks (Pixabay/Mixkit/YouTube Audio Library) into `apps/web/public/music/`, build a picker in Step 1, then unhide the `musicUrl` line in [render-processor.ts](apps/worker/src/processors/render-processor.ts).
-- Captions: **DISABLED** by default — burned ASS overlay didn't look good. Toggle in Step 1 (`productData.captions`) preserved; if user explicitly turns it on, captions render with voice-bounded timing + 5-word chunking. Default is OFF.
+- Music: **ACTIVE** (V9). 17 royalty-free Mixkit tracks under [apps/web/public/music/](apps/web/public/music/), curated metadata in [packages/shared/src/music/music-library.ts](packages/shared/src/music/music-library.ts). The script LLM emits `music_profile`; the renderer auto-selects + loops + trims + fades. Step-1 toggle (`productData.backgroundMusic`) is honored. Volume 0.08 default, 2s fade-out mandatory, voice stays dominant. Optional follow-up: per-project mood override (Soft / Energetic / Premium / Playful) instead of fully auto.
+- Captions: **ACTIVE** (V10). Phrase-level Hebrew captions built from ElevenLabs `with-timestamps` alignment — never proportional. Step-1 toggle (`productData.captions`) is the master switch. Modern Heebo bottom-center style with `\fad(100,100)` fade and bidi-safe libass rendering. Scenes without alignment are skipped (no caption row), not approximated. `CAPTIONS_MODE=phrase` (default) / `off`. `word_highlight` mode reserved.
 - Final length: fixed (`pickClipDuration` honors script's `duration_seconds`).
 - Auto-redirect to `/library`: implemented in [RenderFinalButton](apps/web/app/(dashboard)/projects/[id]/videos/client-bits.tsx) — polls `/api/render/[jobId]/status`, navigates on `completed` with `#job-<id>` anchor.
 - Edit-back from library: each card has an "✎ ערוך פרויקט" link to `/projects/[id]/videos`.

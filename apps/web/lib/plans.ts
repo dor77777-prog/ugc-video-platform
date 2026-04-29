@@ -7,9 +7,12 @@
 //     $0.098/credit etc.) — see effectiveCreditValueUsd().
 //   - Per-operation pricing differentiates by real provider cost,
 //     so a Kling i2v clip ($0.79) doesn't cost the same as an
-//     image regen ($0.04). Without this, the system loses money on
+//     image regen ($0.06). Without this, the system loses money on
 //     every clip generation (the original "1 credit per anything"
 //     model).
+//   - PixVerse LipSync is its OWN line item (2 credits / scene). It is
+//     charged only if PixVerse actually ran. The Kling i2v charge is
+//     billed independently of whether PixVerse ran later.
 //   - First-regen-free: image + voice yes, clips NO. Clips are the
 //     expensive Kling call; "free" regens drained margin in V5.
 //   - Plan limits enforced at the API layer (per-plan max lipsync
@@ -20,6 +23,11 @@
 // No Stripe yet — admin grants credits + flips plan via /admin/users.
 // See BUSINESS_MODEL.md for the full proposal + margin tables.
 
+import {
+  CREDIT_LIST_VALUE_USD,
+  OPERATION_CREDIT_PRICING,
+} from '@/lib/pricing/provider-costs';
+
 export type PlanSlug = 'free_trial' | 'creator' | 'brand' | 'agency';
 
 /**
@@ -27,7 +35,7 @@ export type PlanSlug = 'free_trial' | 'creator' | 'brand' | 'agency';
  * on subscription plans because the user prepays a fixed amount for
  * a credit pool — see effectiveCreditValueUsd().
  */
-export const LIST_PRICE_PER_CREDIT_USD = 0.1;
+export const LIST_PRICE_PER_CREDIT_USD = CREDIT_LIST_VALUE_USD;
 
 export interface PlanConfig {
   slug: PlanSlug;
@@ -134,43 +142,57 @@ export function effectiveCreditValueUsd(plan: string | null | undefined): number
 // revenue side.
 //
 // Cost basis (USD) → markup → credits:
-//   script batch:          $0.02 → 10x → 2 credits ($0.20 list)
-//   image gen / regen:     $0.04 →  5x → 2 credits ($0.20 list)
-//   voice gen / regen:     $0.02 →  5x → 1 credit  ($0.10 list)
-//   clip b-roll:           $0.86 →  2x → 18 credits ($1.80 list)
-//   clip + lipsync:        $1.41 → 2.1x → 30 credits ($3.00 list)
-//   final render 15s:      ~ $0  (local ffmpeg) → 8 credits ($0.80 list,
+//   script batch:          $0.05  →  4x   →  2 credits  ($0.20 list)
+//   image gen / regen:     $0.06  → ~3x   →  2 credits  ($0.20 list)
+//   voice gen / regen:     $0.02  →  5x   →  1 credit   ($0.10 list)
+//   motion analysis:       $0.005 → bundled into clip — 0 standalone credits
+//   Kling i2v clip:        $0.79  → ~1.9x → 15 credits  ($1.50 list)
+//   PixVerse lipsync:      $0.071 → ~28x  →  2 credits  ($0.20 list)
+//   final render 15s:      ~ $0   (local ffmpeg) → 8 credits ($0.80 list,
 //                          covers storage + bandwidth + worker compute)
-//   final render 30s:      ~ $0  → 12 credits ($1.20 list)
+//   final render 30s:      ~ $0   → 12 credits ($1.20 list)
 //
-// The "clip" charges are the meaningful ones — that's where margin lives.
+// Important: PixVerse LipSync is its OWN charge. The clip pipeline
+// charges 15 credits for the Kling i2v stage UNCONDITIONALLY, and an
+// additional 2 credits ONLY IF PixVerse actually ran (face-gate passed
+// + provider returned a synced clip).
+//
+// `clip_broll` / `clip_lipsync` below are kept as composite shortcuts
+// for places that need the BUNDLED total at quote time (e.g. plan
+// margin tables) — they sum the underlying line items.
 
 export type Operation =
   | 'script_batch'
   | 'image'
   | 'voice'
-  | 'clip_broll'
-  | 'clip_lipsync'
-  | 'lipsync_only'
+  | 'motion_analysis'
+  | 'clip_broll'        // composite: kling_i2v_clip
+  | 'clip_lipsync'      // composite: kling_i2v_clip + pixverse_lipsync_scene
+  | 'kling_i2v_clip'    // line item — Kling animation only
+  | 'pixverse_lipsync_scene' // line item — PixVerse lip-sync only
+  | 'lipsync_only'      // re-run PixVerse on an existing clip (no Kling)
   | 'final_render_15s'
   | 'final_render_30s';
 
+const KLING_I2V_CLIP_CREDITS = OPERATION_CREDIT_PRICING.kling_i2v_clip;
+const PIXVERSE_LIPSYNC_CREDITS = OPERATION_CREDIT_PRICING.pixverse_lipsync_scene;
+
 export const PER_OPERATION_CREDITS: Record<Operation, number> = {
-  script_batch: 2,
-  image: 2,
-  voice: 1,
-  clip_broll: 18,
-  clip_lipsync: 30,
-  // Lipsync-only: skip the i2v step. Reuse an existing scene clip
-  // (already animated) + the existing voice MP3 → call provider
-  // lipsync API → save result back as the scene clip. Cost basis ≈
-  // $0.55 (Kling) or $0.30 (PixVerse), so we charge 12 credits =
-  // $1.20 list — same shape as final_render_30s, similar margin.
-  // Saves the user $0.79 vs a full clip regen when they just want a
-  // different lipsync provider on a clip whose visuals are fine.
-  lipsync_only: 12,
-  final_render_15s: 8,
-  final_render_30s: 12,
+  script_batch: OPERATION_CREDIT_PRICING.script_batch,
+  image: OPERATION_CREDIT_PRICING.scene_image_generate,
+  voice: OPERATION_CREDIT_PRICING.voice_generate,
+  motion_analysis: OPERATION_CREDIT_PRICING.motion_analysis,
+  // Composite shortcuts — for "what does this whole flow cost?" quotes.
+  // Real charging in clip-impl is split across kling_i2v_clip +
+  // pixverse_lipsync_scene so face-gate skips don't burn the lipsync
+  // line item.
+  clip_broll: KLING_I2V_CLIP_CREDITS,
+  clip_lipsync: KLING_I2V_CLIP_CREDITS + PIXVERSE_LIPSYNC_CREDITS,
+  kling_i2v_clip: KLING_I2V_CLIP_CREDITS,
+  pixverse_lipsync_scene: PIXVERSE_LIPSYNC_CREDITS,
+  lipsync_only: OPERATION_CREDIT_PRICING.lipsync_only,
+  final_render_15s: OPERATION_CREDIT_PRICING.final_export_15s,
+  final_render_30s: OPERATION_CREDIT_PRICING.final_export_30s,
 };
 
 // First-regen-free policy. Indexed by Operation. The original
@@ -182,11 +204,14 @@ export const PER_OPERATION_CREDITS: Record<Operation, number> = {
 // per-operation refund logic — those refunds happen regardless of
 // this map.
 export const FIRST_REGEN_FREE: Record<Operation, boolean> = {
-  script_batch: true, // a single regen of the 6-batch is essentially free anyway ($0.02 cost)
+  script_batch: true, // a single regen of the 6-batch is essentially free anyway ($0.05 cost)
   image: true,
   voice: true,
+  motion_analysis: false,
   clip_broll: false,
   clip_lipsync: false,
+  kling_i2v_clip: false,
+  pixverse_lipsync_scene: false,
   // lipsync_only is itself the "regen of just the lipsync part" — never
   // free, always paid (it IS the cheap regen).
   lipsync_only: false,
@@ -194,10 +219,19 @@ export const FIRST_REGEN_FREE: Record<Operation, boolean> = {
   final_render_30s: false,
 };
 
-// Clip credit cost helper — the call sites pass requiresLipSync, we
-// pick the right entry. Used by clip-impl.
+// Clip credit cost helper — at QUOTE time (e.g. "do you have enough
+// credits to attempt this clip?") we ask for the FULL bundled price so
+// the user isn't surprised mid-flow. Actual charging is split across
+// kling_i2v_clip and pixverse_lipsync_scene so PixVerse credits aren't
+// burned when the face gate skips lipsync (see clip-impl.ts).
 export function creditsForClip(requiresLipSync: boolean): number {
   return PER_OPERATION_CREDITS[requiresLipSync ? 'clip_lipsync' : 'clip_broll'];
+}
+
+// Granular charge helper. Use this in the actual charging step so
+// each provider call has its own line item in CreditTransaction.
+export function creditsForOperation(op: Operation): number {
+  return PER_OPERATION_CREDITS[op];
 }
 
 // Final-render credit cost by selected duration mode.

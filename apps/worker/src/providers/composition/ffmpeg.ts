@@ -48,11 +48,26 @@ export interface FfmpegCompositionInput extends CompositionInput {
   // Where to write the final mp4 (relative to apps/web/public/uploads/).
   finalsDir?: string;
   /** Optional background music URL (local /uploads/... or remote). When
-   * set, ffmpeg mixes the track at -18 dB under the voice track. */
+   * set, ffmpeg loops + trims the track to match the final video and
+   * mixes it under the voice at the configured low volume. */
   musicUrl?: string | null;
+  /** Linear gain to apply to the music track. Default 0.08. Hard-clamped
+   * to [0.04, 0.20] downstream — Hebrew voice MUST stay dominant. */
+  musicVolume?: number;
+  /** Length of the closing fade-out in milliseconds. Default 2000. The
+   * fade ALWAYS lands exactly on the end of the final video; setting
+   * this to 0 disables it. */
+  musicFadeOutDurationMs?: number;
+  /** Length of an optional opening fade-in in milliseconds. Default 300. */
+  musicFadeInDurationMs?: number;
   /** When false (default), captions are NOT burned in. The ASS file is
    * still built (cheap) but the ffmpeg pass skips the subtitles filter. */
   enableCaptions?: boolean;
+  /** V10 — pre-built ASS subtitle file content. When provided we burn
+   * THIS file instead of the legacy proportional captions built from
+   * `scenes`. Built by `packages/shared/src/captions/ass-builder.ts`
+   * upstream. Null/undefined → legacy path. */
+  captionsAssContent?: string | null;
 }
 
 export const ffmpegCompositionProvider: CompositionProvider & {
@@ -76,10 +91,18 @@ export const ffmpegCompositionProvider: CompositionProvider & {
         localPaths.push(dest);
       }
 
-      // 2. Build the ASS captions file (always — cheap; we only apply
-      //    it conditionally to the final video filter chain).
+      // 2. Captions ASS file. V10: prefer the pre-built ASS string the
+      //    caller produced from real ElevenLabs word timings. The
+      //    legacy proportional builder (`buildAssFile`) is kept as a
+      //    fallback only when no chunks are available — but in the V10
+      //    pipeline we'd rather skip captions than ship an
+      //    out-of-sync proportional approximation.
       const assPath = path.join(tmpRoot, 'captions.ass');
-      await fs.writeFile(assPath, buildAssFile(scenes), 'utf8');
+      const captionsAssContent =
+        input.captionsAssContent && input.captionsAssContent.length > 0
+          ? input.captionsAssContent
+          : buildAssFile(scenes); // legacy fallback (rarely used post-V10)
+      await fs.writeFile(assPath, captionsAssContent, 'utf8');
 
       // 3. Run a SINGLE ffmpeg pass that concatenates + re-encodes +
       //    optionally burns captions and mixes music.
@@ -150,10 +173,55 @@ export const ffmpegCompositionProvider: CompositionProvider & {
         videoOut = '[vout]';
       }
 
+      // ── Music mix ──────────────────────────────────────────────────────
+      // Pipeline (when music is enabled):
+      //   1. -stream_loop -1 on the music input → ffmpeg replays the
+      //      track infinitely, so a 60s loopable bed covers a 90s ad
+      //      without abrupt cuts.
+      //   2. atrim/asetpts trim the (already-looped) stream to EXACTLY
+      //      the final-video duration so music never plays past the
+      //      visual end. We compute totalDuration from the per-scene
+      //      durations the worker passes us.
+      //   3. volume= applies the low-volume gain (default 0.08).
+      //   4. afade=in:0:0.3 + afade=out:(end-2):2 give the user-required
+      //      gentle fade-in and the mandatory 2s closing fade-out.
+      //   5. amix mixes the processed music under the concatenated voice
+      //      track. duration=first locks the output length to [acat]
+      //      (= total scene duration) so the music never extends the
+      //      final video by a silent tail.
+      const totalDurationSec = scenes.reduce((sum, s) => sum + s.durationSeconds, 0);
+      const musicVolume = clampMusicVolume(input.musicVolume);
+      const fadeInSec = Math.max(0, (input.musicFadeInDurationMs ?? 300) / 1000);
+      const fadeOutSec = Math.max(0, (input.musicFadeOutDurationMs ?? 2000) / 1000);
+      const fadeOutStartSec = Math.max(0, totalDurationSec - fadeOutSec);
+
       if (musicLocalPath) {
         // Music input lives at index N (after all the scene clips).
-        filterParts.push(`[${N}:a]volume=-18dB[bg]`);
-        filterParts.push(`${audioOut}[bg]amix=inputs=2:duration=first:dropout_transition=2[aout]`);
+        const musicFilters: string[] = [
+          // Trim to the final-video duration. atrim wants seconds; we
+          // pass enough precision to never cut a frame short.
+          `atrim=duration=${totalDurationSec.toFixed(3)}`,
+          // After atrim the timestamps need to be reset or amix gets
+          // confused about the input timeline.
+          'asetpts=N/SR/TB',
+          // Resample + force stereo so it matches [acat] for amix.
+          'aresample=44100',
+          'aformat=channel_layouts=stereo',
+          // Volume gain — the low default keeps Hebrew voice dominant.
+          `volume=${musicVolume.toFixed(4)}`,
+        ];
+        if (fadeInSec > 0) {
+          musicFilters.push(`afade=t=in:st=0:d=${fadeInSec.toFixed(3)}`);
+        }
+        if (fadeOutSec > 0 && fadeOutStartSec > 0) {
+          musicFilters.push(
+            `afade=t=out:st=${fadeOutStartSec.toFixed(3)}:d=${fadeOutSec.toFixed(3)}`,
+          );
+        }
+        filterParts.push(`[${N}:a]${musicFilters.join(',')}[bg]`);
+        filterParts.push(
+          `${audioOut}[bg]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[aout]`,
+        );
         audioOut = '[aout]';
       }
 
@@ -162,6 +230,8 @@ export const ffmpegCompositionProvider: CompositionProvider & {
         args.push('-i', p);
       }
       if (musicLocalPath) {
+        // Looping + a generous probesize keep ffmpeg from giving up
+        // when a short ~1MB MP3 has to span a 30s render.
         args.push('-stream_loop', '-1', '-i', musicLocalPath);
       }
       args.push('-filter_complex', filterParts.join(';'));
@@ -229,6 +299,19 @@ async function downloadToFile(url: string, dest: string): Promise<void> {
   if (!res.ok) throw new Error(`Failed to download ${url}: HTTP ${res.status}`);
   const buf = Buffer.from(await res.arrayBuffer());
   await fs.writeFile(dest, buf);
+}
+
+// Clamp the music gain so an LLM-suggested or hand-tuned value never
+// drowns the Hebrew voice-over. The hard ceiling is 0.20; the typical
+// safe range is 0.06–0.12. Linear gain (volume= filter), not dB.
+function clampMusicVolume(v: number | undefined): number {
+  const DEFAULT = 0.08;
+  const MIN = 0.04;
+  const MAX = 0.20;
+  if (typeof v !== 'number' || !Number.isFinite(v)) return DEFAULT;
+  if (v < MIN) return MIN;
+  if (v > MAX) return MAX;
+  return v;
 }
 
 function runFfmpeg(args: string[]): Promise<void> {

@@ -282,6 +282,7 @@ const SCRIPT_ITEM_SCHEMA = {
     'scenes',
     'quality_score',
     'diversity_notes',
+    'music_profile',
   ],
   properties: {
     framework: {
@@ -452,6 +453,76 @@ const SCRIPT_ITEM_SCHEMA = {
         weakness_note: {
           type: 'string',
           description: 'One Hebrew sentence about the weakest aspect.',
+        },
+      },
+    },
+    music_profile: {
+      type: 'object',
+      additionalProperties: false,
+      description:
+        'Background-music intent. The downstream selector picks a local track from apps/web/public/music/ that best matches this profile. Choose mood/energy/style based on product category, emotional_trigger, framework, and audience. Bias LOW or MEDIUM energy — the Hebrew voice-over must stay dominant. Only use "high" energy when the product is fitness / sports / direct response.',
+      required: [
+        'enabled_by_default',
+        'mood',
+        'energy',
+        'style',
+        'reason',
+        'target_volume',
+        'duck_under_voice',
+      ],
+      properties: {
+        enabled_by_default: {
+          type: 'boolean',
+          description:
+            'Whether this script *would* benefit from music if the user has the toggle on. Almost always true. The user toggle still wins.',
+        },
+        mood: {
+          type: 'string',
+          enum: [
+            'warm_lifestyle',
+            'clean_premium',
+            'playful_family',
+            'tech_minimal',
+            'energetic_demo',
+            'soft_beauty',
+            'calm_wellness',
+            'direct_response_light',
+            'luxury_elegant',
+            'general_ugc',
+          ],
+        },
+        energy: {
+          type: 'string',
+          enum: ['low', 'medium', 'high'],
+        },
+        style: {
+          type: 'string',
+          enum: [
+            'soft_pop',
+            'ambient',
+            'minimal_electronic',
+            'playful',
+            'premium',
+            'acoustic',
+            'cinematic_light',
+            'upbeat',
+            'general_ugc',
+          ],
+        },
+        reason: {
+          type: 'string',
+          description:
+            'One short sentence explaining why this mood/energy fits this product + script. Used in admin debug output.',
+        },
+        target_volume: {
+          type: 'number',
+          description:
+            'Music gain target in linear units. Defaults to 0.08. Clamped to [0.06, 0.12] downstream — voice must stay dominant.',
+        },
+        duck_under_voice: {
+          type: 'boolean',
+          description:
+            'Hint to the mixer to duck music when voice is active. May be ignored by the MVP mixer; safe default true.',
         },
       },
     },

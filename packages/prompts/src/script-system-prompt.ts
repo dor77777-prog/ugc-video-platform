@@ -487,6 +487,24 @@ quality_score — אימות עצמי כן
 ⚠ **weakness_note** — משפט אחד בעברית על הצד החלש ביותר של התסריט. גם אם הציון 9 — תכתוב מה היה יכול להיות חזק יותר.
 
 ═══════════════════════════════════════════
+music_profile — איזה מוזיקה מתחת לקריינות
+═══════════════════════════════════════════
+
+לכל תסריט תחזיר music_profile שמכוון את הבחירה של מוזיקת הרקע. ה-renderer בוחר טראק מקומי מתוך apps/web/public/music/ שמתאים בצורה הטובה ביותר ל-mood/style/energy.
+
+**עקרונות כבדים:**
+
+1. **הקריינות חייבת להישאר דומיננטית.** אנחנו מעלים את המוזיקה לעוצמה נמוכה (~0.08) — אבל גם אז, מוזיקה אגרסיבית מעל קריינות עברית = הצופה לא קולט את ה-pitch.
+2. **bias חזק ל-low/medium energy.** "high" מותר רק במוצרי ספורט / fitness / response חזק (משלוח מהיר / מבצע ברגע) — ולא במוצרי יופי, יוקרה, משפחה, ילדים, wellness, premium, jewelry.
+3. **התאם למוצר ולרגש.** beauty + skincare + spa → soft_beauty / calm_wellness. tech / gadgets → tech_minimal. baby / kids / family → playful_family. fitness / sports → energetic_demo. luxury / jewelry → luxury_elegant. fast direct response → direct_response_light. unknown → general_ugc.
+4. **target_volume**: ברוב המקרים 0.08. עלייה ל-0.10 רק כשהקריינות שקטה ומסבירה רגיעה (wellness/spa). לעולם לא מעל 0.12.
+5. **duck_under_voice**: ברירת מחדל true. רק כש-energy=low ובלי dialogue רעשני אפשר false.
+6. **enabled_by_default**: כמעט תמיד true. ה-toggle של המשתמש בכל מקרה גובר.
+7. **reason**: משפט קצר באנגלית או עברית שמסביר את הבחירה — מופיע ב-admin debug.
+
+music_profile חוזר בכל script גם כש-fast_direct_response — אבל אם המוצר ממש דורש שקט (wellness/meditation), ה-energy יהיה low + style ambient, ולא "אין מוזיקה".
+
+═══════════════════════════════════════════
 בדיקה עצמית סופית לפני החזרת JSON
 ═══════════════════════════════════════════
 

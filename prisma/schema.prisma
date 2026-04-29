@@ -363,6 +363,20 @@ model Scene {
   // the final composition mux re-overlays the MP3 — see the worker.
   audioHandling              String?
 
+  // V10 captions (2026-04-29). Per-scene word + caption-chunk timings
+  // computed from ElevenLabs' with-timestamps response. Both arrays
+  // are scene-relative (audio file coordinates); the worker offsets
+  // them to the global timeline before burning the ASS file.
+  //   wordTimingsJson    — [{ word, startMs, endMs }, ...]
+  //   captionChunksJson  — [{ text, startMs, endMs, lineCount, wordCount }, ...]
+  //   captionsGeneratedAt — timestamp of last successful chunking pass.
+  // When wordTimingsJson/captionChunksJson are NULL the renderer
+  // skips captions for that scene (refuses to fall back to
+  // proportional estimation).
+  wordTimingsJson            Json?
+  captionChunksJson          Json?
+  captionsGeneratedAt        DateTime?
+
   @@unique([scriptId, sceneOrder])
   @@index([scriptId])
 }

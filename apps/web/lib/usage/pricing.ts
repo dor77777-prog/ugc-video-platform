@@ -2,6 +2,18 @@
 // shows accurate cost numbers. Prices are per 1M tokens for text models,
 // per-image for image models. Pulled from each provider's pricing page on
 // the dates noted; revisit periodically.
+//
+// V8 (2026-04-29): PixVerse pricing recalibrated against observed pack
+// economics ($10 / 2,250 credits = $0.00444/credit; observed 16
+// credits / lipsync scene = $0.071). The old $0.30 estimate was 4x the
+// actual cost. See lib/pricing/provider-costs.ts for the central
+// constants — this file now consumes them.
+
+import {
+  PROVIDER_COST_ESTIMATES_USD,
+  PIXVERSE_COST_MODEL,
+  VIDEO_COST_ESTIMATES,
+} from '@/lib/pricing/provider-costs';
 
 // OpenAI text models — $/1M tokens. (As of 2026-04 pricing page.)
 const OPENAI_TEXT_PRICING: Record<string, { input: number; output: number }> = {
@@ -148,24 +160,38 @@ export function priceCreatomate(): number {
 
 // ─── PixVerse LipSync ─────────────────────────────────────────────────────
 //
-// PixVerse charges per generation in their internal "credits" unit; the
-// LipSync API is documented at ~1 credit per call on their Standard
-// plan (≈ $0.30 / call, observed Apr 2026 from the user's pricing page).
-// Higher-tier plans drop the per-credit cost. We use a flat $0.30 per
-// LipSync call as a conservative estimate so /admin/costs doesn't
-// under-report — when the user shares their actual pricing tier we can
-// drop a multiplier in here.
-const PIXVERSE_LIPSYNC_USD_PER_CALL = 0.3;
-export function pricePixverseLipSync(): number {
-  return PIXVERSE_LIPSYNC_USD_PER_CALL;
+// PixVerse charges per generation in their internal "credits" unit.
+// Observed pack economics from the user's account (Apr 2026):
+//   $10 pack  →  2,250 PixVerse credits  →  $0.00444 / PixVerse credit
+//   1 lipsync scene observed at 16 PixVerse credits → $0.0711 / scene
+//   Per-second equivalent at 4s: $0.0178/s (use $0.02/s as the
+//   conservative budget figure).
+//
+// Numbers live in lib/pricing/provider-costs.ts so they can be tuned via
+// env without redeploying. The function below is the legacy entry
+// point used by clip-impl + admin pricing — it just reads the central
+// estimate.
+export function pricePixverseLipSync(durationSeconds: number = 5): number {
+  // Use the per-second figure when the call site has a real duration so
+  // a 7s scene reports more cost than a 3s one. For unknown durations
+  // we fall back to the per-scene observed average ($0.071) so the
+  // estimate matches the pack-based math.
+  if (durationSeconds && durationSeconds > 0 && durationSeconds !== 5) {
+    return durationSeconds * PROVIDER_COST_ESTIMATES_USD.pixverse_lipsync_second;
+  }
+  return PROVIDER_COST_ESTIMATES_USD.pixverse_lipsync_scene;
 }
 
 // V7: PixVerse is the sole lipsync provider. priceLipSync used to
 // route by provider name (kling / pixverse / sync); now it always
 // returns the PixVerse rate.
-export function priceLipSync(_providerName?: string, _durationSeconds = 5): number {
-  return pricePixverseLipSync();
+export function priceLipSync(_providerName?: string, durationSeconds = 5): number {
+  return pricePixverseLipSync(durationSeconds);
 }
+
+// Re-exports — call sites that need the central constants (admin views,
+// margin reporting) can import from one place rather than two.
+export { PROVIDER_COST_ESTIMATES_USD, PIXVERSE_COST_MODEL, VIDEO_COST_ESTIMATES };
 
 // ─── Provider Catalog ─────────────────────────────────────────────────────
 //
@@ -196,7 +222,7 @@ export const PROVIDER_CATALOG: ProviderInfo[] = [
     displayName: 'OpenAI',
     purpose: 'Script generation (gpt-5.4-mini), motion vision analysis (gpt-4o-mini), scene image generation (gpt-image-2)',
     purposeHe: 'תסריטים, תמונות סצנה (gpt-image-2), ניתוח תנועה (gpt-4o-mini vision)',
-    costPerCallUsd: '$0.005-$0.04 (per call), $0.04/image',
+    costPerCallUsd: '$0.05/script batch · $0.06/image · $0.005/motion',
     active: true,
     operations: ['script_gen', 'motion_analysis', 'image_gen'],
   },
@@ -205,7 +231,7 @@ export const PROVIDER_CATALOG: ProviderInfo[] = [
     displayName: 'ElevenLabs',
     purpose: 'Hebrew voice-over via Multilingual v2',
     purposeHe: 'קריינות עברית (Multilingual v2)',
-    costPerCallUsd: '$0.01-$0.02 / scene voice',
+    costPerCallUsd: '~$0.02 / scene voice',
     active: true,
     operations: ['tts'],
   },
@@ -214,7 +240,7 @@ export const PROVIDER_CATALOG: ProviderInfo[] = [
     displayName: 'Kling AI',
     purpose: 'Image-to-video (kling-v3-omni). Animation only — lipsync is PixVerse.',
     purposeHe: 'הנפשת סצנות (i2v). אין יותר Kling LipSync — PixVerse ירש את התפקיד.',
-    costPerCallUsd: '$0.79 / clip',
+    costPerCallUsd: '~$0.79 / clip (1.44 tok × $0.546)',
     active: true,
     operations: ['i2v'],
   },
@@ -223,9 +249,11 @@ export const PROVIDER_CATALOG: ProviderInfo[] = [
     displayName: 'PixVerse',
     purpose: 'The sole LipSync provider — multipart upload + poll',
     purposeHe: 'ספק ה-LipSync היחיד — multipart upload + polling',
-    costPerCallUsd: '~$0.30 / lipsync',
+    // $10 / 2,250 credits = $0.00444 per PixVerse credit;
+    // observed 16 credits/scene = $0.0711/scene.
+    costPerCallUsd: '~$0.071 / lipsync scene (16 px-credits @ $0.00444)',
     active: true,
-    operations: ['lipsync'],
+    operations: ['lipsync', 'pixverse_media_upload'],
   },
   {
     provider: 'ffmpeg',

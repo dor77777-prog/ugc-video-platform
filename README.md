@@ -8,6 +8,89 @@ Brand tagline: **מודעות וידאו שמוכרות. תכל'ס.**
 End-to-end functional. Every wizard step uses real providers (no mocks in the main path).
 See [STATUS.md](./STATUS.md) for the full implemented / mocked / missing breakdown.
 
+### What V10 added (Apr 29)
+- **Premium Hebrew captions are live.** The old proportional chunking
+  (5 words / scene-duration ÷ word-count) is gone — it was the source
+  of the "frozen captions, off by half a beat" problem. Replaced with
+  real per-character alignment from ElevenLabs' `with-timestamps`
+  endpoint.
+- **Pipeline** —
+  [`charactersToWords`](packages/shared/src/captions/chunker.ts) groups
+  Hebrew letters + punctuation into word timings; `chunkCaptions`
+  splits into 2-5-word phrase chunks (max 2 lines, ~18 chars/line,
+  min 650ms / max 2200ms, splits on strong/soft punctuation).
+- **Scene persistence** — voice-impl now requests `withTimestamps:true`
+  and stores `wordTimingsJson` + `captionChunksJson` + `captionsGeneratedAt`
+  on the Scene row (migration `v10_scene_captions`). The render
+  worker reads them, offsets to the global timeline, and feeds a
+  pre-built ASS file to ffmpeg. Scenes missing alignment are
+  EXCLUDED from captions, never approximated.
+- **Style** —
+  [`buildAssFromChunks`](packages/shared/src/captions/ass-builder.ts)
+  emits Heebo Bold 64px white text with thick black outline,
+  `\fad(100,100)` fade in/out, bottom-center alignment with 210px
+  margin (auto +40px boost when any scene needs the mouth visible
+  for lipsync or has a low-frame product). libass handles bidi —
+  Hebrew word order is never reversed.
+- **Toggle + mode** — `productData.captions` (Step 1) is the master
+  switch. `CAPTIONS_MODE=phrase|off|word_highlight` env (default
+  `phrase`). `word_highlight` is reserved for a future per-word
+  active-color implementation.
+- **Admin debug** — `RenderJob.providerPayloadJson.captions` records
+  `timingSource: elevenlabs_timestamps`, `totalCaptionChunks`,
+  per-scene count, warnings (missing alignment, dropped invalid
+  windows), font used.
+
+### What V9 added (Apr 29)
+- **Background music is live.** 17 royalty-free Mixkit tracks live
+  under [`apps/web/public/music/`](apps/web/public/music/) — that
+  folder is the SOLE source of music. No remote API, no runtime
+  downloads, no commercial trending songs.
+- **Auto-selection** — the script LLM now returns a `music_profile`
+  (mood / energy / style / target_volume / duck_under_voice) per
+  script. At final-render time
+  [`selectMusicTrack`](packages/shared/src/music/select-music.ts)
+  scores every library entry against the profile + product category +
+  framework and picks the best fit. High-energy tracks are
+  hard-penalized for beauty / wellness / baby / jewelry / premium so
+  the Hebrew voice always stays dominant; an unmatched profile falls
+  back to a safe low-energy generic UGC bed.
+- **ffmpeg composition** — `-stream_loop -1` loops the track,
+  `atrim=duration=<final>` cuts it to exactly the final video,
+  `volume=0.08` (clamped to `[0.04, 0.20]`) sits under the voice, and a
+  `afade=t=out:st=<end-2>:d=2` closes with the mandatory 2s fade-out.
+  Optional 300ms fade-in at the start. Music never restarts per scene,
+  never extends the video, never cuts abruptly.
+- **Step-1 toggle** (`productData.backgroundMusic`) is honored —
+  off → no music layer at all.
+- **Admin debug** — `RenderJob.providerPayloadJson.music` now records
+  the selected track id, license, reason, volume, fade durations, and
+  trimmed duration so any future "why did this video get *that*
+  music?" question is answerable from the DB.
+
+### What V8 added (Apr 29)
+- **Pricing recalibrated for PixVerse.** PixVerse pack: $10 = 2,250
+  credits → $0.00444 / PixVerse-credit. Observed 16 credits / lip-sync
+  scene = **$0.071 / scene** (the old $0.30 estimate was 4x reality).
+- **Provider cost constants centralized** in
+  [`lib/pricing/provider-costs.ts`](apps/web/lib/pricing/provider-costs.ts) —
+  `PROVIDER_COST_ESTIMATES_USD`, `PIXVERSE_COST_MODEL`,
+  `VIDEO_COST_ESTIMATES`, `OPERATION_CREDIT_PRICING`. All env-overridable
+  (`COST_*`, `PIXVERSE_PACKAGE_*`, `CREDIT_LIST_VALUE_USD`).
+- **Per-operation credit pricing** (`lib/plans.ts`):
+  Kling i2v = 15 credits, PixVerse lip-sync = 2 credits, voice = 1,
+  image = 2, script batch = 2, motion analysis bundled. Final 15s = 8,
+  30s = 12. The Kling clip and PixVerse lip-sync are now SEPARATE line
+  items — PixVerse is charged **only when PixVerse actually ran**
+  (face-gate skip → 0 PixVerse credits).
+- **Estimated provider cost / video**: 15s ≈ **$3.62**, 30s ≈ **$4.57**.
+  Old "Kling LipSync $0.55 / 30s = $5.32" numbers are removed.
+- **Plan economics** — admin `/admin/costs` now surfaces effective
+  credit value per plan (`monthlyPriceUsd / monthlyCredits`) so margin
+  math reflects subscriber-prepay reality, not list price. Free
+  Trial credits are reported as $0 (acquisition spend). Underwater
+  plans get a red badge.
+
 ### What V7 added (Apr 29)
 - **PixVerse is the sole LipSync provider.** Removed Kling LipSync v1,
   Sync.so, ElevenLabs Omnihuman, Mock, and the four TalkingScene

@@ -108,6 +108,39 @@ interface LlmScript {
   estimated_duration_seconds: number;
   scenes: LlmScene[];
   quality_score: LlmQualityScore;
+  // V8 (2026-04-29) — background-music intent. Required by the schema
+  // so the LLM always commits to a mood/energy/style combination; the
+  // selector in lib/music/select-music.ts maps it to a local track.
+  music_profile?: LlmMusicProfile;
+}
+
+export interface LlmMusicProfile {
+  enabled_by_default: boolean;
+  mood:
+    | 'warm_lifestyle'
+    | 'clean_premium'
+    | 'playful_family'
+    | 'tech_minimal'
+    | 'energetic_demo'
+    | 'soft_beauty'
+    | 'calm_wellness'
+    | 'direct_response_light'
+    | 'luxury_elegant'
+    | 'general_ugc';
+  energy: 'low' | 'medium' | 'high';
+  style:
+    | 'soft_pop'
+    | 'ambient'
+    | 'minimal_electronic'
+    | 'playful'
+    | 'premium'
+    | 'acoustic'
+    | 'cinematic_light'
+    | 'upbeat'
+    | 'general_ugc';
+  reason: string;
+  target_volume: number;
+  duck_under_voice: boolean;
 }
 interface LlmRegenResponse {
   script: LlmScript;
@@ -230,6 +263,8 @@ export interface GeneratedScript {
   estimatedDurationSeconds: number;
   scenes: GeneratedScene[];
   qualityScore: GeneratedQualityScore;
+  /** Background-music intent. Null when the LLM didn't return it. */
+  musicProfile: LlmMusicProfile | null;
   regenerated: boolean; // true if this script went through one regen pass
   raw: LlmScript; // preserve original for audit
   // Derived for the legacy Prisma enum.
@@ -550,6 +585,7 @@ function toGenerated(s: LlmScript, regenerated: boolean): GeneratedScript {
       overall: s.quality_score.overall,
       weaknessNote: s.quality_score.weakness_note,
     },
+    musicProfile: s.music_profile ?? null,
     regenerated,
     raw: s,
     angle: FRAMEWORK_TO_LEGACY_ANGLE[s.framework] ?? 'problem_solution',

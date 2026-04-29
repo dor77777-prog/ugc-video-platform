@@ -32,6 +32,7 @@
 
 import { LlmConfigError } from '../llm/scripts';
 import { probeDurationSeconds } from '../scenes/mux-audio';
+import type { CharacterTiming } from '@ugc-video/shared';
 
 const ELEVENLABS_API_BASE = 'https://api.elevenlabs.io/v1';
 const SINGLE_CALL_TIMEOUT_MS = 90_000; // 5s of audio rarely takes >30s
@@ -65,13 +66,20 @@ export interface GenerateVoiceoverInput {
   voiceId: string; // ElevenLabs voice id (uuid-ish)
   performanceNote?: string | null; // Hebrew direction → derives voice settings
   modelId?: string; // override env default
+  /** When true, request the with-timestamps endpoint variant so we get
+   *  per-character alignment back. Used by the captions pipeline so
+   *  we never have to estimate timing from text length. */
+  withTimestamps?: boolean;
 }
 
 export interface GenerateVoiceoverResult {
   audioBytes: Buffer;
-  durationSeconds: number; // estimated; ElevenLabs doesn't return duration
+  durationSeconds: number; // measured via ffprobe
   model: string;
   voiceSettings: VoiceSettings;
+  /** Character-level timings, populated only when `withTimestamps=true`
+   *  and ElevenLabs returned an alignment block. */
+  characterTimings?: CharacterTiming[] | null;
 }
 
 export async function generateHebrewVoiceover(
@@ -92,7 +100,19 @@ export async function generateHebrewVoiceover(
   const modelId = input.modelId ?? process.env.ELEVENLABS_MODEL_ID ?? 'eleven_v3';
   const voiceSettings = deriveVoiceSettings(input.performanceNote ?? null);
 
-  const url = `${ELEVENLABS_API_BASE}/text-to-speech/${encodeURIComponent(input.voiceId)}?output_format=mp3_44100_128`;
+  // Two endpoint variants:
+  //   - Default: POST /text-to-speech/{voice_id} returns raw audio
+  //     bytes. Cheap, simple, no alignment.
+  //   - withTimestamps: POST /text-to-speech/{voice_id}/with-timestamps
+  //     returns a JSON envelope { audio_base64, alignment, normalized_alignment }.
+  //     Same billed cost, ~50ms slower because of base64.
+  // The captions pipeline always asks for timestamps; backwards
+  // callers that don't pass the flag get the lean audio-only path.
+  const wantTimings = input.withTimestamps === true;
+  const baseUrl = `${ELEVENLABS_API_BASE}/text-to-speech/${encodeURIComponent(input.voiceId)}`;
+  const url = wantTimings
+    ? `${baseUrl}/with-timestamps?output_format=mp3_44100_128`
+    : `${baseUrl}?output_format=mp3_44100_128`;
 
   const ac = new AbortController();
   const timeoutId = setTimeout(() => ac.abort(), SINGLE_CALL_TIMEOUT_MS);
@@ -103,7 +123,7 @@ export async function generateHebrewVoiceover(
       headers: {
         'xi-api-key': apiKey,
         'Content-Type': 'application/json',
-        Accept: 'audio/mpeg',
+        Accept: wantTimings ? 'application/json' : 'audio/mpeg',
       },
       body: JSON.stringify({
         text: input.text,
@@ -133,8 +153,54 @@ export async function generateHebrewVoiceover(
     throw new Error(`ElevenLabs ${res.status}: ${detail.slice(0, 300)}`);
   }
 
-  const arrayBuffer = await res.arrayBuffer();
-  const audioBytes = Buffer.from(arrayBuffer);
+  let audioBytes: Buffer;
+  let characterTimings: CharacterTiming[] | null = null;
+  if (wantTimings) {
+    // JSON shape:
+    //   {
+    //     audio_base64: "...",
+    //     alignment: {
+    //       characters: ["א","ב",...],
+    //       character_start_times_seconds: [0.0, 0.06, ...],
+    //       character_end_times_seconds:   [0.06, 0.13, ...]
+    //     },
+    //     normalized_alignment: { ... }   // post-text-normalization
+    //   }
+    // We use `alignment` (raw, matches the user's input text) — that's
+    // what the chunker needs to reconstruct word boundaries.
+    const json = (await res.json()) as {
+      audio_base64?: string;
+      alignment?: {
+        characters?: string[];
+        character_start_times_seconds?: number[];
+        character_end_times_seconds?: number[];
+      };
+    };
+    if (!json.audio_base64) {
+      throw new Error('ElevenLabs with-timestamps: missing audio_base64 in response');
+    }
+    audioBytes = Buffer.from(json.audio_base64, 'base64');
+    const a = json.alignment;
+    if (
+      a &&
+      Array.isArray(a.characters) &&
+      Array.isArray(a.character_start_times_seconds) &&
+      Array.isArray(a.character_end_times_seconds) &&
+      a.characters.length === a.character_start_times_seconds.length &&
+      a.characters.length === a.character_end_times_seconds.length
+    ) {
+      characterTimings = a.characters.map((char, i) => ({
+        char,
+        startMs: Math.max(0, Math.round(a.character_start_times_seconds![i]! * 1000)),
+        endMs: Math.max(0, Math.round(a.character_end_times_seconds![i]! * 1000)),
+      }));
+    } else {
+      console.warn('[elevenlabs] with-timestamps: alignment missing or malformed — captions will fall back');
+    }
+  } else {
+    const arrayBuffer = await res.arrayBuffer();
+    audioBytes = Buffer.from(arrayBuffer);
+  }
   // CRITICAL — measure the REAL MP3 duration via ffprobe instead of
   // estimating from text length.
   //
@@ -170,6 +236,7 @@ export async function generateHebrewVoiceover(
     durationSeconds: Number(durationSeconds.toFixed(2)),
     model: modelId,
     voiceSettings,
+    characterTimings,
   };
 }
 

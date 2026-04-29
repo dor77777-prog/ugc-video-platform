@@ -4,6 +4,17 @@ import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { InFlightCallsSection } from './in-flight';
 import { PROVIDER_CATALOG } from '@/lib/usage/pricing';
+import {
+  CREDIT_LIST_VALUE_USD,
+  PROVIDER_COST_ESTIMATES_USD,
+  PIXVERSE_COST_MODEL,
+  VIDEO_COST_ESTIMATES,
+  OPERATION_CREDIT_PRICING,
+} from '@/lib/pricing/provider-costs';
+import {
+  PLAN_CONFIGS,
+  effectiveCreditValueUsd,
+} from '@/lib/plans';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,6 +22,8 @@ const PROVIDER_LABEL: Record<string, string> = {
   openai: 'OpenAI',
   elevenlabs: 'ElevenLabs',
   kling: 'Kling',
+  pixverse: 'PixVerse',
+  ffmpeg: 'ffmpeg',
   runway: 'Runway',
   creatomate: 'Creatomate',
 };
@@ -21,14 +34,17 @@ const OPERATION_LABEL: Record<string, string> = {
   tts: 'קריינות (TTS)',
   motion_analysis: 'ניתוח תנועה (Vision)',
   i2v: 'אנימציה (Kling i2v)',
-  lipsync: 'סנכרון שפתיים (Kling)',
+  lipsync: 'סנכרון שפתיים (PixVerse)',
+  pixverse_media_upload: 'העלאת מדיה ל-PixVerse',
   video_gen: 'וידאו לסצנה',
   compose: 'הרכבה סופית',
+  mux: 'Mux אודיו (ffmpeg)',
 };
 
-// 1 credit costs the user $0.50 (per pricing.ts comment in STATUS.md);
-// updates here flow into the "revenue vs cost" KPIs.
-const PRICE_PER_CREDIT_USD = 0.5;
+// 1 Tachles credit = $0.10 list price. For subscriber margin we use the
+// PLAN-EFFECTIVE credit value (e.g. $49 / 500 credits = $0.098 on
+// Creator), which is lower than list — see effectiveCreditValueUsd().
+const PRICE_PER_CREDIT_USD = CREDIT_LIST_VALUE_USD;
 
 export default async function AdminUsagePage() {
   const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
@@ -168,8 +184,13 @@ export default async function AdminUsagePage() {
     rendersFinishedAllTime > 0 ? allTimeCost / rendersFinishedAllTime : 0;
   const costPerFinishedRender30d =
     rendersFinished30d > 0 ? apiCost30d / rendersFinished30d : 0;
-  // Per STATUS.md: ~12 credits per finished video × $0.5/credit = $6 revenue.
-  const ESTIMATED_REVENUE_PER_RENDER = 12 * PRICE_PER_CREDIT_USD;
+  // Typical 15s video charges ≈ 84 credits (script 2 + 4×img 8 + 4×voice 4
+  // + 4×kling 60 + 1×pixverse 2 + final 8). At $0.10 list per credit that's
+  // $8.40 revenue. The mix on real usage drifts (regens, 30s mode), but
+  // 84 is the right order of magnitude for the dashboard tile.
+  const ESTIMATED_CREDITS_PER_RENDER = 84;
+  const ESTIMATED_REVENUE_PER_RENDER =
+    ESTIMATED_CREDITS_PER_RENDER * PRICE_PER_CREDIT_USD;
   const estimatedRevenue30d = rendersFinished30d * ESTIMATED_REVENUE_PER_RENDER;
   const estimatedMargin30d = estimatedRevenue30d - apiCost30d;
   const estimatedMarginPct =
@@ -207,7 +228,7 @@ export default async function AdminUsagePage() {
         <Kpi
           label="הכנסה משוערת (30 ימים)"
           value={fmtUSD(estimatedRevenue30d)}
-          sublabel={`${rendersFinished30d} × ${ESTIMATED_REVENUE_PER_RENDER}$ (12 קרדיטים)`}
+          sublabel={`${rendersFinished30d} × $${ESTIMATED_REVENUE_PER_RENDER.toFixed(2)} (${ESTIMATED_CREDITS_PER_RENDER} קרדיטים @ $${PRICE_PER_CREDIT_USD.toFixed(2)})`}
         />
         <Kpi
           label="מרג'ין משוער (30 ימים)"
@@ -287,6 +308,250 @@ export default async function AdminUsagePage() {
             <code>provider</code> מוגדר נכון, (ג) כתוב פונקציית{' '}
             <code>price&lt;Provider&gt;()</code> או הוסף ל-<code>priceLipSync</code>{' '}
             כדי שה-costUsd ייכתב.
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Provider cost reference — measured estimates for the "do we
+          lose money on a Kling clip?" sanity check. Numbers come from
+          PROVIDER_COST_ESTIMATES_USD in lib/pricing/provider-costs.ts.
+          Each row matches an ApiCall.operation slug we record. */}
+      <Card>
+        <CardContent className="p-5 space-y-3">
+          <div className="space-y-1">
+            <h2 className="text-lg font-bold">עלות מוערכת לקריאת ספק (USD)</h2>
+            <p className="text-xs text-muted-foreground">
+              ה-baseline שאנחנו משווים אליו את ה-actual ApiCall.costUsd. שינוי
+              tier אצל ספק → עדכן את <code>provider-costs.ts</code> או env.
+            </p>
+          </div>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>פעולה</TableHead>
+                <TableHead>ספק</TableHead>
+                <TableHead className="text-right">עלות (USD)</TableHead>
+                <TableHead>הערה</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {[
+                { op: 'openai_script_batch', provider: 'openai', cost: PROVIDER_COST_ESTIMATES_USD.openai_script_batch, note: '6 תסריטים בbatch אחד' },
+                { op: 'openai_scene_image', provider: 'openai', cost: PROVIDER_COST_ESTIMATES_USD.openai_scene_image, note: 'gpt-image-2 medium 1024x1792' },
+                { op: 'openai_motion_analysis_scene', provider: 'openai', cost: PROVIDER_COST_ESTIMATES_USD.openai_motion_analysis_scene, note: 'gpt-4o-mini vision לכל סצנה' },
+                { op: 'elevenlabs_voice_scene', provider: 'elevenlabs', cost: PROVIDER_COST_ESTIMATES_USD.elevenlabs_voice_scene, note: 'Multilingual v2 ~200 chars' },
+                { op: 'kling_i2v_clip', provider: 'kling', cost: PROVIDER_COST_ESTIMATES_USD.kling_i2v_clip, note: '1.44 tok × $0.546 = $0.79 ממוצע' },
+                { op: 'pixverse_lipsync_scene', provider: 'pixverse', cost: PROVIDER_COST_ESTIMATES_USD.pixverse_lipsync_scene, note: '16 PixVerse credits @ $0.00444 = $0.071' },
+                { op: 'pixverse_lipsync_second', provider: 'pixverse', cost: PROVIDER_COST_ESTIMATES_USD.pixverse_lipsync_second, note: 'לחישוב לפי שנייה (~$0.018/s)' },
+                { op: 'pixverse_media_upload', provider: 'pixverse', cost: PROVIDER_COST_ESTIMATES_USD.pixverse_media_upload, note: 'אין חיוב נצפה — נרשם למקרה שזה ישתנה' },
+              ].map((row) => (
+                <TableRow key={row.op}>
+                  <TableCell className="font-mono text-xs" dir="ltr">{row.op}</TableCell>
+                  <TableCell>{PROVIDER_LABEL[row.provider] ?? row.provider}</TableCell>
+                  <TableCell className="font-mono text-right">{fmtUSD(row.cost)}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground">{row.note}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
+      {/* PixVerse cost model — show the exact pack-based math behind the
+          $0.071/lipsync number so it's auditable. */}
+      <Card>
+        <CardContent className="p-5 space-y-2">
+          <h2 className="text-lg font-bold">PixVerse — מודל מחיר (נצפה)</h2>
+          <Table>
+            <TableBody>
+              <TableRow>
+                <TableCell className="text-sm">חבילה</TableCell>
+                <TableCell className="font-mono">
+                  ${PIXVERSE_COST_MODEL.packagePriceUsd.toFixed(2)} = {PIXVERSE_COST_MODEL.packageCredits.toLocaleString()} PixVerse credits
+                </TableCell>
+              </TableRow>
+              <TableRow>
+                <TableCell className="text-sm">USD ל-PixVerse credit</TableCell>
+                <TableCell className="font-mono">${PIXVERSE_COST_MODEL.usdPerPixverseCredit.toFixed(5)}</TableCell>
+              </TableRow>
+              <TableRow>
+                <TableCell className="text-sm">צריכה נצפית לסצנת LipSync</TableCell>
+                <TableCell className="font-mono">{PIXVERSE_COST_MODEL.observedCreditsPerLipSyncScene} PixVerse credits</TableCell>
+              </TableRow>
+              <TableRow>
+                <TableCell className="text-sm">עלות נצפית לסצנת LipSync</TableCell>
+                <TableCell className="font-mono font-bold">${PIXVERSE_COST_MODEL.observedUsdPerLipSyncScene.toFixed(4)}</TableCell>
+              </TableRow>
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
+      {/* Operation pricing — credits charged + nominal margin at list price.
+          Effective margin on subscribers is lower (see plan economics). */}
+      <Card>
+        <CardContent className="p-5 space-y-3">
+          <h2 className="text-lg font-bold">תמחור פעולה (קרדיטים)</h2>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>פעולה</TableHead>
+                <TableHead>ספק</TableHead>
+                <TableHead className="text-right">עלות (USD)</TableHead>
+                <TableHead className="text-right">קרדיטים</TableHead>
+                <TableHead className="text-right">הכנסה (list)</TableHead>
+                <TableHead className="text-right">מרג'ין (list)</TableHead>
+                <TableHead>הערה</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {(() => {
+                const rows: Array<{
+                  op: string;
+                  provider: string;
+                  costUsd: number;
+                  credits: number;
+                  note: string;
+                }> = [
+                  { op: 'script_batch', provider: 'openai', costUsd: PROVIDER_COST_ESTIMATES_USD.openai_script_batch, credits: OPERATION_CREDIT_PRICING.script_batch, note: 'batch של 6 תסריטים' },
+                  { op: 'scene_image_generate', provider: 'openai', costUsd: PROVIDER_COST_ESTIMATES_USD.openai_scene_image, credits: OPERATION_CREDIT_PRICING.scene_image_generate, note: 'יצירה ראשונה' },
+                  { op: 'scene_image_regenerate', provider: 'openai', costUsd: PROVIDER_COST_ESTIMATES_USD.openai_scene_image, credits: OPERATION_CREDIT_PRICING.scene_image_regenerate, note: 'first regen חינם (FIRST_REGEN_FREE.image)' },
+                  { op: 'voice_generate', provider: 'elevenlabs', costUsd: PROVIDER_COST_ESTIMATES_USD.elevenlabs_voice_scene, credits: OPERATION_CREDIT_PRICING.voice_generate, note: 'Hebrew TTS' },
+                  { op: 'voice_regenerate', provider: 'elevenlabs', costUsd: PROVIDER_COST_ESTIMATES_USD.elevenlabs_voice_scene, credits: OPERATION_CREDIT_PRICING.voice_regenerate, note: 'first regen חינם' },
+                  { op: 'motion_analysis', provider: 'openai', costUsd: PROVIDER_COST_ESTIMATES_USD.openai_motion_analysis_scene, credits: OPERATION_CREDIT_PRICING.motion_analysis, note: 'משולב במחיר הקליפ' },
+                  { op: 'kling_i2v_clip', provider: 'kling', costUsd: PROVIDER_COST_ESTIMATES_USD.kling_i2v_clip, credits: OPERATION_CREDIT_PRICING.kling_i2v_clip, note: 'נטען תמיד כשהי2v רץ' },
+                  { op: 'pixverse_lipsync_scene', provider: 'pixverse', costUsd: PROVIDER_COST_ESTIMATES_USD.pixverse_lipsync_scene, credits: OPERATION_CREDIT_PRICING.pixverse_lipsync_scene, note: 'נטען רק אם PixVerse באמת רץ (face-gate עבר)' },
+                  { op: 'lipsync_only', provider: 'pixverse', costUsd: PROVIDER_COST_ESTIMATES_USD.pixverse_lipsync_scene, credits: OPERATION_CREDIT_PRICING.lipsync_only, note: 'PixVerse על קליפ קיים — בלי i2v' },
+                  { op: 'final_export_15s', provider: 'ffmpeg', costUsd: 0, credits: OPERATION_CREDIT_PRICING.final_export_15s, note: 'מקומי (storage + compute)' },
+                  { op: 'final_export_30s', provider: 'ffmpeg', costUsd: 0, credits: OPERATION_CREDIT_PRICING.final_export_30s, note: 'מקומי (storage + compute)' },
+                ];
+                return rows.map((row) => {
+                  const revenue = row.credits * PRICE_PER_CREDIT_USD;
+                  const margin = revenue - row.costUsd;
+                  const marginPct =
+                    revenue > 0 ? (margin / revenue) * 100 : 0;
+                  return (
+                    <TableRow key={row.op}>
+                      <TableCell className="font-mono text-xs" dir="ltr">{row.op}</TableCell>
+                      <TableCell>{PROVIDER_LABEL[row.provider] ?? row.provider}</TableCell>
+                      <TableCell className="font-mono text-right">{fmtUSD(row.costUsd)}</TableCell>
+                      <TableCell className="font-mono text-right">{row.credits}</TableCell>
+                      <TableCell className="font-mono text-right">{fmtUSD(revenue)}</TableCell>
+                      <TableCell className={'font-mono text-right ' + (margin < 0 ? 'text-destructive font-bold' : '')}>
+                        {fmtUSD(margin)} ({marginPct.toFixed(0)}%)
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground">{row.note}</TableCell>
+                    </TableRow>
+                  );
+                });
+              })()}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
+      {/* Per-video cost / revenue / margin estimates by mode. */}
+      <Card>
+        <CardContent className="p-5 space-y-3">
+          <h2 className="text-lg font-bold">אומדן וידאו 15s / 30s</h2>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>מצב</TableHead>
+                <TableHead className="text-right">סצנות</TableHead>
+                <TableHead className="text-right">LipSync</TableHead>
+                <TableHead className="text-right">עלות ספק</TableHead>
+                <TableHead className="text-right">קרדיטים</TableHead>
+                <TableHead className="text-right">הכנסה (list)</TableHead>
+                <TableHead className="text-right">מרג'ין</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {[
+                { mode: '15s', est: VIDEO_COST_ESTIMATES.fifteenSec, credits: 84 },
+                { mode: '30s', est: VIDEO_COST_ESTIMATES.thirtySec, credits: 108 },
+              ].map((row) => {
+                const revenue = row.credits * PRICE_PER_CREDIT_USD;
+                const margin = revenue - row.est.totalUsd;
+                const marginPct = revenue > 0 ? (margin / revenue) * 100 : 0;
+                return (
+                  <TableRow key={row.mode}>
+                    <TableCell className="font-bold">{row.mode}</TableCell>
+                    <TableCell className="text-right font-mono">{row.est.sceneCount}</TableCell>
+                    <TableCell className="text-right font-mono">{row.est.lipSyncSceneCount}</TableCell>
+                    <TableCell className="text-right font-mono">${row.est.totalUsd.toFixed(2)}</TableCell>
+                    <TableCell className="text-right font-mono">{row.credits}</TableCell>
+                    <TableCell className="text-right font-mono">{fmtUSD(revenue)}</TableCell>
+                    <TableCell className={'text-right font-mono ' + (margin < 0 ? 'text-destructive font-bold' : '')}>
+                      {fmtUSD(margin)} ({marginPct.toFixed(0)}%)
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+          <div className="text-[11px] text-muted-foreground">
+            פיצול עלות ל-15s: {' '}
+            ${VIDEO_COST_ESTIMATES.fifteenSec.scriptBatchUsd.toFixed(2)} script + {' '}
+            ${VIDEO_COST_ESTIMATES.fifteenSec.imagesUsd.toFixed(2)} images + {' '}
+            ${VIDEO_COST_ESTIMATES.fifteenSec.voicesUsd.toFixed(2)} voices + {' '}
+            ${VIDEO_COST_ESTIMATES.fifteenSec.motionAnalysisUsd.toFixed(3)} motion + {' '}
+            ${VIDEO_COST_ESTIMATES.fifteenSec.klingI2vUsd.toFixed(2)} kling + {' '}
+            ${VIDEO_COST_ESTIMATES.fifteenSec.pixverseLipSyncUsd.toFixed(3)} pixverse.
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Plan economics — effective credit value vs list, plus margin
+          warning when a plan can't cover the worst-case 30s cost. */}
+      <Card>
+        <CardContent className="p-5 space-y-3">
+          <h2 className="text-lg font-bold">כלכלת תוכניות</h2>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>תוכנית</TableHead>
+                <TableHead className="text-right">מחיר/חודש</TableHead>
+                <TableHead className="text-right">קרדיטים</TableHead>
+                <TableHead className="text-right">$/credit (list)</TableHead>
+                <TableHead className="text-right">$/credit (אפקטיבי)</TableHead>
+                <TableHead className="text-right">Max LipSync/וידאו</TableHead>
+                <TableHead>אזהרה</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {Object.values(PLAN_CONFIGS).map((plan) => {
+                const effective = effectiveCreditValueUsd(plan.slug);
+                const cost30s = VIDEO_COST_ESTIMATES.thirtySec.totalUsd;
+                const revenue30sEffective = 108 * effective;
+                const underwater = revenue30sEffective < cost30s && plan.recurringCredits;
+                return (
+                  <TableRow key={plan.slug}>
+                    <TableCell className="font-bold">{plan.displayName}</TableCell>
+                    <TableCell className="text-right font-mono">${plan.monthlyPriceUsd}</TableCell>
+                    <TableCell className="text-right font-mono">{plan.monthlyCredits.toLocaleString()}</TableCell>
+                    <TableCell className="text-right font-mono">${PRICE_PER_CREDIT_USD.toFixed(3)}</TableCell>
+                    <TableCell className={'text-right font-mono ' + (effective < PRICE_PER_CREDIT_USD ? 'text-amber-600' : '')}>
+                      {effective > 0 ? `$${effective.toFixed(4)}` : '$0.0000 (acquisition)'}
+                    </TableCell>
+                    <TableCell className="text-right font-mono">{plan.maxLipSyncScenesPerVideo}</TableCell>
+                    <TableCell className="text-xs">
+                      {underwater ? (
+                        <Badge variant="destructive">30s effective revenue ({fmtUSD(revenue30sEffective)}) {'<'} cost ({fmtUSD(cost30s)})</Badge>
+                      ) : plan.slug === 'free_trial' ? (
+                        <Badge variant="muted">acquisition spend</Badge>
+                      ) : (
+                        <Badge variant="success">positive margin</Badge>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+          <div className="text-[11px] text-muted-foreground">
+            $/credit אפקטיבי = monthlyPriceUsd / monthlyCredits. מתחת ל-$0.10 הליסט →
+            סובסידיה לכל קרדיט שלא נוצל. השתמש בערך הזה למרג'ין על subscribers.
           </div>
         </CardContent>
       </Card>

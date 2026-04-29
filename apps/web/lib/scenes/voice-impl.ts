@@ -3,6 +3,7 @@
 // "Generate all voices" loop) call into this. Mirrors the pattern in
 // generate-impl.ts (scene image generation).
 
+import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db';
 import { findVoicePreset } from '@/lib/voice/voice-presets';
 import {
@@ -17,6 +18,7 @@ import { buildCreditMutationOps } from '@/lib/usage/credits';
 import { checkRateLimit, RateLimitedError } from '@/lib/usage/rate-limit';
 import { checkSpendCap, SpendCapExceededError } from '@/lib/usage/spend-cap';
 import { PER_OPERATION_CREDITS, FIRST_REGEN_FREE } from '@/lib/plans';
+import { charactersToWords, chunkCaptions } from '@ugc-video/shared';
 
 const COST_PER_VOICE = PER_OPERATION_CREDITS.voice; // 1 credit (gen or regen)
 
@@ -164,6 +166,13 @@ async function generateSceneVoiceImplInner(
       // Next.js dev-server env caching that previously kept us silently
       // on the multilingual_v2 default = gibberish output.
       modelId: 'eleven_v3',
+      // V10 captions — request the with-timestamps endpoint so we get
+      // per-character alignment back. Same billed cost; the chunker
+      // converts characters → words → phrase chunks below. If
+      // ElevenLabs ever fails to return alignment we still get usable
+      // audio + duration; captions for that scene get skipped at
+      // render time (we never fall back to proportional estimation).
+      withTimestamps: true,
     });
   } catch (err) {
     const errMsg = (err as Error).message;
@@ -212,6 +221,17 @@ async function generateSceneVoiceImplInner(
   const isFirstRegen = prevVoiceCount === 1 && FIRST_REGEN_FREE.voice;
   const charge = isFirstRegen ? 0 : COST_PER_VOICE;
 
+  // V10 captions — convert character timings into Hebrew word timings,
+  // then phrase-level caption chunks. Stored on Scene so the worker
+  // can build a global ASS file at render time without re-calling
+  // ElevenLabs. When alignment is missing (rare) we leave both columns
+  // null — the worker treats null as "skip captions for this scene"
+  // rather than fall back to proportional timing.
+  const wordTimings = result.characterTimings
+    ? charactersToWords(result.characterTimings)
+    : [];
+  const captionChunks = wordTimings.length > 0 ? chunkCaptions(wordTimings) : [];
+
   await prisma.$transaction([
     prisma.scene.update({
       where: { id: sceneId },
@@ -221,6 +241,15 @@ async function generateSceneVoiceImplInner(
         voiceGeneratedAt: new Date(),
         voiceDurationSeconds: result.durationSeconds,
         voiceGenerationCount: { increment: 1 },
+        wordTimingsJson:
+          wordTimings.length > 0
+            ? (wordTimings as unknown as Prisma.InputJsonValue)
+            : Prisma.JsonNull,
+        captionChunksJson:
+          captionChunks.length > 0
+            ? (captionChunks as unknown as Prisma.InputJsonValue)
+            : Prisma.JsonNull,
+        captionsGeneratedAt: captionChunks.length > 0 ? new Date() : null,
       },
     }),
     ...buildCreditMutationOps(prisma, {
