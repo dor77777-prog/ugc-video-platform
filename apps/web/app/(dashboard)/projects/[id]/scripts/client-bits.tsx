@@ -55,14 +55,18 @@ export function GenerateButton({
   // Walk through SCRIPT_PHASES on a 1s tick while the action is in flight
   // so the user gets meaningful per-phase progress instead of one long spinner.
   const [phaseIndex, setPhaseIndex] = useState(0);
+  // Track elapsed ms while pending — used for the "taking longer than expected" warning.
+  const [elapsedMs, setElapsedMs] = useState(0);
   useEffect(() => {
     if (!pending) {
       setPhaseIndex(0);
+      setElapsedMs(0);
       return;
     }
     const startedAt = Date.now();
     const tick = () => {
       const elapsed = Date.now() - startedAt;
+      setElapsedMs(elapsed);
       let next = 0;
       for (let i = SCRIPT_PHASES.length - 1; i >= 0; i--) {
         const phase = SCRIPT_PHASES[i];
@@ -79,6 +83,10 @@ export function GenerateButton({
   }, [pending]);
 
   const phase = SCRIPT_PHASES[phaseIndex];
+  // After 90s still pending: likely the function timed out on the server
+  // but the client didn't get a clean error response. Prompt the user to
+  // reload — the scripts may already be in the DB from a completed call.
+  const timedOutWarning = pending && elapsedMs > 90_000;
 
   return (
     <div className="space-y-3">
@@ -96,7 +104,7 @@ export function GenerateButton({
         </Button>
       </form>
 
-      {pending && phase && (
+      {pending && phase && !timedOutWarning && (
         <div className="rounded-md border border-primary/30 bg-primary/[0.04] p-4 max-w-md mx-auto space-y-3">
           <div className="flex items-center gap-2 text-sm font-medium">
             <span className="animate-shimmer-overlay text-lg">{phase.emoji}</span>
@@ -110,6 +118,22 @@ export function GenerateButton({
               תסריטים מופיעים אחד-אחד למטה
             </span>
             <ElapsedTimer />
+          </div>
+        </div>
+      )}
+
+      {timedOutWarning && (
+        <div className="text-sm bg-amber-500/10 border border-amber-500/30 text-amber-800 dark:text-amber-300 rounded-md px-3 py-2 max-w-md mx-auto space-y-1">
+          <div className="font-medium">לוקח יותר מהצפוי…</div>
+          <div>
+            ייתכן שהתסריטים כבר נוצרו בשרת.{' '}
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              className="underline hover:no-underline font-medium"
+            >
+              לחץ כאן לרענון הדף
+            </button>
           </div>
         </div>
       )}
