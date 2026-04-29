@@ -1,7 +1,8 @@
 # tachles — Claude Project Context
 
 Hebrew-first AI platform for Israeli UGC product video ads.
-**Current version:** V12 (2026-04-29)
+**Current version:** V12.3 (2026-04-30)
+**Production:** https://tachles-lac.vercel.app
 **Output:** 9:16 MP4 ads, 15s or 30s, Hebrew voice-over + RTL captions + background music.
 
 ---
@@ -35,6 +36,11 @@ Hebrew-first AI platform for Israeli UGC product video ads.
 | Production URL | https://tachles-lac.vercel.app | Set `PUBLIC_BASE_URL` to this so Kling/PixVerse can fetch silent clips + voice MP3s. |
 
 **Verify region after deploys:** `curl -sI https://tachles-lac.vercel.app/api/health \| grep x-vercel-id` — middle segment must be `bom1`.
+
+**Storage migration history (V12.1–V12.3, 2026-04-30):**
+- V12.1 — `lib/storage/read-public-asset.ts` helper. Try-disk → fallback-HTTP. Replaced 5 disk-only readers (scene-images, motion-analysis, face-gate, image-qa, product-visual-analysis).
+- V12.2 — Static catalogs (avatars + music + voice samples) migrated to R2. URLs hard-coded in catalog files. Bulk uploader: `apps/web/scripts/upload-static-assets-to-r2.ts`.
+- V12.3 — Remaining 4 disk readers patched (kling.imageToPayload, kling.downloadAsBuffer, pixverse.resolveToBytes, mux-audio.readUrlAsBuffer). All `process.cwd()/public/` outside `LocalStorage` adapter and `read-public-asset.ts` itself eliminated.
 
 ---
 
@@ -211,6 +217,8 @@ Web + worker share the same .env at repo root.
 - **Music** — honor `productData.backgroundMusic` toggle; use `musicProfile` from `script.rawJson` for scoring.
 - **Prisma** — always `await prisma.$disconnect()` in worker scripts. Use `onDelete: Cascade` for child rows. **Every query is logged** with its duration via `lib/db.ts`; queries >500ms get a `[SLOW QUERY]` tag for grep'ability.
 - **Storage** — never hardcode `/public/uploads/...` paths. Always go through `getStorage()` from `lib/storage/index.ts` so dev (local FS) and prod (R2) both work.
+- **Reading public assets in API routes** — `public/` is excluded from the Vercel function bundle (`next.config.mjs` `outputFileTracingExcludes`). NEVER do `fs.readFile(path.join(process.cwd(), 'public', ...))` directly. Always go through `readPublicAsset()` / `readPublicAssetAsDataUrl()` from `lib/storage/read-public-asset.ts` — it tries disk first (dev), falls back to HTTP fetch via `PUBLIC_BASE_URL` (Vercel CDN), and passes absolute http(s) URLs through. V12.1–V12.3 fixed 9 helpers that violated this; do not regress.
+- **Static catalogs (avatars / music / voice samples)** — hard-coded R2 URLs in `apps/web/lib/avatars/catalog.ts`, `packages/shared/src/music/music-library.ts`, `apps/web/lib/voice/voice-presets.ts`. Run `npx tsx apps/web/scripts/upload-static-assets-to-r2.ts` after adding new assets to `apps/web/public/{avatars,music,voice-samples}/`. The R2 public URL `https://pub-eb116bdbeab8486f96ecf7c4fbc1014a.r2.dev` is intentionally hard-coded — it's a CDN endpoint, not a secret, and avoids `NEXT_PUBLIC_*` env juggling for client-component imports.
 - **ffmpeg in the web app** — Vercel serverless has no `ffmpeg`/`ffprobe` on PATH. Always invoke them via `FFMPEG_BIN`/`FFPROBE_BIN` constants from `lib/scenes/mux-audio.ts` (which resolves to `ffmpeg-static` / `ffprobe-static` bundled binaries). The binaries are explicitly included in `next.config.mjs` `outputFileTracingIncludes` so Vercel bundles them. The worker has its own apt-installed ffmpeg and is unaffected.
 - **Long-running Server Actions** — any page whose Server Action might exceed 60s (e.g. `scripts/generate`, multi-scene batch ops) MUST `export const maxDuration = 120` from the page.tsx, NOT the actions.ts (Next.js rejects it there). Without it, Vercel kills the function and the client hangs in pending forever.
 - **Region pinning** — `vercel.json` `regions: ["bom1"]` is load-bearing. Don't change it without ALSO migrating the Supabase project to a matching region — every cross-region query costs ~250ms.
@@ -234,3 +242,5 @@ Web + worker share the same .env at repo root.
 - Do not commit the `ugc-video-platform-secrets/` directory or its `.zip` — it contains live API keys (OpenAI, Kling, PixVerse, ElevenLabs, Supabase). It's git-ignored intentionally.
 - Do not put a `startCommand` in `railway.toml` — it silently overrides the Dockerfile `CMD`. Cost us a deploy where the .toml had a stale path that conflicted with the Dockerfile's WORKDIR, producing duplicated `apps/worker/apps/worker/...` paths and ERR_MODULE_NOT_FOUND crashes.
 - Do not pre-compile the worker's TypeScript expecting that to remove the tsx runtime requirement — the workspace packages (`@ugc-video/shared`, `@ugc-video/prompts`) declare `"main": "./src/index.ts"`, so the worker still imports `.ts` files at runtime and tsx is mandatory.
+- Do not call `fs.readFile(process.cwd() + '/public/...')` from anywhere outside `lib/storage/local.ts` and `lib/storage/read-public-asset.ts`. On Vercel that path resolves to `/var/task/apps/web/public/...` which doesn't exist (public/ is excluded from the function bundle). Use `readPublicAsset()` instead.
+- Do not store new static assets only on disk — always also push them to R2 via the upload script. The `public/` folder is now a dev convenience; production reads everything from R2 CDN.
