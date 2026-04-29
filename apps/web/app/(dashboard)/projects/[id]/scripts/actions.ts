@@ -12,7 +12,12 @@ import { buildCreditMutationOps } from '@/lib/usage/credits';
 import { checkRateLimit, RateLimitedError } from '@/lib/usage/rate-limit';
 import { checkSpendCap, SpendCapExceededError } from '@/lib/usage/spend-cap';
 import { findAvatar, describeAvatar } from '@/lib/avatars/catalog';
-import { findCategory, categoryGuidance, type ProductCategoryId } from '@/lib/categories';
+import {
+  findCategory,
+  categoryGuidance,
+  mapDossierCategoryToId,
+  type ProductCategoryId,
+} from '@/lib/categories';
 
 // V6: script_batch = 2 credits (was 1). Real cost ≈ $0.02; we charge
 // $0.20 list — 90% margin on the cheapest LLM operation in the
@@ -160,6 +165,8 @@ export async function generateScriptsAction(
       | import('@/lib/product-intelligence').ProductIntelligence
       | null;
     let intelligence = cachedIntel;
+    let resolvedCategoryId: ProductCategoryId | null = categoryId;
+    let resolvedCategory = category;
     if (!intelligence) {
       try {
         const { buildProductIntelligence } = await import('@/lib/product-intelligence');
@@ -178,9 +185,39 @@ export async function generateScriptsAction(
           heroImageUrl: typeof data.heroImageUrl === 'string' ? data.heroImageUrl : null,
         });
         intelligence = built.intelligence;
+        // V11.6 — when the wizard's heuristic landed on `other` /
+        // unset, override with the dossier's category. The dossier is
+        // built by gpt-5.4-mini with full text + features context, so
+        // it classifies "Hair Boost Roller" → haircare correctly
+        // where the keyword heuristic missed it. We only override
+        // when the user didn't pick a category explicitly OR landed
+        // on `other`, so we don't fight a deliberate user choice.
+        if (!resolvedCategoryId || resolvedCategoryId === 'other') {
+          const mapped = mapDossierCategoryToId(
+            intelligence.dossier.category,
+            intelligence.dossier.subcategory,
+            intelligence.dossier.productType,
+          );
+          if (mapped !== 'other') {
+            resolvedCategoryId = mapped;
+            resolvedCategory = findCategory(mapped);
+            console.log(
+              `[scripts] dossier override: category ${categoryId ?? 'unset'} → ${mapped} ` +
+                `(dossier said "${intelligence.dossier.category}" / "${intelligence.dossier.subcategory}")`,
+            );
+          }
+        }
         // Persist for reuse on regen + scene image generation. Merge
         // back into productData without clobbering other keys.
-        const merged = { ...data, intelligence };
+        const merged = {
+          ...data,
+          intelligence,
+          // Persist the resolved category so admin views + later
+          // wizard steps see the corrected value.
+          ...(resolvedCategoryId && resolvedCategoryId !== categoryId
+            ? { category: resolvedCategoryId }
+            : {}),
+        };
         await prisma.project.update({
           where: { id: projectId },
           data: { productData: merged as object },
@@ -205,9 +242,9 @@ export async function generateScriptsAction(
         intelligence,
         avatarDescription: selectedAvatar ? describeAvatar(selectedAvatar) : null,
         avatarGender: selectedAvatar?.gender ?? null,
-        categoryId,
-        categoryLabel: category?.labelEnglish ?? null,
-        categoryGuidance: categoryGuidance(categoryId),
+        categoryId: resolvedCategoryId,
+        categoryLabel: resolvedCategory?.labelEnglish ?? null,
+        categoryGuidance: categoryGuidance(resolvedCategoryId),
       },
       {
         // Stream scripts to the DB as soon as each per-framework call

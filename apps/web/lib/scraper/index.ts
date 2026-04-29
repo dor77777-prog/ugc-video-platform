@@ -61,6 +61,14 @@ export async function scrape(rawUrl: string): Promise<ScrapeResult> {
 
   if (!data.productName) warnings.push('no-product-name');
   if (data.images.length === 0) warnings.push('no-images');
+  if (!data.description || data.description.length < 30) {
+    // Short / empty description after cleaning is a strong signal that
+    // the only available source was CSS/JS garbage that the cleaner
+    // rejected. We surface this as a wizard warning so the user can
+    // paste a manual description before generating scripts — the LLM
+    // dossier downstream is only as good as the description it sees.
+    warnings.push('weak-description');
+  }
 
   return { isProduct, confidence, signals, data, warnings };
 }

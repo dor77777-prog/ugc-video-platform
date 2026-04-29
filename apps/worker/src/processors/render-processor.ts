@@ -13,6 +13,10 @@ import {
   buildAssFromChunks,
   type CaptionChunk,
   type CaptionsMode,
+  type CaptionPresetId,
+  type WordTiming,
+  findCaptionPreset,
+  DEFAULT_CAPTION_PRESET_ID,
 } from '@ugc-video/shared';
 
 // V3 render processor: composition-only.
@@ -132,8 +136,23 @@ export async function processRenderJob(job: Job<RenderJobPayload>) {
     let perSceneCaptionCount: Array<{ sceneId: string; count: number }> = [];
     let timingSource: 'elevenlabs_timestamps' | 'forced_alignment' | 'none' = 'none';
 
+    // V12 — read the user-selected caption style preset off the
+    // project. Default to 'classic' when not set or invalid.
+    const captionsPresetId =
+      ((productData?.captionsPreset as CaptionPresetId | undefined) ??
+        DEFAULT_CAPTION_PRESET_ID) as CaptionPresetId;
+    const captionsPreset = findCaptionPreset(captionsPresetId);
+    console.log(
+      `[render] captions: enabled=${captionsRequested} presetId=${captionsPresetId} ` +
+        `(productData.captionsPreset=${productData?.captionsPreset ?? 'undefined'}) ` +
+        `presetLabel=${captionsPreset.labelHe} perWord=${captionsPreset.perWord}`,
+    );
+
     if (captionsMode !== 'off') {
       const globalChunks: CaptionChunk[] = [];
+      const globalWords: Array<
+        WordTiming & { globalStartMs: number; globalEndMs: number; sceneId: string }
+      > = [];
       let cumulativeMs = 0;
       for (const s of scenes) {
         const sceneClipDurationSec = s.clipDurationSeconds ?? s.durationSeconds ?? 5;
@@ -171,12 +190,44 @@ export async function processRenderJob(job: Job<RenderJobPayload>) {
           }
           perSceneCaptionCount.push({ sceneId: s.id, count: sceneChunks.length });
         }
+
+        // V12 — also collect per-word timings for the word_pop preset.
+        // The same scene-relative → global offset rule applies.
+        if (captionsPreset.perWord) {
+          const rawWords =
+            (s as unknown as { wordTimingsJson?: unknown }).wordTimingsJson ?? null;
+          const sceneWords = parseWordTimings(rawWords);
+          if (sceneWords) {
+            for (const w of sceneWords) {
+              if (w.endMs <= w.startMs) continue;
+              const globalStartMs = cumulativeMs + Math.max(0, w.startMs);
+              const globalEndMs = Math.min(
+                cumulativeMs + sceneClipDurationMs,
+                cumulativeMs + Math.max(0, w.endMs),
+              );
+              if (globalEndMs <= globalStartMs) continue;
+              globalWords.push({
+                word: w.word,
+                startMs: w.startMs,
+                endMs: w.endMs,
+                globalStartMs,
+                globalEndMs,
+                sceneId: s.id,
+              });
+            }
+          }
+        }
         cumulativeMs += sceneClipDurationMs;
       }
 
-      if (globalChunks.length > 0) {
+      const hasUsableData = captionsPreset.perWord
+        ? globalWords.length > 0
+        : globalChunks.length > 0;
+      if (hasUsableData) {
         timingSource = 'elevenlabs_timestamps';
-        totalCaptionChunks = globalChunks.length;
+        totalCaptionChunks = captionsPreset.perWord
+          ? globalWords.length
+          : globalChunks.length;
         // Bias higher when ANY scene wants the mouth visible
         // (lipsync) or focuses on a low-frame product. Coarse:
         // boost the bottom margin globally if the script has any
@@ -195,10 +246,22 @@ export async function processRenderJob(job: Job<RenderJobPayload>) {
           videoHeight: 1920,
           marginBoostPx,
           mode: captionsMode,
+          presetId: captionsPresetId,
+          wordTimings: captionsPreset.perWord ? globalWords : undefined,
         });
+        console.log(
+          `[render] ASS built — preset=${captionsPresetId} ` +
+            `events=${captionsPreset.perWord ? globalWords.length : globalChunks.length} ` +
+            `assBytes=${captionsAssContent.length} ` +
+            `firstLineSnippet="${captionsAssContent.split('\n').find((l) => l.startsWith('Style:'))?.slice(0, 120) ?? '(no Style line)'}"`,
+        );
       } else {
         captionsAssContent = null;
-        captionWarnings.push('captions enabled but no usable chunks across any scene — skipping');
+        captionWarnings.push(
+          captionsPreset.perWord
+            ? 'word_pop preset selected but no usable word timings across any scene — skipping'
+            : 'captions enabled but no usable chunks across any scene — skipping',
+        );
       }
     }
 
@@ -272,10 +335,13 @@ export async function processRenderJob(job: Job<RenderJobPayload>) {
     const captionsDebug: Record<string, unknown> = {
       captionsEnabled: enableCaptions,
       captionsMode,
+      captionsPresetId,
+      captionsPresetLabel: captionsPreset.labelHe,
+      perWord: captionsPreset.perWord,
       timingSource,
       totalCaptionChunks,
       perSceneCaptionCount,
-      fontUsed: 'Heebo',
+      fontUsed: captionsPreset.fontFamily,
       warnings: captionWarnings,
     };
 
@@ -306,6 +372,26 @@ export async function processRenderJob(job: Job<RenderJobPayload>) {
     });
     throw err;
   }
+}
+
+// Defensive parser for Scene.wordTimingsJson. Mirrors the chunk parser
+// below — only used when the active preset is perWord.
+function parseWordTimings(raw: unknown): WordTiming[] | null {
+  if (!Array.isArray(raw)) return null;
+  const out: WordTiming[] = [];
+  for (const r of raw) {
+    if (
+      r &&
+      typeof r === 'object' &&
+      typeof (r as { word?: unknown }).word === 'string' &&
+      typeof (r as { startMs?: unknown }).startMs === 'number' &&
+      typeof (r as { endMs?: unknown }).endMs === 'number'
+    ) {
+      const o = r as { word: string; startMs: number; endMs: number };
+      out.push({ word: o.word, startMs: o.startMs, endMs: o.endMs });
+    }
+  }
+  return out.length > 0 ? out : null;
 }
 
 // Defensive parser for Scene.captionChunksJson — the column is JSONB

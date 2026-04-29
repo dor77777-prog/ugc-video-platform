@@ -1,787 +1,577 @@
 # tachles · STATUS
 
-מסמך חי — מה מומש, מה בעבודה, מה חסר. **עדכון אחרון: 2026-04-29** (V8 — PixVerse pricing מיושר ($0.071/scene במקום $0.30), `lib/pricing/provider-costs.ts` חדש, charge logic מפוצל: Kling i2v נחייב תמיד, PixVerse רק אם רץ).
+Living document. Last update: **2026-04-29** (V12 — caption presets,
+parallel scene regen, scraper hardening, prompt-only regen).
 
-## 🆕 מה חדש מ-V4 ואילך (סיכום מצטבר)
-
-| ציון | תאריך | מה זה |
-|------|-------|--------|
-| **V11** | 2026-04-29 | **Creative Intelligence pipeline**. הוסר ההיתל לתסריט/תמונה ישירות מטקסט סקרייפ "רדוד". פיפליין חדש: scrape → **Product Dossier** (gpt-5.4-mini, 32 שדות: mechanism, mustShow, mustAvoid, painPoints, visualEvidenceRequirements, visualFailureModes, israeliRealismCues, conservativeAssumptions) → **Product Visual Analysis** (gpt-4o-mini vision על hero image: activePart, contactPoint, substanceVisualType, likelyModelMistakes) → **Audience Inference** (primary/secondary, dailyUseMoments, problemContext, realisticIsraeliSettings, bestAdFrameworks). ה-bundle נשמר ב-`Project.productData.intelligence` ונבנה lazy אם חסר ברגע יצירת תסריטים. ה-script engine מקבל בלוק `🧠 PRODUCT INTELLIGENCE` בתוך user message — חוקים קשים: creative_strategy.product_mechanism חייב לשקף את dossier.productMechanism, environment_type חייב לבוא מ-audience.realisticIsraeliSettings, demo scenes חייבים לצטט mustShowVisuals. **Image Brief Builder** דטרמיניסטי (`lib/image-briefs/`) מרכיב חוזה תמונה מ-dossier + visual analysis + audience — כולל mustShow/mustAvoid/cameraInstruction/israeliContext/productAccuracy. `finalImagePrompt` מחליף את ה-narration-driven path הישן ומוזרם ל-gpt-image-2. **Image QA evaluator** (`lib/image-qa/`, gpt-4o-mini vision) מעריך כל תמונה מול הברייף — score 0-1, 9 בדיקות (productUseAccuracy, israeliRealism, mustShowSatisfied, mustAvoidViolated וכו'), עם failureReasons + correctiveActions ספציפיים. **Auto-regen loop**: כשל QA → corrective brief (mustShow מחודד עם correctiveActions, mustAvoid מורחב עם failureReasons) → regen, עד `IMAGE_QA_MAX_RETRIES=2`. אחרי מיצוי — `Scene.needsManualReview=true`. נשמר על Scene: `imageBriefJson`, `imageQaJson`, `imageRegenAttempts`, `needsManualReview` (מיגרציה `v11_image_qa`). |
-| **V10** | 2026-04-29 | **כתוביות עברית מסונכרנות**. הוסר ה-chunking הפרופורציונלי הישן (5 מילים לפי נתח זמן) — הוא היה מקור התופעה של "כתוביות קפואות לא מסונכרנות". הצינור החדש: ElevenLabs `with-timestamps` מחזיר `alignment.characters` עם זמני התחלה/סיום ברמת התו → `charactersToWords` (Hebrew-aware) → `chunkCaptions` (2-5 מילים, ≤2 שורות, 18 תווים/שורה, min 650ms / max 2200ms, פיצול על פיסוק חזק/חלש). הספרייה ב-`packages/shared/src/captions/`. נשמר ל-Scene (`wordTimingsJson`, `captionChunksJson`, `captionsGeneratedAt` — מיגרציה `v10_scene_captions`). ה-renderer בונה ASS גלובלי דרך `buildAssFromChunks` — Heebo Bold, gradient white-on-black-outline, `\fad(100,100)` fade in/out, bottom-center עם 210px margin (boost 40px כשיש lipsync או product-low), libass טיפול ב-bidi. ה-Step-1 toggle (`productData.captions`) הוא המאסטר. סצנות בלי alignment **לא מקבלות captions** במקום fallback פרופורציונלי. `RenderJob.providerPayloadJson.captions` כולל timingSource, totalChunks, perSceneCount, warnings, font. |
-| **V9** | 2026-04-29 | **Background music פעיל**. הספרייה המקומית `apps/web/public/music/` (17 טראקים Mixkit, royalty-free) מנוהלת ב-`packages/shared/src/music/music-library.ts`. סקריפט-LLM מחזיר עכשיו `music_profile` (mood/energy/style/target_volume/duck) שנכנס ל-script-json-schema. ה-renderer בוחר טראק אוטומטית דרך `selectMusicTrack` — bias ל-low/medium energy, hard penalty על high-energy מול beauty/wellness/baby/jewelry/premium, fallback בטוח כשאין match חזק. ה-ffmpeg composition עכשיו מבצע loop + trim ל-final-video duration, fade-in 300ms, volume נמוך (0.08 ברירת מחדל, hard-clamped ל-0.04-0.20), ו-fade-out חובה של 2 שניות בסוף. ה-Step-1 toggle (`productData.backgroundMusic`) מכבד עכשיו, ו-`RenderJob.providerPayloadJson.music` מכיל debug metadata (track, reason, volume, license, fade durations) ל-admin. |
-| **V8** | 2026-04-29 | **Pricing מיושר ל-PixVerse**. הוקם `lib/pricing/provider-costs.ts` כמקור אמת מרכזי לעלויות ספק (`PROVIDER_COST_ESTIMATES_USD`, `PIXVERSE_COST_MODEL`, `VIDEO_COST_ESTIMATES`, `OPERATION_CREDIT_PRICING`) — כל קבוע overridable מ-env. PixVerse עלות עודכנה מ-$0.30 ל-**$0.071/scene** (16 PixVerse credits @ $0.00444). **Operation pricing מפוצל**: `kling_i2v_clip = 15` credits, `pixverse_lipsync_scene = 2` credits — נחייבים בנפרד ב-`clip-impl.ts` כך ש-PixVerse credits לא נשרפים כש-face-gate דוחה את הסצנה. הסרנו את ה-12-credits-per-render-revenue ההיסטורי מ-`/admin/costs` (היה מבוסס על $0.50/credit ישן). 1 credit = **$0.10 list**, ו-`effectiveCreditValueUsd(plan)` מחזיר את ה-$/credit האפקטיבי לסבסקרייברס (Creator $0.098, Brand $0.0828, Agency $0.0832). הוספו טבלאות ב-`/admin/costs` לעלות ספק / תמחור פעולה / אומדן וידאו / כלכלת תוכניות / מודל PixVerse. **15s ≈ $3.62 / 30s ≈ $4.57** עלות ספק. |
-| **V7** | 2026-04-29 | **PixVerse-only LipSync**. הוסרו: Kling LipSync v1, Sync.so, ElevenLabs Omnihuman, Mock provider, KlingAvatar v2 / advanced-lipsync / lipsync_v1 (כל ה-TalkingSceneProvider variants), `LIPSYNC_PROVIDER` / `KLING_LIPSYNC_*` / `KLING_TALKING_SCENE_PROVIDER` envs, ה-LipsyncProviderPicker UI, ושני ה-bakeoff endpoints. **Face-gate חדש** (`lib/animation/face-gate.ts`): gpt-4o-mini עם structured output מחליט אוטומטית אם סצנה ראויה ל-LipSync (full clear face + visible mouth) — אין יותר בחירת ספק ידנית. **Fallback policy**: אם PixVerse נכשל → סצנה משתמשת ב-Kling i2v output + audio נפרד. אין fallback לספק אחר. |
-| **V6** | 2026-04-29 | **Script streaming**: 6 calls מקבילים בנפרד, כל תסריט נשמר ל-DB ברגע שהוא מוכן, ה-UI מתעדכן לייב דרך `router.refresh()` כל 2.5s. **Avatar gender lock**: כל ה-spoken_text + on_screen_caption בלשון התואמת (זכר/נקבה) למגדר האווטאר. **30 קולות** ב-VoicePicker. |
-| **V5** | 2026-04-29 | **Israeli realism**: per-scene `environment_type`+`environment_style`+`israeli_environment_required`+`local_realism_notes`+`why_this_scene_exists`. Image-prompt boilerplate שדוחף את gpt-image-2 ל-outlets/switches ישראליים, מידות דירה, trissim, טקסט עברי/נייטרלי. **Creative_strategy** הורחב ב-5 שדות (`big_idea`, `specific_situation`, `product_role`, `proof_moment`, `why_this_is_different_from_other_scripts`). **Quality_score** 12 צירים. **5 hook_options** מ-archetype-ים שונים. |
-| **V4** | 2026-04-28 | **Duration mode (15s/30s)** end-to-end: helper `lib/video-mode.ts`, system-prompt branches, lipsync cap מותאם (1 vs 2). **Product-first scene metadata**: `primarySubject`, `mustShowProduct`, `productVisibilityPriority`, `cameraFocus`, `showFace`, `secondarySubject` ב-Scene + structured-output נדרש. Image-prompt builder עובר ל-product-led opener כש-primary_subject != avatar. |
-| V3.6 | 2026-04-28 | TalkingSceneProvider abstraction (Kling Avatar v2 / advanced-lipsync / lipsync-v1). Kling Omni: `negative_prompt` + multi-image `image_list` + lipsync cap. Anti-drift NON_TALKING guard + negatives. |
-| V3.5 | 2026-04-28 | Vision-grounded motion analysis (gpt-4o-mini), in-flight tracking על Scene, scene-routing veto patterns, חישוב duration שמכבד את script. |
-
-## 🚨 תמונת מצב מהירה למפתחים שמצטרפים עכשיו
-
-**הצינור עובד end-to-end** (אפריל 2026 V6):
-1. **Step 1-2** — מוצר (סקרייפ + טופס) → אווטאר (25 קטלוג, מגדר ידוע)
-2. **Step 3** — תסריט V6: 6 frameworks במקביל, **streaming live** (כל תסריט נכנס ל-DB ברגע שהוא מוכן). Per-mode constraints (15s vs 30s). Hard gender lock לפי האווטאר.
-3. **Step 4** — תמונת סצנה (gpt-image-2 + Israeli realism boilerplate + product-led opener כשצריך + safety auto-retry).
-4. **Step 5** — voice (ElevenLabs Multilingual v2, **30 קולות**) + clip (Kling Omni v3 i2v עם `negative_prompt` + multi-ref + per-mode lipsync cap). TalkingSceneProvider switchable.
-5. **Step 6** — ffmpeg local: concat per-scene clips (כל אחד עם voice mux פנימי) + captions OFF קשיח + music OFF קשיח.
-
-## ✅ מה עובד (מומש) | 🟡 מוקאפ / חלקי | ❌ חסר
-
-**✅ Script generation (V6)**
-- 6 frameworks במקביל, single-script schema לכל אחד
-- `onScriptReady` → persist + `revalidatePath` per script (streaming UI)
-- Avatar gender → grammatical lock ב-system prompt + user prompt
-- Per-mode constraints (15s: 4 scenes, 50 words, 1 lipsync; 30s: 5 scenes, 110 words, 2 lipsync)
-- 12-dim quality_score, 5 hook_options, diversity_notes
-- `creative_strategy` עם 17 שדות
-
-**✅ Scene image generation**
-- gpt-image-2 עם זיהוי avatar + product reference
-- Israeli realism boilerplate ב-prompt (Israeli outlets/switches, apartment proportions, trissim, Hebrew/neutral text)
-- Product-led opener כש-`primary_subject ≠ avatar`
-- Silent-talking-plate ל-lipsync scenes
-- Safety auto-retry עם הסלמה
-
-**✅ Clip generation**
-- Kling Omni v3 (`/v1/videos/omni-video`) עם `negative_prompt` + `image_list` של scene+product
-- Anti-drift NON_TALKING guards (positive + negative)
-- Per-mode lipsync cap (אוטומטי: scene 0 ל-15s, 0+1 ל-30s) — user toggle עוקף
-- Vision-grounded motion analysis (gpt-4o-mini) → motion prompt גרונדי
-- TalkingSceneProvider switchable (`KLING_TALKING_SCENE_PROVIDER`: `lipsync_v1` / `ai_avatar_v2_pro` / etc.)
-- In-flight tracking על Scene (`imageInFlightAt`/`voiceInFlightAt`/`clipInFlightAt`) שורד refresh
-
-**✅ Voice picker**
-- 30 קולות hand-picked מ-ElevenLabs Voice Library
-- 18 נשים (UGC creator / influencer / mature / social-media-tuned)
-- 12 גברים (UGC reviewer / ad voice / authoritative / social-media)
-- Pre-generated Hebrew samples ב-`apps/web/public/voice-samples/` (האזנה מיידית)
-
-**✅ Composition**
-- ffmpeg concat-demuxer scene-by-scene
-- כל clip self-contained (voice muxed פנימית ב-clip-impl, NOT one global track)
-- Captions OFF קשיח ברנדרר (`enableCaptions = false`)
-- Music OFF קשיח (`musicUrl = null`)
-
-**✅ Admin dashboard**
-- Live in-flight tracking ב-/admin/costs (5s polling)
-- Cancel button per call + bulk cancel stale (15 דק׳)
-- Cost forensics: כל ApiCall עם status / model / tokens / cost / duration
-
-**🟡 חלקי**
-- **Captions library** — קוד ASS RTL מוכן ב-ffmpeg.ts אבל force-disabled עד שהעיצוב טוב. דורש: word-by-word sync via ElevenLabs character timestamps + better RTL bidi + outline + fade-in/out.
-- **Music library** — ה-toggle נשמר ב-`productData.backgroundMusic` אבל renderer מתעלם. דורש: 5-10 רצועות royalty-free מ-Pixabay/Mixkit ב-`apps/web/public/music/` + picker ב-Step 1.
-- **Pre-lipsync vision quality gate** — לא קיים. ה-Kling lipsync יקרא על clipsים גרועים ויבזבז קרדיטים. דורש: קריאת gpt-4o-mini על first frame לפני lipsync, regen אם face_zoom > 0.6 או mouth occluded.
-
-**❌ חסר**
-- **Final-render duration validation** — סוכם משך הסצנות → אם מחוץ ל-`[14.5, 16.5]s` או `[28.5, 31.5]s` → לחסום render. דורש: גזרה במקרה overflow + extension במקרה underflow.
-- **Admin debug timeline table** — טבלה לכל סצנה: scene_order / type / primary_subject / target_duration / measured audio/video durations / final / timeline_start.
-- **BullMQ queue for scripts** — היום fire-via-action בלבד. בproduction serverless ה-action timeout (60s כברירת מחדל ב-Next.js) עלול לחתוך את הgeneration השלישי או הרביעי. דורש: `scripts` queue + worker side processing.
-- **Tests** — אין לnit/integration. הצינור נבדק בכל commit ע"י TS check + dry-run. דורש: snapshot tests על JSON-schema parseability + scene-routing edge cases.
-- **README/STATUS auto-update** — ידני היום. דורש: hook ב-CI שמוודא שה-status מצוטט ב-PR description.
-
-**תשתית ספקים (gen-3 architecture):**
-- **VideoGenerationProvider** ([types.ts](apps/web/lib/animation/types.ts)) — i2v + lipsync abstraction
-- **LipSyncProvider** ([lipsync/types.ts](apps/web/lib/animation/lipsync/types.ts)) — Kling/Sync.so/ElevenLabs/Mock, switchable via `LIPSYNC_PROVIDER` env
-- **TalkingSceneProvider** ([talking-scene/types.ts](apps/web/lib/animation/talking-scene/types.ts)) — image+audio → talking video in ONE call. 4 implementations: Avatar v2 Pro / Avatar v2 Standard / Advanced LipSync (face_identify + advanced_lipsync chain) / lipsync_v1 adapter. Switchable via `KLING_TALKING_SCENE_PROVIDER`. **NEW IN V3.6** — replaces the old i2v→lipsync chain for talking_head scenes; b-roll still uses i2v.
-- **VoiceGenerationProvider** — ElevenLabs (eleven_v3 only — v2 doesn't support Hebrew)
-- **MotionAnalysisProvider** — gpt-4o-mini vision per scene → grounded Kling motion prompt
-
-**Live infra:**
-- Dev: `localhost:3000`, log → `/tmp/ugc-web.log`
-- Tunnel: cloudflared → `PUBLIC_BASE_URL` (regenerated when it drops)
-- Worker: BullMQ (`render` + `maintenance` queues; hourly Kling stuck-task sweep)
-
-**Cost per finished video — empirical (Apr 2026 user-account consoles):**
-
-Kling token economics: `$160 / 293 tokens = $0.546 / token`. Observed average **1.44 tokens / clip** across real generations → **$0.79 per i2v clip**. (Kling LipSync v1 was $0.55/scene but is no longer used — V7 routed all lip-sync to PixVerse.)
-
-PixVerse pack economics: **$10 = 2,250 PixVerse credits** → `$0.00444 / PixVerse credit`. Observed **16 PixVerse credits per LipSync scene** → **$0.071 / scene**. Per-second equivalent at 4s ≈ `$0.018/s`.
-
-Constants live in [`apps/web/lib/pricing/provider-costs.ts`](apps/web/lib/pricing/provider-costs.ts) (env-overridable: `COST_*`, `PIXVERSE_PACKAGE_*`, `CREDIT_LIST_VALUE_USD`).
-
-For 4-scene 15s / 5-scene 30s videos with the V7 face-gate routing:
-
-| Item | 15s (4 scenes, 1 lipsync) | 30s (5 scenes, 2 lipsync) |
-|------|---------------------------|---------------------------|
-| Script batch (gpt-5.4-mini) | $0.05 | $0.05 |
-| Images (gpt-image-2 medium) | $0.24 (4 × $0.06) | $0.30 (5 × $0.06) |
-| Voices (ElevenLabs Multilingual v2) | $0.08 (4 × $0.02) | $0.10 (5 × $0.02) |
-| Vision motion analysis (gpt-4o-mini) | $0.02 (4 × $0.005) | $0.025 (5 × $0.005) |
-| **i2v (Kling Omni v3)** | **$3.16** (4 × $0.79) | **$3.95** (5 × $0.79) |
-| **LipSync (PixVerse)** | **$0.071** (1 × $0.071) | **$0.142** (2 × $0.071) |
-| Composition (ffmpeg local) | $0 | $0 |
-| **Total provider cost** | **≈ $3.62** | **≈ $4.57** |
-
-**Tachles credit list price: $0.10 / credit.**
-
-Typical 15s charge: `2 (script) + 8 (4 imgs) + 4 (4 voices) + 60 (4 Kling) + 2 (1 PixVerse) + 8 (final) = 84 credits → $8.40 list → ≈ 57% gross margin`.
-Typical 30s charge: `2 + 10 + 5 + 75 + 4 + 12 = 108 credits → $10.80 list → ≈ 58% gross margin`.
-
-For subscriber margin math, use **plan-effective credit value**, not the $0.10 list price (Creator $49/500 = $0.098, Brand $149/1800 = $0.0828, Agency $499/6000 = $0.0832 — see `effectiveCreditValueUsd()` in [`lib/plans.ts`](apps/web/lib/plans.ts)).
-
-PixVerse is charged **only when PixVerse actually ran** — face-gate skips → 0 PixVerse credits, only the 15-credit Kling i2v line is recorded. See [`lib/scenes/clip-impl.ts`](apps/web/lib/scenes/clip-impl.ts) for the split-charge logic.
-
-**Open issues:**
-- Music: **ACTIVE** (V9). 17 royalty-free Mixkit tracks under [apps/web/public/music/](apps/web/public/music/), curated metadata in [packages/shared/src/music/music-library.ts](packages/shared/src/music/music-library.ts). The script LLM emits `music_profile`; the renderer auto-selects + loops + trims + fades. Step-1 toggle (`productData.backgroundMusic`) is honored. Volume 0.08 default, 2s fade-out mandatory, voice stays dominant. Optional follow-up: per-project mood override (Soft / Energetic / Premium / Playful) instead of fully auto.
-- Captions: **ACTIVE** (V10). Phrase-level Hebrew captions built from ElevenLabs `with-timestamps` alignment — never proportional. Step-1 toggle (`productData.captions`) is the master switch. Modern Heebo bottom-center style with `\fad(100,100)` fade and bidi-safe libass rendering. Scenes without alignment are skipped (no caption row), not approximated. `CAPTIONS_MODE=phrase` (default) / `off`. `word_highlight` mode reserved.
-- Final length: fixed (`pickClipDuration` honors script's `duration_seconds`).
-- Auto-redirect to `/library`: implemented in [RenderFinalButton](apps/web/app/(dashboard)/projects/[id]/videos/client-bits.tsx) — polls `/api/render/[jobId]/status`, navigates on `completed` with `#job-<id>` anchor.
-- Edit-back from library: each card has an "✎ ערוך פרויקט" link to `/projects/[id]/videos`.
-- Delete project: dashboard cards have a "🗑 מחק" button with inline confirm. [DeleteProjectButton](apps/web/app/(dashboard)/dashboard/delete-button.tsx) → [deleteProjectAction](apps/web/app/(dashboard)/dashboard/actions.ts) cascades through Prisma (`onDelete: Cascade`) to scripts/scenes/render-jobs/assets.
-
-נקרא כך:
-- ✅ מומש ועובד
-- 🟡 חלקי / placeholder / mock
-- ⏳ מתוכנן בקומיט הבא או הקרוב
-- ❌ עוד לא התחיל / out-of-scope לעכשיו
-- 👤 ממתין למידע ממך
-
-> **תמונת מצב גבוהה (אפריל 2026):** **כל 6 שלבי ה-Wizard חיים end-to-end** — מוצר → אווטאר → תסריט V2 → תמונות סצנה → סצנות מונפשות (voice + animated clip) → הרכבה סופית. כל הספקים האמיתיים מחוברים: OpenAI (gpt-5.4-mini + gpt-image-2), ElevenLabs Multilingual v2 (Hebrew TTS), Kling AI two-stage (Image-to-Video + Lip Sync), ffmpeg local (composition + RTL captions). אפס מוקים בצינור הראשי. עלות ראלית לוידאו ~$1 (כ-12 credits → $6 למשתמש, ~80% מרג'ין).
+This is the deep spec — what each subsystem actually does, where it
+lives, what's real vs mocked, and known issues. For a high-level pitch
+and setup instructions see [README.md](./README.md).
 
 ---
 
-## 📐 Architecture Overview (מבנה המערכת)
+## Status legend
 
-### Monorepo
+- ✅ Implemented and used in production path
+- 🟡 Implemented but partial / behind a feature flag / cost-gated
+- ⏳ Planned for the next milestone
+- ❌ Removed / deprecated — do not bring back without rationale
+
+---
+
+## Pipeline overview (V12)
+
+```
+URL paste
+  └─ Step 1: Scrape (cheerio + JSON-LD + OG + Shopify endpoint + microdata)
+        + lazy quick-suggest (gpt-5.4-mini → category + targetAudience)
+        + (deferred to script gen) Product Intelligence bundle:
+            · Dossier (gpt-5.4-mini, 32 fields)
+            · Visual Analysis (gpt-4o-mini vision on hero image)
+            · Audience Inference (gpt-5.4-mini)
+        → Project.productData{intelligence,…}
+
+  └─ Step 2: Avatar
+        25-portrait local catalog (apps/web/public/avatars/)
+        → Project.productData.selectedAvatarId, voiceId
+
+  └─ Step 3: Scripts
+        gpt-5.4-mini, 6 frameworks in parallel, structured output
+        V5 creative_strategy block (17 fields) + 12-axis quality_score
+        Selective regen for any script with overall < 8 (capped)
+        Music profile per script (mood/energy/style/target_volume)
+        → Script + 4–6 Scene rows
+
+  └─ Step 4: Scene image
+        Image Brief Builder (deterministic, no LLM)
+            ← dossier + visual analysis + scene metadata
+        → finalImagePrompt (REPLACES narration-driven prompt)
+        gpt-image-2 medium 1024×1792 + 3-layer safety pipeline
+        Optional Image QA loop (gpt-4o-mini vision, IMAGE_QA_ENABLED)
+            failure → corrective brief → regen, up to 2 retries
+        → Scene.imageUrl, imageBriefJson, imageQaJson, imageRegenAttempts, needsManualReview
+
+  └─ Step 5: Voice
+        ElevenLabs eleven_v3 with-timestamps endpoint
+        charactersToWords (Hebrew/niqqud/punct/Latin aware)
+        chunkCaptions (2–5 word phrase chunks, ≤2 lines, 650–2200 ms)
+        ffprobe-measured duration (no proportional estimation)
+        → Scene.voiceUrl, voiceDurationSeconds, wordTimingsJson, captionChunksJson
+
+  └─ Step 5b: Clip
+        Motion analysis (gpt-4o-mini vision, cached per imageUrl)
+        Kling Omni v3 image-to-video (3-10s)
+        Face gate (gpt-4o-mini vision) → only proceed if mouth visible
+        PixVerse LipSync (multipart upload + poll, 10-min budget)
+        OR ffmpeg mux (silent clip + voice MP3) when lip-sync skipped
+        → Scene.clipUrl, faceGate*, pixverse*, lipSyncStatus
+
+  └─ Step 6: Final render (BullMQ render queue)
+        ffmpeg local composition (concat-filter, not concat-demuxer)
+        Music selection (17-track Mixkit library, mood-aware)
+        Caption preset (5 styles) — ASS v4+ burn-in via libass
+        → /uploads/finals/<ts>.mp4, RenderJob.finalVideoUrl, Asset row
+```
+
+Every stage is real. There are no mock providers in the active path.
+
+---
+
+## Repo layout
 
 ```
 ugc-video-platform/
 ├── apps/
-│   ├── web/                     # Next.js 15 App Router (UI + API)
-│   │   ├── app/
-│   │   │   ├── (auth)/          # login / register / callback
-│   │   │   ├── (dashboard)/     # main app (RTL Hebrew)
-│   │   │   │   ├── projects/[id]/
-│   │   │   │   │   ├── new/        # Step 1 — product extraction + form
-│   │   │   │   │   ├── avatar/     # Step 2 — pick from 25-avatar catalog
-│   │   │   │   │   ├── scripts/    # Step 3 — V2 script engine
-│   │   │   │   │   └── scenes/     # Step 4 — gpt-image-2 scenes
-│   │   │   │   ├── library/        # Past renders
-│   │   │   │   ├── settings/       # Account settings
-│   │   │   │   └── dev/demo/       # Mock pipeline trigger
-│   │   │   ├── admin/              # Admin dashboard
-│   │   │   └── api/                # Route Handlers
+│   ├── web/                Next.js 15 + API + UI
+│   │   ├── app/            App Router (pages + API routes)
 │   │   ├── lib/
-│   │   │   ├── llm/                # OpenAI integrations
-│   │   │   │   ├── scripts.ts      # V2 script engine + parallel regen
-│   │   │   │   └── scene-images.ts # gpt-image-2 + safety + auto-retry
-│   │   │   ├── scenes/
-│   │   │   │   └── generate-impl.ts # Shared scene-gen logic (action + route handler)
-│   │   │   ├── scraper/            # Product URL extractor
-│   │   │   ├── avatars/            # 25-avatar catalog
-│   │   │   ├── categories/         # 15 product categories + heuristic guess
-│   │   │   ├── storage/            # File storage abstraction (LocalStorage today)
-│   │   │   └── usage/              # Cost tracking + ApiCall logger
-│   │   ├── public/
-│   │   │   ├── avatars/            # 25 PNG portraits (1024×1536)
-│   │   │   └── uploads/            # Generated scene images (gitignored)
-│   │   └── scripts/                # One-off: avatar-portrait gen, V2 fixtures
-│   └── worker/                  # BullMQ worker (mock pipeline)
-├── packages/
-│   ├── shared/                  # Zod schemas + TypeScript types
-│   │   └── src/
-│   │       ├── types/script.ts     # V2 script types (camelCase)
-│   │       └── schemas/script.ts   # Zod schemas (validation post-LLM)
-│   └── prompts/                 # All LLM prompts + JSON schemas
+│   │   │   ├── animation/          face-gate, kling, lipsync (PixVerse), motion-analysis, scene-routing
+│   │   │   ├── auth/               Supabase + sync-user + admin promotion
+│   │   │   ├── avatars/            25-portrait catalog (closed set)
+│   │   │   ├── captions/           re-exports from @ugc-video/shared
+│   │   │   ├── categories/         15 product categories with guidance text
+│   │   │   ├── image-briefs/       deterministic image-brief builder + corrective-brief generator
+│   │   │   ├── image-qa/           gpt-4o-mini vision QA + auto-regen feedback
+│   │   │   ├── llm/                scripts.ts (6-batch generator), scene-images.ts (gpt-image-2 wrapper)
+│   │   │   ├── music/              re-exports from @ugc-video/shared
+│   │   │   ├── plans.ts            PLAN_CONFIGS + PER_OPERATION_CREDITS + effective-value math
+│   │   │   ├── pricing/            provider-costs.ts: central USD + credit constants
+│   │   │   ├── product-intelligence/  dossier + visual analysis + audience inference
+│   │   │   ├── scenes/             generate-impl.ts (image), voice-impl.ts (TTS), clip-impl.ts (Kling+PixVerse), regen-prompt.ts, mux-audio.ts (ffmpeg helper)
+│   │   │   ├── scraper/            cheerio + JSON-LD + OG + Shopify + microdata + quick-suggest
+│   │   │   ├── usage/              rate-limit, spend-cap, log (two-phase ApiCall), credits, pricing
+│   │   │   └── voice/              elevenlabs.ts (custom HTTP wrapper) + voice-presets (30 voices)
+│   │   ├── public/avatars/         25 PNGs (Israeli portraits, generated via gpt-image-2)
+│   │   ├── public/voice-samples/   30 pre-rendered Hebrew voice previews
+│   │   └── public/music/           17 Mixkit tracks + README
+│   │
+│   └── worker/             BullMQ worker
 │       └── src/
-│           ├── script-system-prompt.ts   # 470-line V2 system prompt
-│           ├── script-json-schema.ts     # OpenAI structured-output schema
-│           ├── scene-image-prompts.ts    # gpt-image-2 prompt builder
-│           └── scene-safety.ts           # Term rewrites + category modesty tokens
+│           ├── index.ts                            workers + graceful shutdown
+│           ├── queue.ts                            render + maintenance queue handles
+│           ├── processors/
+│           │   ├── render-processor.ts             the V6+ render flow
+│           │   └── kling-sweep.ts                  hourly Kling stuck-task sweep
+│           └── providers/
+│               └── composition/ffmpeg.ts           local ffmpeg composition (concat-filter)
+│
+├── packages/
+│   ├── shared/             @ugc-video/shared
+│   │   └── src/
+│   │       ├── types/
+│   │       ├── schemas/
+│   │       ├── utils/
+│   │       ├── music/      music-library.ts (17 tracks) + select-music.ts (scoring)
+│   │       └── captions/   types.ts + chunker.ts + ass-builder.ts + presets.ts (5 V12 presets)
+│   │
+│   └── prompts/            @ugc-video/prompts
+│       └── src/
+│           ├── script-system-prompt.ts             V5 system prompt (Hebrew + Israeli realism + V11 PRODUCT INTELLIGENCE block)
+│           ├── script-json-schema.ts               strict structured-output schema
+│           ├── scene-image-prompts.ts              avatar + product reference wrapper for gpt-image-2
+│           └── scene-safety.ts                     23 risky→safe term rewrites + per-category modesty tokens
+│
 └── prisma/
-    └── schema.prisma            # User, Project, Script, Scene, RenderJob, Asset, ApiCall
+    ├── schema.prisma       9 models, 6 enums
+    └── migrations/         18 sequential migrations (Apr 27 → Apr 29 2026)
 ```
 
-### Data flow per wizard step
+---
+
+## Database schema
+
+| Model | Purpose |
+|-------|---------|
+| `User` | Auth identity (Supabase backed) + plan + creditsBalance + spendCapUsd |
+| `CreditTransaction` | Append-only audit log of every credit movement (admin grants, auto charges, refunds, first-regen-free events) |
+| `ApiCall` | Two-phase log of every paid provider call (provider, operation, model, tokens, cost, durationMs, status: in_progress/success/failed) |
+| `Project` | One per video. `productData` JSON holds wizard state + scraped data + Product Intelligence bundle + caption preset + music toggle |
+| `Script` | One per AI-generated framework option (6 per project). `rawJson` stores the full V5 strategy + scenes + quality score |
+| `Scene` | The biggest table — 40+ columns. Image, voice, clip, motion analysis cache, face-gate result, PixVerse task IDs, caption chunks, in-flight timestamps, V11 image-QA artifacts |
+| `RenderJob` | One per final-render attempt. Status flows pending → extracting_assets → composing_video → uploading_final → completed/failed/cancelled |
+| `Asset` | Generic "thing we produced" row — final video, intermediate clip, voice MP3, etc. |
+
+### Migrations (chronological)
+
+1. `20260427203409_init` — base models
+2. `20260427211429_add_user_role` — UserRole + banned
+3. `20260427214136_add_selected_script` — Project → Script FK
+4. `20260427220929_add_scene_image_fields`
+5. `20260427223618_add_api_call`
+6. `20260428064408_v2_script_engine` — Scene narrative metadata
+7. `20260428094432_v3_voice_clip` — voice + clip URL columns
+8. `20260428114122_v3_clip_motion_cache` — motion cache columns
+9. `20260428121521_v3_scene_routing` — sceneGenerationType / faceVisibility / requiresLipSync
+10. `20260428123942_v3_credit_transactions_spend_cap` — `CreditTransaction` table + `User.spendCapUsd`
+11. `20260428133048_v3_in_flight_tracking` — `imageInFlightAt` / `voiceInFlightAt` / `clipInFlightAt`
+12. `20260428135520_v3_apicall_status` — ApiCall.status + completedAt (two-phase)
+13. `20260428184954_v4_scene_product_metadata` — primarySubject / mustShowProduct / productVisibilityPriority / cameraFocus / showFace
+14. `20260429071141_v6_plans_motion_cache` — User plan billing + Scene motion analysis cache
+15. `20260429071151_v6_plans_motion_cache` — backfill: User.plan default 'free_trial'
+16. `20260429095553_v7_pixverse_face_gate` — full PixVerse + face-gate columns
+17. `20260429164500_v10_scene_captions` — wordTimingsJson + captionChunksJson + captionsGeneratedAt
+18. `20260429170000_v11_image_qa` — imageBriefJson + imageQaJson + imageRegenAttempts + needsManualReview
+
+`Project.productData` and `Script.rawJson` carry many additional fields
+without dedicated columns (intelligence bundle, music profile, captions
+preset selection, scrape result, etc.). The schema is intentionally
+plastic in JSON for evolving creative metadata.
+
+---
+
+## Subsystems
+
+### ✅ Auth & user lifecycle
+- Supabase email + password (`apps/web/lib/auth/sync-user.ts`).
+- On first login, a Prisma `User` row is created with 5 free credits.
+- `ADMIN_EMAILS` (comma-separated) auto-promotes those emails to `role=admin`.
+- Bootstrap rule: if no admin exists in DB, the first user signed up is auto-promoted (regardless of email).
+- Race-safe via Prisma unique constraint + re-read on conflict.
+
+### ✅ Plans & credits
+- 4 tiers: `free_trial` / `creator` / `brand` / `agency`. See [`lib/plans.ts`](apps/web/lib/plans.ts).
+- `effectiveCreditValueUsd(plan)` computes amortized per-credit revenue (`monthlyPrice / monthlyCredits`). Used in admin margin reporting; NEVER use the $0.10 list price for subscriber margin math.
+- `PER_OPERATION_CREDITS` map (single source of truth):
+  - `script_batch` = 2 · `image` = 2 · `voice` = 1 · `motion_analysis` = 0 (bundled)
+  - `kling_i2v_clip` = 15 · `pixverse_lipsync_scene` = 2 · `lipsync_only` (regen) = 12
+  - `final_render_15s` = 8 · `final_render_30s` = 12
+- **Split charging** (V8) — Kling i2v is charged the moment Kling returns a clip; PixVerse is charged separately ONLY if the face-gate passed and PixVerse actually returned a synced clip. Face-gate rejects → 0 PixVerse credits.
+- First-regen-free: `image` ✅, `voice` ✅, all clips ❌ (Kling cost too high).
+
+### ✅ Pricing constants ([`lib/pricing/provider-costs.ts`](apps/web/lib/pricing/provider-costs.ts))
+- `CREDIT_LIST_VALUE_USD` = $0.10 (env: `CREDIT_LIST_VALUE_USD`).
+- `PROVIDER_COST_ESTIMATES_USD`: per-operation USD costs, all env-overridable.
+- `PIXVERSE_COST_MODEL`: pack math — $10 / 2,250 px-credits = $0.00444/credit · 16 px-credits / scene = $0.071 / scene.
+- `VIDEO_COST_ESTIMATES`: 15s ≈ $3.62, 30s ≈ $4.57.
+- `OPERATION_CREDIT_PRICING`: per-operation credit map, mirrored into `lib/plans.ts`.
+
+### ✅ Rate limit + spend cap
+- [`lib/usage/rate-limit.ts`](apps/web/lib/usage/rate-limit.ts) — per-user, per-operation daily limits.
+- [`lib/usage/spend-cap.ts`](apps/web/lib/usage/spend-cap.ts) — per-user daily USD cap (default 10, override via `User.spendCapUsd`). Admins exempt.
+- Both run BEFORE every paid provider call. Tested in dev under load.
+
+### ✅ ApiCall logging (two-phase)
+- [`lib/usage/log.ts`](apps/web/lib/usage/log.ts) — `recordApiCallStart` inserts `status='in_progress'` immediately; `recordApiCallComplete` flips to `success`/`failed` with cost + duration + tokens.
+- Lets `/admin/costs` show **live** in-flight calls with elapsed timer. The dashboard also warns on stuck calls (>3min with no completion).
+
+### ✅ Scraper ([`lib/scraper/`](apps/web/lib/scraper/))
+- Tier 1: Shopify endpoint (`/products/<handle>.json`) + JSON-LD `Product` schema + Open Graph + microdata.
+- Tier 2: cheerio body extraction with 19 product-container selectors (`.product__description`, `[itemprop="description"]`, `#productDescription`, etc.) + densest-content-cluster fallback.
+- **CSS-leak guard** — strips `<style>` / `<script>` / `<noscript>` content entirely (not just tags). The `looksLikeCssOrJsGarbage` filter rejects descriptions that are mostly `{ ; : } @media`. Surfaces `weak-description` warning to the wizard banner.
+- **Description picker** — among all sources, the longest cleaned candidate wins (was: source-priority, which let one-sentence Shopify descriptions beat 5x-richer body content).
+- Bullet-list features extracted from `<ul><li>` inside the product container, deduped against JSON-LD features.
+- SSRF protection in [`lib/scraper/fetch.ts`](apps/web/lib/scraper/fetch.ts).
+
+### ✅ Quick auto-suggest at scrape time ([`lib/scraper/quick-suggest.ts`](apps/web/lib/scraper/quick-suggest.ts))
+- ~$0.001 gpt-5.4-mini call returning `{ targetAudience, categoryId, reason }`.
+- Wizard auto-fills the "קהל יעד" textarea + selects the right category radio. Falls back silently to the keyword-based `guessCategory` heuristic when the LLM call fails or isn't called.
+- Skipped when product name + description don't pass a minimum-content check (avoids burning tokens on junk).
+
+### ✅ Product Intelligence (V11) ([`lib/product-intelligence/`](apps/web/lib/product-intelligence/))
+- **Dossier** — `gpt-5.4-mini`, 32 strict-schema fields including `productMechanism`, `painPoints`, `desiredOutcomes`, `purchaseTriggers`, `mainObjections`, `mustShowVisuals`, `mustAvoidVisuals`, `visualEvidenceRequirements`, `visualFailureModes`, `israeliRealismCues`, `conservativeAssumptions`. The LLM is forbidden from inventing claims; assumptions go to `conservativeAssumptions[]`.
+- **Visual analysis** — `gpt-4o-mini` vision pass on the hero image. Returns physical truth: `objectDescription`, `activePart`, `contactPoint`, `substanceVisualType`, `textureAndMaterial`, `bestDemoAngles[]`, `mustShowForDemo[]`, `mustAvoidForDemo[]`, **`likelyModelMistakes[]`** (the cheap fakes a generic image model loves to produce). This is the most load-bearing field for QA downstream.
+- **Audience inference** — `gpt-5.4-mini`, derives concrete Israeli personas (`primaryAudience[]`, `dailyUseMoments[]`, `problemContext[]`, `realisticIsraeliSettings[]`, `bestAdFrameworks[]`, `toneRecommendation`, `visualStrategyRecommendation`).
+- All three stitched into `Project.productData.intelligence`, built lazily at first script generation. ~$0.10 per project, never recomputed.
+
+### ✅ Script engine (V5+V11)
+- [`lib/llm/scripts.ts`](apps/web/lib/llm/scripts.ts) — fires 6 framework-pinned `gpt-5.4-mini` calls in parallel. Each script is persisted via the `onScriptReady` callback as soon as its promise resolves, so the UI streams them in.
+- Frameworks: `problem_agitation_solution` · `skeptical_testimonial` · `demonstration_proof` · `price_alternative_anchor` · `relatable_israeli_moment` · `fast_direct_response`.
+- Strict structured output (`packages/prompts/src/script-json-schema.ts`).
+- The user prompt receives a `🧠 PRODUCT INTELLIGENCE` block with the full dossier + visual analysis + audience. Hard rules: `creative_strategy.product_mechanism` MUST mirror `dossier.productMechanism`; demo scenes MUST cite a `mustShowVisuals` item; `environment_type` MUST come from `audience.realisticIsraeliSettings`.
+- Each script self-scores on 12 axes (V5: hook strength, specificity, Israeli authenticity, emotional pull, visual clarity, conversion potential, TTS naturalness, no-generic-cliches, creative originality, product visibility, israeli visual realism, duration fit) + `weakness_note`. The wrapper selectively regenerates any script with `overall < 8`.
+- Each script also returns a `music_profile` (mood / energy / style / target_volume / duck_under_voice). Stored in `Script.rawJson` and consumed at final-render time.
+- Avatar gender lock — selected avatar's grammatical gender is injected with explicit zachar/nekeva rules so spoken_text + on-screen captions never mismatch.
+- Per-mode constraints (15s / 30s) thread through the prompt: scene count, lipsync cap, total Hebrew word budget. Anti-cliché blacklist (12 phrases) enforced.
+
+### ✅ Image Brief Builder (V11) ([`lib/image-briefs/image-brief-builder.ts`](apps/web/lib/image-briefs/image-brief-builder.ts))
+- **Deterministic, no LLM.** A brief is a contract — letting the LLM build it would re-introduce the drift V11 was created to eliminate.
+- Pulls `mustShow` from `dossier.mustShowVisuals` ∪ `visualAnalysis.mustShowForDemo` ∪ `contactPoint` ∪ `substanceVisualType`.
+- Pulls `mustAvoid` from `dossier.mustAvoidVisuals` ∪ `dossier.visualFailureModes` ∪ `visualAnalysis.mustAvoidForDemo` ∪ `visualAnalysis.likelyModelMistakes` ∪ universal Israeli-realism guards (foreign outlets / suburban / random English signage / stock-photo polish).
+- Produces a `finalImagePrompt` structured as: SCENE INTENT → CAMERA → COMPOSITION → REALISM → ENVIRONMENT → ISRAELI CONTEXT → PRODUCT ACCURACY → MUST SHOW → MUST NOT SHOW.
+- Replaces the legacy narration-driven path. The script's `visual_prompt_english` is folded in as a hint, not the primary source.
+- `buildCorrectiveBrief` — for the auto-regen loop. Extends `mustShow` with QA's `correctiveActions[]`, extends `mustAvoid` with `previously failed: <reason>` entries, appends two paragraphs to the prompt.
+
+### 🟡 Image QA ([`lib/image-qa/image-qa-evaluator.ts`](apps/web/lib/image-qa/image-qa-evaluator.ts))
+- `gpt-4o-mini` vision call — sees the generated image + brief summary + visual-analysis ground truth.
+- 9 boolean checks: `sceneTypeMatch` · `productUseAccuracy` · `visualProofStrength` · `environmentMatch` · `israeliRealism` · `mustShowSatisfied` · `mustAvoidViolated` · `productVisibility` · `narrationAlignment`.
+- Score 0–1 + `failureReasons[]` + `correctiveActions[]`.
+- Pass = `passed && score ≥ 0.8 && !hasCriticalViolation && !mustAvoidViolated`. We override the model's self-`passed` because it's lenient at edge cases.
+- **Status: gated OFF by default** (`IMAGE_QA_ENABLED=false` in `.env`). When ON, the auto-regen loop fires up to `IMAGE_QA_MAX_RETRIES=2` corrective passes per scene; in current testing the corrective brief isn't strong enough to fix what QA flags, so most scenes exhaust retries and end up `needsManualReview=true` while spending 3× the per-scene budget. Re-enable after the corrective brief is tuned.
+
+### ✅ Captions (V10 + V12)
+- **Source of truth** — ElevenLabs `with-timestamps` endpoint variant. Returns `audio_base64` + `alignment.characters[]` + per-character ms timings. `eleven_v3` is the only Hebrew-supporting model; we hard-pin it because Next.js dev caches `process.env` at boot and a stale `.env` would silently fall back to `multilingual_v2` (gibberish on Hebrew).
+- `charactersToWords` ([`packages/shared/src/captions/chunker.ts`](packages/shared/src/captions/chunker.ts)) groups Hebrew letters + niqqud + Latin + digits into word timings, attaching trailing punctuation. Logical (read) order — never reversed.
+- `chunkCaptions` splits into 2–5 word phrase chunks (≤2 lines, ~18 chars/line, min 650 ms / max 2200 ms, splits on strong `. ! ?` / soft `, ; : — …` punctuation, stretches under-duration chunks).
+- Persisted on `Scene.wordTimingsJson` + `Scene.captionChunksJson` (migration `v10_scene_captions`). Worker offsets to global timeline at render time.
+- ASS v4+ via `buildAssFromChunks` — libass handles bidi natively. Hard-cap on every event end at the scene clip's end on the global timeline (audio probe was occasionally a few ms longer than the rendered clip).
+- **5 V12 caption presets** ([`packages/shared/src/captions/presets.ts`](packages/shared/src/captions/presets.ts)):
+  | id | font / size | color | border | per-word? | popIn? |
+  |----|-------------|-------|--------|-----------|--------|
+  | `classic` | Heebo Bold 64 | white #FFFFFF | outline 4 black | no | no |
+  | `bold_yellow` | Heebo Bold 72 | yellow #FFE600 | outline 6 black | no | no |
+  | `block_card` | Heebo Bold 56 | white | `BorderStyle=3` opaque black box (16 padding) | no | no |
+  | `gradient_pink` | Heebo Bold 70 | hot pink #FF1493 | outline 5 black | no | yes |
+  | `word_pop` | Heebo Bold 90 | white | outline 6 black | **yes** | yes |
+- Picker at `/projects/[id]/videos`. Selection persists in `localStorage` per project + saves to `Project.productData.captionsPreset` on render submit.
+- `word_pop` reads `Scene.wordTimingsJson` and emits one ASS Dialogue per word with `\fad(50,50)\fscx80\fscy80\t(0,80,\fscx110\fscy110)\t(80,160,\fscx100\fscy100)` — captions.ai-style punch-in.
+
+### ✅ Background music (V9)
+- 17 royalty-free Mixkit tracks under [`apps/web/public/music/`](apps/web/public/music/) — that folder is the SOLE source. Metadata in [`packages/shared/src/music/music-library.ts`](packages/shared/src/music/music-library.ts).
+- Each track: `{ id, title, fileUrl, source, license, attributionRequired:false, allowedPlatforms:['all'], moods[], categories[], energy, style, bestFor[], avoidFor[] }`.
+- `selectMusicTrack()` scores tracks by mood/category/style/energy match. Hard penalty against high-energy tracks for beauty / wellness / baby / jewelry / premium / self-care so the Hebrew voice always stays dominant. Themed tracks (Christmas, Halloween) explicitly excluded from the auto-fallback list.
+- ffmpeg pipeline: `-stream_loop -1` on the music input → `atrim=duration=<finalSec>` → `volume=0.08` (clamped to `[0.04, 0.20]`) → `afade=t=in:st=0:d=0.3` → `afade=t=out:st=<end-2>:d=2`. `amix duration=first` ensures music never extends the visual end.
+- Step-1 toggle (`productData.backgroundMusic`) is the master switch. Debug payload in `RenderJob.providerPayloadJson.music` records track id + license + reason + volume + fade durations.
+
+### ✅ Avatar catalog
+- 25 Israeli portraits in `apps/web/public/avatars/` (Mizrahi / Yemeni / Ethiopian / Russian / Ashkenazi / dati-leumi). Closed set today.
+- Each has a `gender` field — drives Hebrew zachar/nekeva grammatical lock in script + voice.
+- Generator: `apps/web/scripts/generate-avatar-portraits.ts` (idempotent, ~$0.04 per missing portrait, gpt-image-2).
+
+### ✅ Voice catalog
+- 30 ElevenLabs voices (18 female + 12 male) curated for Israeli UGC. Pre-rendered Hebrew samples ship with the repo at `apps/web/public/voice-samples/`.
+- Generator: `apps/web/scripts/generate-voice-samples.ts`.
+
+### ✅ Animation pipeline (V7)
+- **Kling Omni v3** ([`lib/animation/kling.ts`](apps/web/lib/animation/kling.ts)) — image-to-video only. 3-10 s clips, `9:16`. Reference images supported (product hero passed alongside scene image so packaging/label stays accurate). Negative prompts derived from `mustAvoidVisuals` + `likelyModelMistakes`. Auth: Bearer token (wrappers) OR HS256 JWT (`KLING_ACCESS_KEY` + `KLING_SECRET_KEY` for the official endpoint).
+- **Motion analysis** ([`lib/animation/motion-analysis.ts`](apps/web/lib/animation/motion-analysis.ts)) — `gpt-4o-mini` vision describes what should physically move in the still. Cached per-`imageUrl` so a clip regen on the same image doesn't re-pay the analysis call.
+- **Face gate** ([`lib/animation/face-gate.ts`](apps/web/lib/animation/face-gate.ts)) — `gpt-4o-mini` vision. Decides: full clear face? mouth visible? confidence? Drops to `false` → lip-sync skipped, only Kling clip + ffmpeg audio mux. Saves PixVerse credits on product/hands-only scenes.
+- **PixVerse** ([`lib/animation/lipsync/pixverse.ts`](apps/web/lib/animation/lipsync/pixverse.ts)) — sole lip-sync provider. Multipart video upload + multipart audio upload + `/lip_sync/generate` + poll `/video/result/{video_id}`. Trust completion data (`url + path + outputWidth × outputHeight`) over the `status` enum (which has flipped through transient values in two production incidents).
+- **Recovery script** — `apps/web/scripts/recover-pixverse-clip.ts` for one-shot recovery of a successful PixVerse output that the poller mis-flagged. Used twice in production and now obsolete since the trust-completion-data fix.
+
+### ✅ Composition (V9 + V10 + V12)
+- ffmpeg local — `apps/worker/src/providers/composition/ffmpeg.ts`.
+- **concat-filter** (not concat-demuxer) — every input clip is decoded, normalized (`fps=30, setsar=1, format=yuv420p, aresample=44100, channel_layouts=stereo`), then concatenated. Eliminates the "freeze on the bad frame" boundary corruption we hit with the demuxer when clips had slightly different SAR/profile.
+- Caption ASS file written to a tempdir + applied via `ass=<path>` filter. Heebo font + libass for Hebrew bidi.
+- Music input added at index N (after scene clips) with `-stream_loop -1`. Mix via `amix=inputs=2:duration=first:dropout_transition=0:normalize=0`.
+- Output: H.264 `libx264 preset=fast crf=20`, AAC 192k, `+faststart`. Saved to `apps/web/public/uploads/finals/<ts>.mp4`.
+
+---
+
+## Providers (active in V12)
+
+| Provider | What it does | Model / endpoint | Required env |
+|----------|--------------|------------------|--------------|
+| OpenAI | Scripts (`gpt-5.4-mini`) · Scene images (`gpt-image-2`) · Vision: motion analysis, face-gate, image-QA, product visual analysis (`gpt-4o-mini`) · Quick suggest at scrape (`gpt-5.4-mini`) | as listed | `OPENAI_API_KEY` (+ optional `OPENAI_*_MODEL` overrides) |
+| ElevenLabs | Hebrew TTS | `eleven_v3` `with-timestamps` endpoint | `ELEVENLABS_API_KEY` |
+| Kling | Image-to-video, 3–10 s clips | `kling-v3-omni` | `KLING_API_KEY` (Bearer) OR `KLING_ACCESS_KEY` + `KLING_SECRET_KEY` (JWT) |
+| PixVerse | Lip-sync (sole provider since V7) | `/openapi/v2/media/upload` + `/lip_sync/generate` + `/video/result/{id}` | `PIXVERSE_API_KEY` |
+| ffmpeg | Local composition | binary in `$PATH` | — |
+
+### ❌ Removed providers (do not bring back without rationale)
+
+- **Kling LipSync v1** — replaced by PixVerse on 2026-04-29 (V7). PixVerse is ~7× cheaper and has multipart upload that doesn't require a public URL.
+- **Sync.so · ElevenLabs Omnihuman · Mock LipSync** — removed in V7 cleanup.
+- **KlingAvatar v2 / Avatar v2 Pro / advanced_lipsync / lipsync_v1 (TalkingScene variants)** — all removed in V7. There is no longer a `TalkingSceneProvider` abstraction.
+- **Creatomate** — replaced by local ffmpeg in V9 era. Function `priceCreatomate()` retained as a stub for the cost log only; never called.
+- **Runway** — never wired. `'runway'` is still listed in the `ApiCall.provider` enum string union for forward-compat, but no code path produces it.
+
+### 🟡 Mock files retained as templates
+- `apps/worker/src/providers/composition/mock.ts`, `tts/mock.ts`, `avatar/mock.ts`, `broll/mock.ts` — exist on disk, never imported by the active worker (`render-processor.ts` instantiates `ffmpegCompositionProvider` directly). Kept as a reference shape for future provider swaps.
+- `KLING_LIPSYNC_MOCK="1"` — legacy env switch in [`lib/animation/lipsync/pixverse.ts`](apps/web/lib/animation/lipsync/pixverse.ts) returning the silent input unchanged. Useful when `PUBLIC_BASE_URL` isn't set up (Kling/PixVerse can't fetch from localhost).
+
+---
+
+## API routes
 
 ```
-Step 1 — Product
-  ┌─────────────┐                    ┌──────────────────┐
-  │ Product URL │ ──── POST ────►    │ /api/products/   │ ── shopify/JSON-LD/OG/cheerio ──┐
-  └─────────────┘   /extract         │ extract          │                                 │
-                                     └──────────────────┘                                 ▼
-                                                                              ┌──────────────────┐
-                                                                              │ Project.productData │
-                                                                              │   (JSON)            │
-                                                                              └──────────────────┘
-Step 2 — Avatar
-  Pick from /lib/avatars/catalog.ts (25 entries) → store id in productData.selectedAvatarId
+GET    /api/health                              DB + Redis liveness
 
-Step 3 — Scripts (V2)
-  ┌──────────────────┐    server action     ┌─────────────────────┐
-  │ ✨ Generate 6    │──── generateScripts ─►│ apps/web/lib/llm/   │
-  │ Scripts          │      Action            │ scripts.ts          │
-  └──────────────────┘                        │  ↓                  │
-                                              │  buildUserPrompt    │
-                                              │  → OpenAI (gpt-4o-  │
-                                              │    mini) w/ V2      │
-                                              │    JSON schema      │
-                                              │  ↓                  │
-                                              │  Parse + score      │
-                                              │  ↓                  │
-                                              │  PARALLEL regen of  │ ── if any score < 8 ──┐
-                                              │  weak scripts       │                       │
-                                              │  (Promise.all)      │                       │
-                                              │  ↓                  │                       │
-                                              │  Map V2 → legacy    │                       │
-                                              │  enum + persist     │ ◄─────────────────────┘
-                                              └─────────────────────┘
+POST   /api/products/extract                    Scrape URL → ScrapeResult + suggestions{ targetAudience, categoryId }
+GET    /api/voice/sample/[voiceId]              Pre-rendered voice preview MP3
 
-Step 4 — Scenes
-  Per-scene "Create" button   →  server action (single, serialized) ──┐
-                                                                      ▼
-  "Generate all" loop         →  fetch POST /api/scenes/[id]/generate │
-                                  parallelism=2 (Promise.all chunks)  │
-                                                                      ▼
-                                                       ┌──────────────────────┐
-                                                       │ /lib/scenes/         │
-                                                       │  generate-impl.ts    │ ── shared logic
-                                                       │  ↓                   │
-                                                       │  Sanitize visual     │
-                                                       │  brief (term rewrite)│
-                                                       │  ↓                   │
-                                                       │  buildScenePrompt    │
-                                                       │  + REALISM_CHECK     │
-                                                       │  + safety tokens     │
-                                                       │  ↓                   │
-                                                       │  OpenAI gpt-image-2  │
-                                                       │  (180s timeout,      │
-                                                       │   AbortController)   │
-                                                       │  ↓ on safety reject  │
-                                                       │  Retry w/o product   │
-                                                       │  image + aggressive  │
-                                                       │  modesty tokens      │
-                                                       │  ↓                   │
-                                                       │  Save base64 → disk  │
-                                                       │  → /uploads/scenes_X │
-                                                       │  ↓                   │
-                                                       │  prisma.scene.update │
-                                                       └──────────────────────┘
-                                                                      │
-   Live UI:  SceneCard polls   ◄─── GET /api/scenes/[id]              │
-            every 2.5s when               (returns imageUrl)          │
-            batch is running         ◄────────────────────────────────┘
-            OR after single
-            action completes
+POST   /api/projects/[id]/scripts/list          (legacy GET via dashboard) — script generation enqueue
+POST   /api/projects/[id]/voice                 Batch voice for all scenes
+POST   /api/projects/[id]/render                Enqueue final composition; body: { captionsPreset?: string }
+GET    /api/projects/[id]/scripts/list          Stream scripts as they persist (the wizard polls this)
 
----
+GET    /api/scenes/[id]                         Live scene state polled by SceneCard during batch
+PUT    /api/scenes/[id]                         Update visual prompt etc.
+POST   /api/scenes/[id]/generate                Generate image (deterministic brief → gpt-image-2 → optional QA loop)
+POST   /api/scenes/[id]/regen-prompt            Ask LLM for a fresh visualPromptEnglish variant — does NOT generate the image
+POST   /api/scenes/[id]/voice                   Generate voice (ElevenLabs with timestamps)
+POST   /api/scenes/[id]/clip                    Generate clip (Kling i2v + face-gate + PixVerse / mux)
 
-## 🔌 API Surface (מלא)
+GET    /api/render/[jobId]/status               Poll render-job status
 
-### Authentication & Health
-
-| Method | Path                          | Auth | Description |
-|--------|-------------------------------|------|-------------|
-| GET    | `/api/health`                 | —    | DB + Redis liveness. Returns 200 with `{ ok, checks: {...} }` or 503 + error |
-| GET/POST | `/auth/callback`            | —    | Supabase auth callback (email confirm) |
-
-### Product extraction
-
-| Method | Path                          | Auth | Description |
-|--------|-------------------------------|------|-------------|
-| POST   | `/api/products/extract`       | ✓    | Body: `{ url }`. Returns `ScrapeResponse` with `data` (productName, description, price, brand, images[], heroImageUrl, sourcePlatform), `confidence`, `signals[]`, `warnings[]`. SSRF-protected (blocks localhost + private IPs). |
-
-### Scenes
-
-| Method | Path                          | Auth | Description |
-|--------|-------------------------------|------|-------------|
-| GET    | `/api/scenes/[id]`            | ✓    | Returns `{ imageUrl, imageGenerationCount, imageGeneratedAt }`. Used by SceneCard live polling — bypasses `router.refresh()`'s tendency to coalesce when fired rapidly during batch generation. |
-| POST   | `/api/scenes/[id]/generate`   | ✓    | Generates an image for the scene (gpt-image-2 + safety pipeline + auto-retry). Returns `{ success, imageUrl?, error?, needsCredits?, safetyBlocked?, timedOut?, safetyRetryApplied? }`. **Used by the "Generate all" loop in parallel** — Server Actions are serialized per-route by Next.js, so `Promise.all` over them runs sequentially; this Route Handler doesn't have that limitation. |
-
-### Render queue (mock today)
-
-| Method | Path                          | Auth | Description |
-|--------|-------------------------------|------|-------------|
-| POST   | `/api/render/start`           | ✓    | Create a RenderJob and enqueue it on BullMQ "render" queue |
-| GET    | `/api/render/:jobId/status`   | ✓    | Poll job status / progress / final URL |
-
-### Server Actions (used directly by forms)
-
-| File                                                           | Action                          | What it does |
-|----------------------------------------------------------------|---------------------------------|--------------|
-| `app/(dashboard)/projects/new/actions.ts`                      | `createProjectAction`           | Persists step-1 form to `Project.productData` (JSON), redirects to step 2 |
-| `app/(dashboard)/projects/[id]/avatar/actions.ts`              | `selectAvatarAction`            | Updates `productData.selectedAvatarId` |
-| `app/(dashboard)/projects/[id]/avatar/actions.ts`              | `continueFromAvatarAction`      | Validates selection → redirects to step 3 |
-| `app/(dashboard)/projects/[id]/scripts/actions.ts`             | `generateScriptsAction`         | Runs the V2 Script Engine (LLM call + parallel regen + persist 6 scripts) |
-| `app/(dashboard)/projects/[id]/scripts/actions.ts`             | `selectScriptAction`            | Sets `Project.selectedScriptId` |
-| `app/(dashboard)/projects/[id]/scripts/actions.ts`             | `updateScriptAction`            | Saves edits to `hook` / `cta` / scene `textHebrew` / `durationSeconds` |
-| `app/(dashboard)/projects/[id]/scripts/actions.ts`             | `continueAfterSelectAction`     | Redirects to step 4 |
-| `app/(dashboard)/projects/[id]/scenes/actions.ts`              | `generateSceneImageAction`      | **Single-scene "Create" button** (delegates to shared impl; serialized by Next.js so use the Route Handler for parallel batch) |
-| `app/(dashboard)/projects/[id]/scenes/actions.ts`              | `updateScenePromptAction`       | Saves edits to a scene's `visualPromptEnglish` |
-| `app/(dashboard)/admin/.../actions.ts`                         | (admin)                         | Add credits, ban user, retry/cancel render, queue maintenance |
-
----
-
-## 🧠 Script Engine V2 — How it Works
-
-### Why V2 exists
-V1 produced "6 UGC scripts in 6 angles" but felt template-driven, with weak hooks and generic copy. V2 forces the LLM to **commit to a strong advertising idea before writing any spoken text**. Each script is built on a 12-field `creative_strategy` block, validated against an anti-cliché blacklist, scored on 8 axes, and any script under threshold 8 is automatically regenerated.
-
-### V2 Pipeline
-
-1. **Single LLM call** to gpt-4o-mini with strict JSON schema returns 6 scripts
-2. **Each script must include**:
-   - `framework` — one of 6 ad frameworks (problem_agitation_solution / skeptical_testimonial / demonstration_proof / price_alternative_anchor / relatable_israeli_moment / fast_direct_response)
-   - `creative_strategy` — 12 mandatory fields:
-     - `core_insight` — the sharp advertising idea this ad is built on
-     - `audience_pain` — concrete daily frustration (specific, not generic)
-     - `emotional_trigger` — the dominant emotion to pull
-     - `product_mechanism` — how the product solves the pain (or "assumption: ...")
-     - `main_objection` — the biggest "yeah but…" the viewer thinks
-     - `persuasion_angle` — skeptic-converts / price-anchor / authority / social-proof / quick-win / loss-aversion
-     - `why_this_would_stop_scroll` — what about the first 1.5s stops the thumb
-     - `ugc_situation` — very specific Israeli everyday situation
-     - `hook_type` — confession / frustration / mistake / curiosity / price_shock / before_after / wish_i_knew / i_stopped_doing / nobody_tells_you
-     - `script_promise` — implicit promise to the viewer
-     - `conversion_goal` — click_to_pdp / add_to_cart / save_post / share / comment
-     - `assumptions` — list of guesses made when product data was missing
-   - `hook_options` — 3 distinct opening lines (≤12 words each)
-   - `selected_hook` — the strongest one (verbatim from hook_options)
-   - `hook_reason` — 1 short Hebrew sentence explaining why
-   - `scenes` — 4–5 (or 3 for fast_direct_response) with: `scene_goal` (stop_scroll/establish_pain/introduce_product/prove_it_works/decision_push), `spoken_text_hebrew`, `on_screen_caption_hebrew`, `visual_prompt_english`, `camera_direction`, `performance_note`, `duration_seconds`
-   - `quality_score` — self-rating on 8 axes (hook_strength, specificity, israeli_authenticity, emotional_pull, visual_clarity, conversion_potential, tts_naturalness, no_generic_cliches) + `overall` + `weakness_note`
-
-3. **Selective regeneration (parallel):** any script with `quality_score.overall < 8` triggers a regeneration call to OpenAI with the original strategy + the weakness_note as a critique. **All low-scoring regens fire in parallel via `Promise.all`** (capped at 3 concurrent calls per generation request to bound cost). New script replaces original only if it scores higher.
-
-4. **Persistence** — V2 fields stored both in normalized DB columns (`framework`, `selectedHookReason`, `qualityScoreOverall`, `sceneGoal`, `onScreenCaptionHebrew`, `cameraDirection`, `performanceNote`) and the rich JSON in `Script.rawJson` (creative_strategy + hook_options + full quality breakdown).
-
-5. **Backward compatibility** — legacy `Script.angle` (Postgres enum) and `Scene.sceneType` (enum) get populated with mapped values via `FRAMEWORK_TO_LEGACY_ANGLE` and `SCENE_GOAL_TO_LEGACY_TYPE`. The worker, admin views, and any other consumer reading legacy fields keep working.
-
-### V2 Anti-cliché blacklist
-12 banned phrases enforced by the system prompt (e.g., "שינה לי את החיים", "חייבים לנסות", "פשוט וואו"). The LLM is instructed: if it uses one without strong context, it must self-rate `no_generic_cliches: 1` which drops `overall` below 8 and triggers regeneration.
-
-### Phase-based progress UX
-The 60-90s wait is annotated client-side with 7 phases (analyze product → strategy → hooks → scenes → quality scoring → regen → save). Pure cosmetic, but turns "spinner of doom" into "I see what's happening".
-
-### Test coverage
-`apps/web/scripts/test-script-engine-v2.ts` — runs 3 fixtures (skincare / kitchen / tech) against real OpenAI and asserts 148 properties per fixture (framework coverage, scene completeness, no forbidden cliché phrases, overall ≥ 8). First run: 444/444 passing, scores 8.6–8.9, zero regen calls needed.
-
----
-
-## 🖼 Scene Image Pipeline — How it Works
-
-### Pipeline stages (per scene)
-
-```
-1. Pre-load reference images (avatar PNG from disk, product hero from URL)
-2. Sanitize visual brief — replace risky terms (bodysuit→fitted base layer, etc.)
-3. Build prompt:
-   - ASPECT_OPENER (lens specs: 35mm, f/4, authentic phone-camera grain)
-   - Scene visual brief (LLM-written setting + action)
-   - Framing hint (mirror selfie / selfie / POV / over-shoulder physics)
-   - IDENTITY LOCK (preserve all facial features from avatar)
-   - Bio-fidelity skin tokens (pores, vellus hair, no airbrush)
-   - REALISM CHECK (anatomy, light direction, surface contact, anti-AI tells)
-   - Style (candid UGC phone-camera aesthetic)
-   - Safety tokens (per-category modesty appendage if sensitive)
-4. OpenAI call (gpt-image-2 medium 1024×1536) wrapped in 180s AbortController
-5. On success → save PNG to /public/uploads/scenes_<projectId>/<file>.png
-6. Update Scene.imageUrl in DB + decrement credits + log ApiCall
+(legacy / dev)
+POST   /api/demo/start                          Local demo flow trigger
+POST   /api/render/start                        Bare render enqueue (used by /dev/demo)
 ```
 
-### Safety pipeline (3 layers)
-
-**Layer 1 — Term sanitization** ([packages/prompts/src/scene-safety.ts](packages/prompts/src/scene-safety.ts)):
-Always-on. 23 risky→safe rewrites: `bodysuit`→`fitted base layer top`, `shapewear`→`smoothing comfort layer`, `lingerie`→`outfit`, `sexy`→`stylish`, `revealing`→`well-fitted`, `intimate`→`personal`, `boudoir`→`bedroom morning routine`, etc. Returns the cleaned brief plus a list of which rules fired (for audit).
-
-**Layer 2 — Per-category modesty tokens:**
-For sensitive categories (`fashion`, `beauty`, `fitness`, `wellness_sleep`), an explicit modesty appendage is added to the prompt: *"fully clothed in everyday outerwear, modest framing, no lingerie or underwear visible, conservative casual context, retail commerce style"*. Skipped for non-sensitive categories (skincare, kitchen, tech) so the prompt stays focused.
-
-**Layer 3 — Auto-retry on safety_violations:**
-If gpt-image-2 returns `safety_violations=[sexual]` (or similar), the wrapper detects it and retries ONCE: drops the product image (the most common trigger) and switches to `AGGRESSIVE_RETRY_TOKENS` ("CRITICAL: Subject is fully dressed... NO lingerie, NO underwear, NO swimwear, NO bare torso, NO suggestive posing..."). If the retry also fails, throws `SceneImageSafetyError` which the caller turns into a clean Hebrew error.
-
-### REALISM CHECK block
-
-To bridge the gap between AI generations and authentic UGC, every scene prompt now includes ([scene-image-prompts.ts:67](packages/prompts/src/scene-image-prompts.ts#L67)):
-
-- **Anatomy**: 5 fingers per hand, natural wrist/elbow articulation, no extra/missing limbs, no fused fingers, ears mirror-symmetric, eyes correctly aligned with matching catch-light
-- **Hand-object contact**: visible knuckles, finger curvature follows object shape, no objects floating between fingers
-- **Light direction**: ONE primary light source. All shadows fall the same way. No contradictory shadows.
-- **Surface contact**: every object rests on a surface (with shadow underneath) or is gripped visibly. Nothing floats.
-- **Scale**: products at human-hand size
-- **Architecture**: walls meet at 90°, doors are rectangular, mirrors flat
-- **No AI tells**: no plastic skin, no doll-eyes, no garbled text on signs
-
-### Mirror-selfie physics
-
-The classic AI tell. Custom framing hint when the brief mentions "mirror selfie":
-- Phone in mirror shows its **BACK** (lens facing the mirror, NOT the screen)
-- Eyes look at the mirror (so reflection looks at camera)
-- Real optics — same shadows on subject and reflection
-- Phone partially occludes face/chest in the reflection where physically expected
-
-### True parallel batch generation
-
-**The bug we fixed:** Next.js App Router serializes Server Actions per-route. `Promise.all` over server actions doesn't actually run them in parallel — the runtime queues them and processes one at a time. This is why "5 scenes in 5 minutes" stayed sequential even with `parallelism=2` in the client loop.
-
-**The fix:** introduced `POST /api/scenes/[id]/generate` (Route Handler, not Server Action). Route Handlers don't have the per-route serialization. The "Generate all" loop now uses `fetch()` to this endpoint, allowing genuine parallelism. Both the Route Handler and the per-scene Server Action call into a shared `generateSceneImageImpl()` so logic stays DRY.
-
-### Live UI updates (no manual refresh)
-
-Three independent fallback paths so the user always sees scenes appear as they finish:
-
-1. **Window-level events** — `GenerateAllButton` dispatches `scenes:batch-start` / `scenes:batch-done`. Each `SceneCard` listens and starts polling `GET /api/scenes/[id]` every 2.5s until it receives an `imageUrl` or the batch ends.
-2. **Per-scene "Create" button** — when its `useActionState` pending flag goes true→false and `props.imageUrl` is still null, runs a polling burst (6 polls × 2.5s = 15s budget).
-3. **`router.refresh()` after each chunk** — fallback for the credits counter, footer button, and other tree state that needs server data.
+The single-scene endpoints all use **Route Handlers**, not Server
+Actions, because Next.js 15 serializes server actions per-route — using
+fetch from the client is the only way to run regenerate buttons in
+parallel across multiple scene cards.
 
 ---
 
-## 0. תשתית ובסיס
+## Worker
 
-| נושא | סטטוס |
-|------|--------|
-| Monorepo (apps/web + apps/worker + packages/shared + packages/prompts + prisma) | ✅ |
-| TypeScript, Next.js 15 App Router, Tailwind 3.4, shadcn-style UI | ✅ |
-| Prisma + PostgreSQL (Homebrew Postgres מקומי) | ✅ |
-| Redis + BullMQ (worker אסינכרוני) | ✅ |
-| Docker compose alternative ל-DB/Redis | ✅ (תיעוד ב-README) |
-| Health check route (`/api/health`) | ✅ |
-| TypeScript path aliases + npm workspaces | ✅ |
-| ESLint / Prettier / pre-commit hooks | ❌ (לא קריטי, נוסיף לפני production) |
+Two queues, both backed by Redis (`REDIS_URL`):
 
-## 1. מיתוג
+| Queue | Concurrency | Job kinds | Schedule |
+|-------|-------------|-----------|----------|
+| `render` | `WORKER_CONCURRENCY` (default 2) | `render-job` (one per final composition) | on-demand from `/api/projects/[id]/render` |
+| `maintenance` | 1 | `kling_sweep` | recurring every 60 min, jobId `recurring:kling_sweep` |
 
-| נושא | סטטוס |
-|------|--------|
-| שם: **tachles** | ✅ |
-| צבעים: cream רקע / electric violet / acid lime accent | ✅ |
-| Heebo font (עברית + לטינית) | ✅ |
-| לוגו (`tachles.` עם נקודה ירוקה) | ✅ |
-| RTL מלא | ✅ |
+`render-processor.ts` flow: `pending → extracting_assets (10%) → composing_video (50%) → uploading_final (90%) → completed (100%)`. On failure it sets `RenderJob.status=failed` with a captured `errorMessage` and does NOT refund credits automatically (admin handles refunds via `/admin/users`).
 
-## 2. אותנטיקציה (Supabase Auth)
+`kling-sweep.ts` finds Scene rows whose `clipMotionTaskId` is set but `clipUrl` is NULL and `clipMotionGeneratedAt` is older than the Kling task TTL — flags them as failed so the UI doesn't show a perpetual spinner.
 
-| נושא | סטטוס |
-|------|--------|
-| הרשמה / התחברות עם email + password | ✅ |
-| Middleware refresh-session על כל בקשה | ✅ |
-| auth callback (אישור email) | ✅ |
-| התנתקות | ✅ |
-| First-user / `ADMIN_EMAILS` → role=admin אוטומטית | ✅ |
-| Password reset / forgot password | ❌ |
-| OAuth (Google / Apple) | ❌ |
-| MFA / 2FA | ❌ |
-
-## 3. דאשבורד אדמין (`/admin`)
-
-| מסך | סטטוס |
-|------|--------|
-| `/admin` — KPIs כלליים | ✅ |
-| `/admin/users` — רשימה + הוספת קרדיטים + ban | ✅ |
-| `/admin/projects` — כל הפרויקטים | ✅ |
-| `/admin/renders` — רינדורים + פילטר סטטוס + retry/cancel | ✅ |
-| `/admin/queue` — BullMQ live (waiting/active/failed/etc) + נקיון | ✅ |
-| `/admin/costs` (API usage tab) | ✅ KPIs + פירוק לפי ספק/פעולה/מודל + לוג 50 קריאות אחרונות |
-| הגדרות פיצ'רים (feature flags) | ❌ |
-| Audit log לפעולות אדמין | ❌ |
-
-## 4. דאשבורד משתמש
-
-| נושא | סטטוס |
-|------|--------|
-| לוח בקרה ראשי עם סטטיסטיקות | ✅ |
-| **פרויקטים בתהליך + כפתור "המשך"** (resume מהשלב האחרון) | ✅ |
-| הצגת פרויקטים שהושלמו | ✅ |
-| ספריית וידאו (`/library`) | 🟡 רשת ריקה — יתמלא כשרינדור אמיתי קיים |
-| הגדרות חשבון (`/settings`) | 🟡 בסיסי — חסר שינוי סיסמה, חיובים, חיבור לחנויות |
-| Notifications | ❌ |
+Graceful shutdown on `SIGINT` / `SIGTERM` closes both workers and quits Redis.
 
 ---
 
-## 5. Wizard — יצירת סרטון
+## Admin dashboard
 
-### 5.1 שלב 1 · מוצר ופרטים (`/projects/new`)
-
-| נושא | סטטוס |
-|------|--------|
-| URL extractor (Shopify + JSON-LD + OG + microdata + CTA detection + cheerio fallback) | ✅ |
-| SSRF protection (חוסם localhost + private IPs) | ✅ |
-| Confidence score + signals מוצגים למשתמש | ✅ |
-| טופס פרטי מוצר (שם, מותג, קהל יעד, תיאור) | ✅ |
-| בחירת תמונה ראשית (chip selector מהתמונות שחולצו) | ✅ |
-| תמונות נוספות (add/remove) | ✅ |
-| יחס מסך (9:16 / 1:1 / 16:9) | ✅ |
-| משך (15s / 30s, 60s "soon") | ✅ |
-| Toggles: מוזיקת רקע, כתוביות | ✅ |
-| העלאת תמונת מוצר ידנית (file upload) | ❌ (צריך Supabase Storage) |
-| שמירת state אוטומטית כל X שניות (autosave) | ❌ |
-| Progress indicator בייבוא URL | ✅ |
-
-### 5.2 שלב 2 · בחירת אווטאר (`/projects/[id]/avatar`)
-
-| נושא | סטטוס |
-|------|--------|
-| גריד עם **25 אווטארי AI ישראליים** (16 מקוריים + 9 חדשים מגוונים) | ✅ |
-| ייצור חד-פעמי ע״י gpt-image-2 (`scripts/generate-avatar-portraits.ts`, idempotent) | ✅ |
-| קבצי PNG ב-`apps/web/public/avatars/{id}.png` (1024×1536) | ✅ |
-| גיוון: מזרחי, תימני, אתיופי, רוסי, אשכנזי, דתי-לאומי (מטפחת), חילוני | ✅ |
-| גיוון אזורי: ת״א, חיפה, ירושלים, רמת גן, מודיעין, באר שבע, אילת, גליל | ✅ |
-| גיוון גילאי: 18-58, כולל טווח חדש `18-20` | ✅ |
-| גיוון סגנון: casual / sporty / professional / lifestyle | ✅ |
-| פרומפטים אישיים מבוססי `awesome-gpt-image-2` (lens specs, bio-fidelity skin) | ✅ |
-| פילטרים בממשק: מגדר, טווח גיל | ✅ |
-| בחירה ושמירה (`Project.productData.selectedAvatarId`) | ✅ |
-| Avatar הוא ה-single source of truth לזהות בכל הסצנות (Image 1) | ✅ |
-| העלאת אווטאר ידני (custom upload) | ❌ |
-| HeyGen integration (קטלוג מקצועי) | ❌ |
-| Avatar model נפרד ב-DB (כרגע ב-JSON של Project) | ❌ (לא קריטי) |
-
-### 5.3 שלב 3 · תסריט (`/projects/[id]/scripts`) — **Script Engine V2** ✨
-
-| נושא | סטטוס |
-|------|--------|
-| יצירת 6 תסריטים עם gpt-5.4-mini, structured outputs (strict JSON) | ✅ |
-| **Creative Strategy Layer חובה** — לכל תסריט יש 11 שדות אסטרטגיים שהמודל חייב למלא לפני שכותב סצנות (core_insight / audience_pain / emotional_trigger / product_mechanism / main_objection / persuasion_angle / why_this_would_stop_scroll / ugc_situation / hook_type / script_promise / conversion_goal / assumptions) | ✅ |
-| **6 פריימוורקים חדים חדשים** (PAS / Skeptical Testimonial / Demonstration Proof / Price Anchor / Relatable Israeli Moment / Fast Direct Response) — מחליפים את ה-angles הגנריים | ✅ |
-| **3 hook_options + selected_hook + hook_reason** לכל תסריט | ✅ |
-| **9 hook archetypes** (confession / frustration / mistake / curiosity / price_shock / before_after / wish_i_knew / i_stopped_doing / nobody_tells_you) | ✅ |
-| **Anti-cliché blacklist** — 12 ביטויים אסורים שלא יופיעו בתסריט (שינה לי את החיים, חייבים לנסות, וכו') | ✅ |
-| **Quality Score עצמי** — המודל מדרג כל תסריט על 8 צירים (hook_strength / specificity / israeli_authenticity / emotional_pull / visual_clarity / conversion_potential / tts_naturalness / no_generic_cliches) + overall + weakness_note | ✅ |
-| **Selective regeneration** — wrapper מזהה תסריטים עם overall<8 ושולח קריאה ממוקדת לחזק את התסריט החלש (cap=3 ריצות חוזרות per generation) | ✅ |
-| **שדות Per-scene חדשים**: scene_goal (stop_scroll/establish_pain/introduce_product/prove_it_works/decision_push) + on_screen_caption_hebrew + camera_direction + performance_note | ✅ |
-| Category-aware visual prompts (skincare/fitness/fashion/food/tech/wellness/baby/cleaning/jewelry/supplements) | ✅ |
-| Pose & Framing dictionary, Mood vocabulary | ✅ |
-| 2 דוגמאות מלאות בסגנון V2 בתוך ה-system prompt + אנטי-דוגמה | ✅ |
-| Avatar description מוזרק לפרומפט (לא בתוך visual_prompt) | ✅ |
-| **חובת ספציפיות מוצרית** — כל תסריט חייב להזכיר ≥2 פרטים קונקרטיים מהמוצר; אם נתונים חסרים, להירשם ב-`assumptions` ולא להמציא טענות | ✅ |
-| Backward-compat ל-V1 ב-DB (Script.angle ו-Scene.sceneType ENUMs נשמרים, ממופים מ-V2) | ✅ |
-| UI מציג quality score badge (ירוק/ענבר/אדום), 3 hook options, Creative Strategy collapsible, scene goals, captions, camera directions, performance notes | ✅ |
-| Test fixtures (skincare/kitchen/tech) — 444/444 assertions עוברים, ציונים 8.6-8.9 | ✅ |
-| בחירת תסריט (`selectedScriptId` על Project) | ✅ |
-| עריכה ידנית של hook / cta / טקסט סצנות / משך | ✅ |
-| Regenerate (1 קרדיט; לא תלוי ב-regen פנימי של V2) | ✅ |
-| Progress indicator בייצור | ✅ |
-| כתיבה ידנית מאפס (במקום AI) | ❌ |
-| עריכה של creative_strategy / quality_score ב-UI | ❌ (read-only כרגע — אם לא מרוצים, מרגנרים) |
-
-### 5.4 שלב 4 · תמונות סצנה (`/projects/[id]/scenes`)
-
-| נושא | סטטוס |
-|------|--------|
-| gpt-image-2 medium @ 1024×1536 portrait (true 9:16) | ✅ |
-| Multi-image input: **avatar (Image 1, identity anchor) + product (Image 2)** | ✅ |
-| Avatar = single source of truth — בוטל reference לסצנה הקודמת (זהות יציבה יותר) | ✅ |
-| **Identity Lock block** (preserve eye/brow/nose/jaw/hairline/hair density/skin tone) | ✅ |
-| **Bio-fidelity skin tokens** (pores, vellus hair, hydration, no airbrush) | ✅ |
-| Lens specs ב-opener (35mm, f/4, authentic phone-camera grain) | ✅ |
-| Auto-detect framing מתוך הברייף: mirror-selfie / selfie / POV / over-shoulder / close-up | ✅ |
-| **REALISM CHECK block** — anatomy, light direction, surface contact, anti-AI tells | ✅ |
-| **Mirror-selfie physics** — phone shows BACK in reflection, real optics | ✅ |
-| **Safety pipeline 3-layer** — term sanitization + per-category modesty tokens + auto-retry without product image | ✅ |
-| **Timeout protection** — 180s AbortController סביב כל קריאת gpt-image-2; 200s client-side timeout | ✅ |
-| **True parallel batch generation** — Route Handler `POST /api/scenes/[id]/generate` (Server Actions מסריילים בכפיה ע"י Next.js, אז ה-batch loop עובר דרך fetch) | ✅ |
-| Parallelism=2 ב-`GenerateAllButton` (5 סצנות = ~2.5 דק' במקום 5 דק') | ✅ |
-| **Live polling** — `GET /api/scenes/[id]` כל 2.5s במהלך batch / burst של 6 polls אחרי action בודד; אין צורך ברענון ידני | ✅ |
-| כפתור "צור" לכל סצנה בנפרד (server action, `useActionState`) | ✅ |
-| **One-click "Generate all scenes"** עם parallelism + live updates | ✅ |
-| עריכת `visual_prompt_english` ידנית לכל סצנה | ✅ |
-| Regenerate (1 קרדיט לכל ניסיון) | ✅ |
-| Progress overlay על אזור התמונה (כולל overlay בזמן batch polling) | ✅ |
-| הצגת שגיאות מסווגות ב-UI: safety / timeout / credits / generic — לא יותר fail בשקט | ✅ |
-| Streaming partial images (`partial_images` param) | ❌ (אופטימיזציה עתידית) |
-| שמירת תמונות ב-cloud storage | ❌ (כרגע `apps/web/public/uploads/` — לא יעבוד ב-prod) |
-
-### 5.5 שלב 5 · סצנות מונפשות (Voice + Animated Clip per scene) ✨
-
-> **V3 video provider architecture (2026-04-28):**
-> Kling הופך לספק יחיד שמטפל גם ב-image-to-video וגם ב-LipSync, עם routing per-scene:
-> - **Talking head / selfie / mirror selfie** → `i2v (silent)` → `LipSync (video_url + audio_url)` → קליפ מסונכרן שפתיים
-> - **B-roll / product / hands-only / closeup / before-after** → `i2v (silent)` → ffmpeg ממסך אודיו בקומפוזיציה
->
-> ה-routing נגזר אוטומטית מ-`cameraDirection` + `sceneGoal` ([scene-routing.ts](apps/web/lib/animation/scene-routing.ts)) או נשלף מ-3 עמודות חדשות ב-DB (`sceneGenerationType` / `requiresLipSync` / `faceVisibility`) כשה-LLM ממלא אותן ישירות.
->
-> **קבצים חדשים:**
-> - [types.ts](apps/web/lib/animation/types.ts) — `VideoGenerationProvider` interface (provider-agnostic)
-> - [kling.ts](apps/web/lib/animation/kling.ts) — KlingProvider (real i2v + real lipsync + mock fallback via `KLING_LIPSYNC_MOCK=1`)
-> - [scene-routing.ts](apps/web/lib/animation/scene-routing.ts) — `deriveSceneRouting(cameraDirection, sceneGoal)`
-> - [public-url.ts](apps/web/lib/animation/public-url.ts) — `toPublicUrl(/uploads/...)` עם `PUBLIC_BASE_URL` (ngrok/cloudflared/deploy)
-> - [clip-impl.ts](apps/web/lib/scenes/clip-impl.ts) — שיכתוב מלא ל-routing הדו-pipeline
->
-> **Schema additions** (`prisma migrate v3_scene_routing`):
-> - `Scene.sceneGenerationType` (String?)
-> - `Scene.faceVisibility` (String?)
-> - `Scene.requiresLipSync` (Boolean?)
->
-> **ENV חדשים** (`.env`):
-> ```
-> KLING_API_BASE_URL=https://api-singapore.klingai.com
-> KLING_IMAGE_TO_VIDEO_ENDPOINT=/v1/videos/image2video
-> KLING_LIPSYNC_ENDPOINT=/v1/videos/lip-sync
-> KLING_IMAGE_TO_VIDEO_MODEL=kling-v3-omni
-> KLING_LIPSYNC_MODEL=kling-lip-sync-v1
-> KLING_API_KEY=                  # (optional) wrapper providers
-> KLING_ACCESS_KEY + KLING_SECRET_KEY  # official Kling JWT
-> KLING_LIPSYNC_MOCK=1            # while PUBLIC_BASE_URL not wired
-> PUBLIC_BASE_URL=                # ngrok/cloudflared/prod URL for lipsync
-> ```
->
-> **חסום בכוונה:** Kling lipsync רץ במצב MOCK (מחזיר את ה-silent video כמות שהוא) עד שיש PUBLIC_BASE_URL נגיש מ-Kling. ברגע שתשמש tunnel או deploy → להגדיר `PUBLIC_BASE_URL` ולכבות `KLING_LIPSYNC_MOCK`. הצינור ימשיך לעבוד בלי לשבור פרויקטים קיימים.
-
-
-| נושא | סטטוס |
-|------|--------|
-| **ElevenLabs Multilingual v2** — Hebrew TTS REST integration ([lib/voice/elevenlabs.ts](apps/web/lib/voice/elevenlabs.ts)) | ✅ |
-| **Per-scene voice button** + audio waveform preview ([components/ui/audio-preview.tsx](apps/web/components/ui/audio-preview.tsx)) | ✅ |
-| **קטלוג 12 קולות ישראליים** (gender + age + energy filters) ([lib/voice/voice-presets.ts](apps/web/lib/voice/voice-presets.ts)) | ✅ |
-| **VoicePicker** UI עם sample preview (modeled after AvatarPicker) ([videos/voice-picker.tsx](apps/web/app/(dashboard)/projects/[id]/videos/voice-picker.tsx)) | ✅ |
-| **Project-level voice consistency** — `Project.productData.voiceId` נשמר, כל הסצנות משתמשות באותו קול | ✅ |
-| **Performance-driven voice settings** — performance_note → ElevenLabs `style`/`stability` (לוחש=0.15/0.85, פאנץ'=0.65/0.45 וכו') | ✅ |
-| Hebrew TTS rules בסקריפט-פרומפט (מספרים במילים, ללא סימנים, פיסוק לנשימה) | ✅ |
-| **Kling AI two-stage** — Image-to-Video (V2-Master) + Lip Sync ([lib/animation/kling.ts](apps/web/lib/animation/kling.ts)) | ✅ |
-| JWT-signed auth (HS256 על AccessKey + SecretKey, 30-min token) | ✅ |
-| **Per-scene clip button** + 9:16 video preview עם play-on-click ([components/ui/video-preview.tsx](apps/web/components/ui/video-preview.tsx)) | ✅ |
-| **Motion prompt builder** — מילון Kling Camera Movement (Master Shot / Pan / Tilt / Zoom / Mirror Selfie) ממופה מ-cameraDirection + performanceNote | ✅ |
-| **True parallel batch** (parallelism=2) דרך Route Handlers — `POST /api/scenes/[id]/voice` + `/clip` | ✅ |
-| **Live polling** — חידוש דפוס מ-Step 4: events `voices:batch-start/done` + `clips:batch-start/done` + burst polling אחרי action בודד | ✅ |
-| **Per-stage error classification** — config / safety / timeout / failedStage('motion'\|'lipsync') מוצגים בעברית ב-UI | ✅ |
-| **Cost tracking** — `recordApiCall` ב-3 קריאות נפרדות ל-admin/costs: `elevenlabs:tts`, `kling:i2v`, `kling:lipsync` | ✅ |
-| **Credit pricing** — voice=1 credit, clip=1 credit (משולב i2v + lipsync), final=1 credit. סה"כ ~12 credits = $6 לסרטון 5 סצנות | ✅ |
-| Schema migration `v3_voice_clip` — 10 עמודות חדשות ב-Scene (5 voice + 5 clip) | ✅ |
-| **שלב 5 = סצנות מונפשות, שלב 6 = הרכבה סופית** ב-Stepper | ✅ |
-
-### 5.6 שלב 6 · הרכבה סופית (Final Composition via ffmpeg) ✨
-
-| נושא | סטטוס |
-|------|--------|
-| **ffmpeg-local provider** ([apps/worker/src/providers/composition/ffmpeg.ts](apps/worker/src/providers/composition/ffmpeg.ts)) — חינם, ללא API key | ✅ |
-| Concat-demuxer של 5 קליפים → MP4 יחיד | ✅ |
-| **Burned RTL Hebrew captions** — ASS subtitles (libass), פונט Heebo, UTF-8 native | ✅ |
-| **Voice-bounded caption window** — caption מופיעה רק במשך הדיבור (`voiceDurationSeconds`), לא לאורך כל הקליפ | ✅ |
-| **Caption chunking** — אם הtext ארוך (>6 מילים), מתחלק אוטומטית ל-5 מילים בכל chunk עם timing פרופורציונלי | ✅ |
-| Re-encoding ל-x264 fast preset, CRF 20, AAC 192k, faststart MOV atom | ✅ |
-| **Background music mixing** (-18 dB ducking) דרך `amix` filter, נטען מ-`/music/default.mp3` כשהמשתמש בחר Music ב-Step 1 | 🟡 קוד מוכן — דורש קובץ `apps/web/public/music/default.mp3` (לא בundled) |
-| Per-scene audio embedded BEFORE composer (clip-impl ffmpeg mux) — composer רק concat + captions, לא נוגע באודיו פר-סצנה | ✅ |
-| **POST /api/projects/[id]/render** — מאמת את כל הקליפים, יוצר RenderJob, מקטין credits, enqueue ל-BullMQ | ✅ |
-| BullMQ progress events + `/admin/queue` + `/api/render/[jobId]/status` נשמרים | ✅ |
-| Final MP4 נשמר ב-`/uploads/finals/<timestamp>.mp4` | ✅ |
-| Asset(final_video) + RenderJob.finalVideoUrl מתעדכנים | ✅ |
-| **ספריית `/library`** — נגן 9:16 inline + כפתורי "פתח במסך מלא" + "הורד" + תיוג mock לרינדורים ישנים | ✅ |
-| **Cloud storage לפלט הסופי** — Supabase Storage / S3 | ❌ (כרגע local fs) |
-| **Word-by-word caption sync** דרך ElevenLabs character timestamps | ❌ (chunking של 5 מילים מספיק לרוב המקרים) |
+| Page | What it shows |
+|------|---------------|
+| `/admin` | Top-level KPIs (signups, active users, queue depth, recent failures) |
+| `/admin/costs` | **In-flight ApiCalls** with elapsed timer · per-provider cost cards · **operation pricing table** (USD cost / credits / list margin %) · **PixVerse cost model breakdown** · **15s/30s video estimates** · **plan economics** (effective credit value + underwater warnings) · 30-day per-project leaderboard · per-operation latency P50/avg/max · 10 most recent failures · last 50 calls |
+| `/admin/users` | User list · plan · creditsBalance · per-user spend cap · ban toggle · manual credit grant + reason |
+| `/admin/projects` | Project list with product name + status + owner |
+| `/admin/renders` | RenderJob list with status filter + error inspector |
+| `/admin/queue` | BullMQ queue depths + recent jobs |
 
 ---
 
-## 6. Worker / Queue (BullMQ)
+## Environment variables
 
-| נושא | סטטוס |
-|------|--------|
-| מבנה queue + processor | ✅ |
-| Mock providers (TTS / Avatar / B-Roll / Composition) | ✅ |
-| Smoke test (`npm run test:render`) | ✅ |
-| חיבור הצינור האמיתי (כשהשלבים יהיו מוכנים) | ⏳ |
-| Retry policy + exponential backoff | ✅ (BullMQ default) |
-| Dead-letter queue / failure handling | 🟡 בסיסי |
+### Database / queue
+```
+DATABASE_URL              postgresql://user:pass@host:5432/db?schema=public
+REDIS_URL                 redis://host:6379  (or rediss:// for Upstash)
+```
 
----
+### Auth
+```
+NEXT_PUBLIC_SUPABASE_URL          required
+NEXT_PUBLIC_SUPABASE_ANON_KEY     required
+SUPABASE_SERVICE_ROLE_KEY         optional (only needed for Supabase Storage)
+ADMIN_EMAILS                      comma-separated emails always promoted to admin
+```
 
-## 6.6 V3.6 — TalkingSceneProvider (אפריל 2026)
+### OpenAI
+```
+OPENAI_API_KEY                    required
+OPENAI_SCRIPT_MODEL               default gpt-5.4-mini   (also used for dossier + audience + quick-suggest)
+OPENAI_IMAGE_MODEL                default gpt-image-2
+OPENAI_FACE_GATE_MODEL            default gpt-4o-mini    (also used for motion analysis + image QA + product visual analysis)
+OPENAI_DOSSIER_MODEL              optional override; falls back to SCRIPT_MODEL
+OPENAI_AUDIENCE_MODEL             optional override
+OPENAI_PRODUCT_VISION_MODEL       optional override; default gpt-4o-mini
+OPENAI_IMAGE_QA_MODEL             optional override; default gpt-4o-mini
+OPENAI_QUICK_SUGGEST_MODEL        optional override; falls back to SCRIPT_MODEL
+OPENAI_MOTION_VISION_MODEL        optional override; default gpt-4o-mini
+```
 
-| נושא | סטטוס | פירוט |
-|------|--------|--------|
-| **TalkingSceneProvider abstraction** | ✅ | חדש: ספק שמקבל **image + audio** ומחזיר **video עם מוצא דיבור** ב-call יחיד. שונה מ-LipSyncProvider שמקבל video + audio. |
-| **Kling AI Avatar v2 Pro** | ✅ | ברירת מחדל ל-`KLING_TALKING_SCENE_PROVIDER`. אמור לתת איכות עליונה ל-talking head בלי i2v→lipsync chain. |
-| **Kling AI Avatar v2 Standard** | ✅ | אותו provider עם model id זול יותר. |
-| **Kling Advanced LipSync** | ✅ | 2-step chain: `face_identify(image) → face_id`, ואז `advanced_lipsync(face_id + audio)`. דורש שהreseller יחשוף את `face_identify_endpoint`. |
-| **lipsync_v1 adapter** | ✅ | עוטף את ה-flow הישן (kling-v3-omni i2v + kling-lip-sync-v1) כ-TalkingSceneProvider — מאפשר A/B מאותם inputs. |
-| **POST /api/dev/kling-talking-bakeoff** (admin) | ✅ | מריץ את כל 4 השיטות במקביל על אותם image+audio, שומר MP4 לכל אחת תחת `bakeoff/talking/`, מחזיר URL לכל תוצאה. |
-| **clip-impl fast path לסצנות talking** | ✅ | אם `routing.requiresLipSync && KLING_TALKING_SCENE_PROVIDER ≠ lipsync_v1` → דילוג מלא על i2v. השלב היחיד הוא image+audio→video של provider. נופל בחזרה ל-i2v אם PUBLIC_BASE_URL חסר או ה-provider נכשל. |
-| **B-roll נשאר על kling-v3-omni** | ✅ | סצנות שלא דורשות lipsync (product_demo / hands_only / closeup_product / before_after / lifestyle / broll) ממשיכות בנתיב i2v המסורתי. |
-| **ENV** | ✅ | `KLING_TALKING_SCENE_PROVIDER` + `KLING_AVATAR_V2_{STANDARD,PRO}_{ENDPOINT,MODEL}` + `KLING_FACE_IDENTIFY_ENDPOINT` + `KLING_ADVANCED_LIPSYNC_{ENDPOINT,MODEL}`. כל ה-paths/models override-able כדי לתמוך ב-302/PiAPI/KIE wrappers. |
+### ElevenLabs
+```
+ELEVENLABS_API_KEY                required
+ELEVENLABS_KEY_ID                 optional (legacy credential pair)
+ELEVENLABS_MODEL_ID               default eleven_v3 (the only Hebrew-supporting model — DO NOT change without verifying)
+```
 
-## 6.5 בקרת איכות + ביצועים (V3.5 — אפריל 2026)
+### Kling
+```
+KLING_API_BASE_URL                default https://api-singapore.klingai.com
+KLING_IMAGE_TO_VIDEO_ENDPOINT     default /v1/videos/omni-video
+KLING_IMAGE_TO_VIDEO_MODEL        default kling-v3-omni
+KLING_API_KEY                     preferred — Bearer token (wrappers)
+KLING_ACCESS_KEY                  fallback — for official api-singapore (HS256 JWT pair)
+KLING_SECRET_KEY                  fallback — for official api-singapore (HS256 JWT pair)
+KLING_LIPSYNC_MOCK                "1" → return silent video unchanged (legacy escape hatch)
+```
 
-| נושא | סטטוס | פירוט |
-|------|--------|--------|
-| **Vision-grounded motion analysis** | ✅ | gpt-4o-mini מנתח כל תמונת סצנה לפני Kling i2v ובונה motion prompt **גרונד**: "right hand tilts the bottle, water flows into glass". $0.005/סצנה. ללא זה — Kling היה מקבל motion prompt גנרי וממצמץ במקום להנפיש את הפעולה. |
-| **Scene routing veto fix** | ✅ | "selfie POV של ידיים שופכות" כבר לא מסווג כ-talking_head. PRODUCT_DEMO_VETO_PATTERNS ([scene-routing.ts](apps/web/lib/animation/scene-routing.ts)) חוסם 22 מילים (hand/holding/pouring/applying/closeup/counter/bottle/...). |
-| **Per-scene-type motion vocabulary** | ✅ | `pickMotionToken()` ב-[kling.ts](apps/web/lib/animation/kling.ts) — `product_demo` → "hands rotate the product, label catches light"; `hands_only` → "hands perform the action smoothly"; `closeup_product` → "very slow drift, surface highlights". במקום motion גנרי לכולם. |
-| **Silent talking plate** (image gen + Kling) | ✅ | רק לסצנות `requiresLipSync=true`. משפיע על **expression+liveness** (mouth open mid-sentence, eyebrow micro-raise, eyes alive) — **לא על framing**. הוראה מפורשת לשמר את ה-brief המקורי (product/hands/setting). |
-| **Pre-lipsync negatives** | ✅ | "frozen face, plastic skin, dramatic mouth, side profile, mouth covered" מצורפים אוטומטית ל-Kling motion prompt לסצנות lipsync. |
-| **clip duration honors script** | ✅ | `pickClipDuration(voice, scripted, lipsync)` — אם המשתמש בחר 15s ל-5 סצנות, כל סצנה מקבלת ~3s ולא נמתחת ל-5s. תוקן ב-V3.5. |
-| **Two-phase API logging** | ✅ | `recordApiCallStart()` יוצר row עם status="in_progress" + `recordApiCallComplete()` מעדכן ל-success/failed. כל קריאה (script/image/voice/i2v/lipsync/motion_analysis) רשומה כך — מופיעה ב-`/admin/costs` עם elapsed timer חי. |
-| **Admin live in-flight section** | ✅ | `/admin/costs` עם רכיב client-side ([in-flight.tsx](apps/web/app/(admin)/admin/costs/in-flight.tsx)) שמתרענן כל שנייה. badge אדום אחרי 5 דק׳ (stuck task). auto-refresh כל 5 שניות. |
-| **In-flight tracking per scene** | ✅ | 3 עמודות חדשות (`imageInFlightAt`, `voiceInFlightAt`, `clipInFlightAt`). כשהמשתמש מרענן באמצע גנרציה — הספינר נשאר על המסך כי ה-server יודע שהפעולה רצה. גם מונע double-click שמבזבז $0.82. |
-| **Increased parallelism (2 → 5)** | ✅ | כל הbatch buttons (image/voice/clip) כעת רצים את כל 5 הסצנות במקביל. wall-time מ-9 דק׳ ל-3 דק׳ ל-batch של 5. |
-| **Rate-limit caps** | ✅ | i2v/lipsync 20/5min; tts 30/min; image 20/min; motion_analysis 30/min — מתאימים ל-parallelism=5 + retry. |
+### PixVerse
+```
+PIXVERSE_API_KEY                  required
+PIXVERSE_API_BASE_URL             default https://app-api.pixverse.ai
+PIXVERSE_MEDIA_UPLOAD_ENDPOINT    default /openapi/v2/media/upload
+PIXVERSE_LIPSYNC_ENDPOINT         default /openapi/v2/video/lip_sync/generate
+PIXVERSE_RESULT_ENDPOINT          default /openapi/v2/video/result
+```
 
-## 7. תמחור וקרדיטים
+### App
+```
+NODE_ENV                          development | production
+NEXT_PUBLIC_APP_URL               default http://localhost:3000
+PUBLIC_BASE_URL                   public URL Kling/PixVerse use to fetch silent clips + voice MP3s. In dev: a cloudflared/ngrok tunnel.
+WORKER_CONCURRENCY                default 2 — BullMQ render concurrency
+CAPTIONS_MODE                     phrase | off | word_highlight  (only "phrase" is wired today)
+IMAGE_QA_ENABLED                  default false — V11 auto-regen loop master switch
+IMAGE_QA_MAX_RETRIES              default 2 — retries per scene before marking needsManualReview
+```
 
-| נושא | סטטוס |
-|------|--------|
-| `User.creditsBalance` (Prisma) | ✅ |
-| Free signup → 5 קרדיטים | ✅ |
-| חיוב 1 קרדיט/ייצור תסריט | ✅ |
-| חיוב 1 קרדיט/תמונת סצנה | ✅ |
-| **קרדיטים לא יורדים על כשלון API** (transaction מסוף הפונקציה — תקף לכל 4 הפעולות) | ✅ |
-| **CreditTransaction audit log** — כל שינוי בקרדיטים נרשם עם reason + ref + adminId | ✅ |
-| **First-regen-free** — הרגנרציה הראשונה אחרי גן מוצלח חינמית (voice / clip / image) | ✅ |
-| **Per-user daily spend cap** — ברירת מחדל $10/יום, override פר-משתמש דרך `User.spendCapUsd` | ✅ |
-| **Per-user rate limit** — Kling i2v: 12/5min, TTS: 30/min, image: 15/min, script: 6/10min | ✅ |
-| **Admin refund tool** — `/admin/users` → כפתור ↺ עם כמות + הערה (נכתב ל-CreditTransaction) | ✅ |
-| **Admin spend-cap override** — input על `/admin/users` (ריק = default) | ✅ |
-| **Stuck Kling task sweep** — BullMQ recurring job כל שעה, מסמן Stage A שתקועים מעל 15 דק׳ | ✅ |
-| **Kling motion task_id cache** — Stage A מוצלח לא משולם פעמיים (אם imageUrl לא השתנה) | ✅ |
-| תוכניות סובסקריפשן (Free/Starter/Pro/Agency) | ❌ |
-| Stripe / payment integration | ❌ |
-| Usage tracking + dashboard למשתמש | ❌ |
-| **תמחור מאושר**: מבנה 18 קרדיטים/וידאו, $0.50/קרדיט | 👤 ממתין לאישור סופי ממך |
-
----
-
-## 8. אבטחה ו-prod readiness
-
-| נושא | סטטוס |
-|------|--------|
-| Row-Level Security (RLS) ב-Supabase | ❌ |
-| Rate limiting על endpoints | ❌ |
-| File upload size limits | 🟡 בסיסי בסקרייפר בלבד |
-| Webhook signature validation | ❌ (כשנחבר ספקים אמיתיים) |
-| Logging מובנה (Pino / Winston) | ❌ |
-| Error monitoring (Sentry) | ❌ |
-| Cloud storage (Supabase Storage / S3) | ❌ |
-| Environment-aware config | 🟡 חלקי |
-| Audit log למשתמשים | ❌ |
-| GDPR compliance, data retention policy | ❌ |
-
----
-
-## 9. ניווט ושמירת state
-
-| נושא | סטטוס |
-|------|--------|
-| `/projects/[id]` → auto-redirect לשלב הנכון | ✅ |
-| Stepper לחיץ — קליק על שלב שעבר → חזרה אליו | ✅ |
-| פרויקטים בתהליך מוצגים בדאשבורד | ✅ |
-| State נשמר ב-DB אחרי כל פעולה (לא אבד אם המשתמש יצא) | ✅ |
-| URL deep-linking (bookmark של שלב מסוים) | ✅ |
-| Undo / Redo בעריכת תסריט/פרומפט | ❌ |
+### Pricing overrides (all optional — fall back to defaults in [`lib/pricing/provider-costs.ts`](apps/web/lib/pricing/provider-costs.ts))
+```
+CREDIT_LIST_VALUE_USD                     default 0.10
+COST_OPENAI_SCRIPT_BATCH_USD              default 0.05
+COST_OPENAI_SCENE_IMAGE_USD               default 0.06
+COST_OPENAI_MOTION_ANALYSIS_SCENE_USD     default 0.005
+COST_ELEVENLABS_VOICE_SCENE_USD           default 0.02
+COST_KLING_I2V_CLIP_USD                   default 0.79
+COST_PIXVERSE_LIPSYNC_SCENE_USD           default 0.071
+PIXVERSE_PACKAGE_PRICE_USD                default 10
+PIXVERSE_PACKAGE_CREDITS                  default 2250
+PIXVERSE_OBSERVED_LIPSYNC_CREDITS_PER_SCENE   default 16
+```
 
 ---
 
-## 10. תכונות עתידיות שעלו בשיחה
+## Pricing
 
-- העלאת תמונות מוצר ידני (file upload, צריך Supabase Storage)
-- העלאת אווטאר ידני
-- HeyGen integration לאווטארים מקצועיים
-- A/B testing של תסריטים שונים על אותו מוצר
-- Templates / presets שיווקיים
-- Team accounts (משתמש ראשי + עורכים)
-- חיבור לחנות שופיפיי / ווקומרס לאוטומציה
-- Brand kit (צבעים, פונטים, לוגו לכל הסרטונים)
-- Analytics (CTR, conversion) למודעות שהורדו
+### Per-operation list value @ $0.10/credit
+| Operation | Provider $ | Credits | List $ | Margin (list) |
+|-----------|-----------|---------|--------|---------------|
+| Script batch (6 scripts) | $0.05 | 2 | $0.20 | 75% |
+| Scene image (gen / regen) | $0.06 | 2 | $0.20 | 70% |
+| Voice (gen / regen) | $0.02 | 1 | $0.10 | 80% |
+| Motion analysis | $0.005 | 0 | bundled | n/a |
+| Kling i2v clip | $0.79 | 15 | $1.50 | 47% |
+| PixVerse lip-sync (only when face-gate passes) | $0.071 | 2 | $0.20 | 65% |
+| Lip-sync regen (PixVerse only, no Kling) | $0.071 | 12 | $1.20 | 94% |
+| Final render 15s | $0 (local ffmpeg) | 8 | $0.80 | ~100%* |
+| Final render 30s | $0 (local ffmpeg) | 12 | $1.20 | ~100%* |
+
+*Final render charge covers worker compute + storage + bandwidth.
+
+### Per-video totals
+| Mode | Scenes | LipSync | Provider $ | Charged credits | List $ | Margin |
+|------|--------|---------|------------|-----------------|--------|--------|
+| 15s | 4 | 1 | **$3.62** | 84 | $8.40 | 57% |
+| 30s | 5 | 2 | **$4.57** | 108 | $10.80 | 58% |
+
+### Plan effective credit value
+| Plan | Price | Credits | $/credit (effective) |
+|------|-------|---------|----------------------|
+| free_trial | $0 | 30 | $0.00 (acquisition) |
+| creator | $49/mo | 500 | $0.098 |
+| brand | $149/mo | 1,800 | $0.0828 |
+| agency | $499/mo | 6,000 | $0.0832 |
+
+For subscriber margin analysis, ALWAYS use the effective $/credit, not
+the $0.10 list price. Admin `/admin/costs` surfaces both side-by-side
+and shows a red badge on any plan whose effective revenue is underwater
+versus the typical 30s-mode video cost.
 
 ---
 
-## 11. Open questions (החלטות תכן שעוד לא סגורות)
+## Known issues / design decisions (not bugs)
 
-- **ספק וידאו (image→video)**: Kling 2.0 / Runway Gen-4 / Luma / Pika / Sora? — 👤 ממתין להחלטה
-- **תוכניות חבילה**: לאשר טבלת קרדיטים ($0.50/credit, 18/video)? — 👤
-- **אווטאר ידני**: לאפשר העלאה? קטלוג של 25 כרגע — מספיק? — 👤
-- **רגנרציה על תקלה**: להחזיר קרדיט אוטומטית או רק אחרי תמיכה? — 👤
-- **משך וידאו ברירת מחדל**: 15s או 30s? — 👤
-- **TTS provider**: ElevenLabs (איכות גבוהה, יקר) או Azure/Google Hebrew (זול, פחות טבעי)? — 👤
+1. **PixVerse `status` field is unreliable** — observed two production incidents where the field flipped through transient values (1 / 3 / 5) during finalization. The poller now ignores it and trusts completion data: `url && path && outputWidth > 0 && outputHeight > 0`. See [`lib/animation/lipsync/pixverse.ts`](apps/web/lib/animation/lipsync/pixverse.ts).
+2. **Kling i2v poll budget is 15 minutes** (bumped from 8 in April 2026). Peak-load v3-omni runs were taking 9-10 min, causing false timeouts that wasted the $0.79 spend.
+3. **Image QA loop is OFF by default** (`IMAGE_QA_ENABLED=false`). The QA correctly identifies real problems, but the corrective brief currently can't fix them in the 2 retries — most scenes exhaust retries with score 0.00 and end up `needsManualReview=true`. We pay 3× per-scene budget for a marginally-better result. Re-enable after tuning the corrective brief (likely needs: stronger "must do X" affirmative instructions, escalating quality:medium → quality:high on retry attempt 2).
+4. **Single-scene Server Actions are serialized per-route** in Next.js 15. The wizard's per-scene "regenerate" buttons all use Route Handlers via `fetch()` to bypass this — multiple scenes can regenerate concurrently.
+5. **Captions are skipped on scenes that have no `captionChunksJson`** (older voice generations pre-V10). They are NEVER approximated proportionally — that's the bug we removed.
+6. **`apps/web/public/uploads/` has no garbage collection**. Disk grows unbounded. A cleanup job for old `clips_*/` and `finals/*.mp4` is on the to-do list.
+7. **Hebrew model lock** — `eleven_v3` is the only model with Hebrew. We hard-pin it in [`voice-impl.ts`](apps/web/lib/scenes/voice-impl.ts) instead of reading from env, because Next.js dev caches `process.env` at boot and a stale `.env` would silently fall back to `multilingual_v2` (non-Hebrew → gibberish output).
+8. **Captions preset is selected on the videos page**, NOT in Step 1. The picker is hidden when `productData.captions !== true`. Selection lives in `localStorage` until render submit, then persists to `productData.captionsPreset`.
+9. **Quick-suggest at scrape time runs an LLM call** (~$0.001). It's gated only by minimum-content (skipped when product name + description are nearly empty). If you want zero LLM calls on scrape, set the relevant model env to an empty string.
+10. **`clipDurationSeconds` is reconciled** at script time — `max(scripted, voice+0.5s)` clamped to Kling's 3–10 s enum. The audio-derived bound prevents lip-sync truncation when a calmer voice runs ~30% slower than the 14 chars/sec heuristic.
 
 ---
 
-מסמך זה נכתב/יתעדכן בכל קומיט שמעביר נושא ממצב לאחר. אם נראה לך שמשהו חסר — תגיד.
+## What's still pending
+
+| | Work | Notes |
+|---|------|-------|
+| ⏳ | Cloud storage (S3 / Supabase Storage) | Replace `apps/web/public/uploads/` writes. Won't survive a stateless prod deploy. |
+| ⏳ | Stripe / Paddle billing | Plan + credit columns are ready; checkout + webhook + subscription state machine missing. |
+| ⏳ | Custom avatar upload | Catalog is closed (25 portraits). Needs a moderation pass before user-uploaded portraits. |
+| ⏳ | Password reset / Google + Apple OAuth / MFA | Supabase supports it; the UI hasn't been built. |
+| ⏳ | Edge rate limiting | App-layer limits exist; no IP-level WAF / Cloudflare rules. |
+| ⏳ | Structured logging + Sentry | Currently `console.log` everywhere. |
+| ⏳ | `/uploads/` cleanup job | Maintenance queue handles Kling stuck tasks; a separate disk-GC sweeper is missing. |
+| ⏳ | Image QA corrective-brief tuning | See known-issue #3. |
+| ⏳ | Word-highlight caption mode | `CAPTIONS_MODE=word_highlight` is reserved but not wired (would extend `word_pop` with an active-word color override on the full phrase). |
+| ⏳ | Tests | The repo has no test runner today. The chunker / brief builder / music selector are pure modules and are vitest-ready. |
+| ⏳ | Admin debug panels for V11 artifacts | DB columns exist (`Scene.imageBriefJson`, `imageQaJson`, `Project.productData.intelligence`); a dedicated admin viewer would help diagnose creative drift. |
+
+---
+
+## Version log (V4 → V12, all April 2026)
+
+| Tag | Date | Headline |
+|-----|------|----------|
+| **V12** | 2026-04-29 | Caption presets — 5 styles (`classic`, `bold_yellow`, `block_card`, `gradient_pink`, `word_pop`). Picker UI on videos page. Per-word ASS events for `word_pop` consume `Scene.wordTimingsJson`. Parallel single-scene regen via Route Handler. Single-scene "🎲 פרומט חדש" — LLM-suggested visual prompt variant without firing image gen. |
+| **V11** | 2026-04-29 | Creative Intelligence pipeline. Product Dossier (32 fields) + Visual Analysis (vision) + Audience Inference. Deterministic Image Brief Builder replaces narration→prompt path. Image QA evaluator + auto-regen loop. Schema migration `v11_image_qa`. Scraper hardening: CSS-leak guard, body-content extraction (replaces meta-description-only fallback), quick auto-suggest at scrape time for category + targetAudience. |
+| **V10** | 2026-04-29 | Premium Hebrew captions. ElevenLabs `with-timestamps` → `charactersToWords` → `chunkCaptions` → ASS v4+. `Scene.wordTimingsJson` + `captionChunksJson`. Migration `v10_scene_captions`. Removed proportional 5-word chunking — scenes without alignment data are EXCLUDED from captions, not approximated. |
+| **V9** | 2026-04-29 | Background music live. 17-track Mixkit library at `apps/web/public/music/`. `music_profile` per script (mood/energy/style). Auto-selection with voice-dominance penalty. ffmpeg loop + trim + 300 ms fade-in + 2 s fade-out. |
+| **V8** | 2026-04-29 | Pricing recalibrated for PixVerse. Pack math `$10/2,250 credits = $0.00444`. Observed 16 px-credits/scene → **$0.071/scene** (was $0.30 — 4× over). Central `lib/pricing/provider-costs.ts`. Operation pricing split: `kling_i2v_clip` and `pixverse_lipsync_scene` charged separately so face-gate skip = 0 PixVerse credits. |
+| **V7** | 2026-04-29 | PixVerse-only LipSync. Removed Kling LipSync v1, Sync.so, ElevenLabs Omnihuman, Mock provider, all 4 KlingAvatar v2 variants. Face-detection gate (gpt-4o-mini vision) before PixVerse upload. Migration `v7_pixverse_face_gate`. |
+| **V6** | 2026-04-29 | Script streaming (6 frameworks parallel, persisted as each resolves). Avatar gender lock (zachar/nekeva). 30 voices in VoicePicker. Motion analysis cache on Scene. |
+| **V5** | 2026-04-29 | Israeli visual realism — explicit per-scene `environment_type` / `environment_style` / `israeli_environment_required`. Expanded creative_strategy (5 new fields). 5 hook_options + 12-axis quality_score. |
+| **V4** | 2026-04-28 | Duration mode (15s / 30s) end-to-end. Product-first scene metadata: `primarySubject`, `mustShowProduct`, `productVisibilityPriority`, `cameraFocus`, `showFace`. Migration `v4_scene_product_metadata`. |
+
+---
+
+## Conventions for new contributors
+
+- **Workspaces:** add new shared types to `packages/shared/src/types/`. Worker can only import via the package root (`@ugc-video/shared`) — `Node` moduleResolution doesn't read package.json subpath exports. Web supports both styles but prefer the root for consistency.
+- **Migrations:** name as `v<N>_<short_topic>` (e.g. `v12_captions_preset` — would have been the migration for V12 if we hadn't kept it in JSON).
+- **Persisted state:** prefer `Project.productData` JSON for evolving product/wizard fields; promote to a dedicated column only when needed in the UI's filter/sort layer or a unique constraint.
+- **Provider calls:** ALWAYS go through `recordApiCallStart` + `recordApiCallComplete` (or `recordApiCall` for one-shot). The two-phase pattern is what makes `/admin/costs` show in-flight calls.
+- **Server actions vs Route Handlers:** anything that the user might fire concurrently across multiple scenes/cards MUST be a Route Handler. Server actions serialize per route in Next.js 15.
+- **Hebrew:** always RTL in UI (`dir="rtl"`), but keep image prompts and provider calls English. Hebrew sneaking into `visual_prompt_english` causes safety-system rejections on gpt-image-2.
+- **Captions:** never fall back to proportional timing. If `captionChunksJson` is missing for a scene, skip captions for it.
+- **Comments:** keep them sparse and load-bearing. Document the WHY, not the WHAT (the function name and types already say what).

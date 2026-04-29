@@ -11,7 +11,9 @@ import {
   GenerateAllClipsButton,
   SceneClipCard,
   RenderFinalButton,
+  CaptionPresetPicker,
 } from './client-bits';
+import { DEFAULT_CAPTION_PRESET_ID, type CaptionPresetId } from '@ugc-video/shared';
 import { deriveSceneRouting } from '@/lib/animation/scene-routing';
 
 // Step 5 — "סצנות מונפשות": each scene gets a Hebrew voice-over (ElevenLabs)
@@ -189,17 +191,40 @@ export default async function VideosPage({
         })}
       </div>
 
-      {/* Footer — final render */}
-      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 pt-4 border-t border-border">
-        <Link href={`/projects/${projectId}/scenes`} className="text-xs text-muted-foreground hover:text-foreground">
-          ← חזרה לסצנות (תמונות)
-        </Link>
-        <RenderFinalButton
-          projectId={projectId}
-          allClipsReady={allClipsReady}
-          creditsBalance={dbUser.creditsBalance}
-        />
-      </div>
+      {/* Footer — caption-style picker + final render */}
+      {(() => {
+        const productData =
+          (project.productData as Record<string, unknown> | null) ?? {};
+        const captionsEnabled = productData.captions === true;
+        const initialPreset =
+          (productData.captionsPreset as CaptionPresetId | undefined) ??
+          DEFAULT_CAPTION_PRESET_ID;
+        return (
+          <div className="space-y-6 pt-4 border-t border-border">
+            {captionsEnabled && (
+              <CaptionPresetPicker
+                projectId={projectId}
+                initialPresetId={initialPreset}
+              />
+            )}
+            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+              <Link
+                href={`/projects/${projectId}/scenes`}
+                className="text-xs text-muted-foreground hover:text-foreground"
+              >
+                ← חזרה לסצנות (תמונות)
+              </Link>
+              <RenderFinalButton
+                projectId={projectId}
+                allClipsReady={allClipsReady}
+                creditsBalance={dbUser.creditsBalance}
+                initialPresetId={initialPreset}
+                captionsEnabled={captionsEnabled}
+              />
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

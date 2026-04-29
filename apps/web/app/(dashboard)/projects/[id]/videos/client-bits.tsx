@@ -16,6 +16,11 @@ import { AudioPreview } from '@/components/ui/audio-preview';
 import { VideoPreview } from '@/components/ui/video-preview';
 import { cn } from '@/lib/utils';
 import {
+  CAPTION_PRESETS,
+  DEFAULT_CAPTION_PRESET_ID,
+  type CaptionPresetId,
+} from '@ugc-video/shared';
+import {
   generateSceneVoiceAction,
   generateSceneClipAction,
   regenLipSyncOnlyAction,
@@ -978,6 +983,203 @@ function LipSyncToggle({
 }
 
 /* ============================================================
+ * Caption preset picker (V12)
+ *
+ * Shows the 5 caption-style options as preview cards. The selection is
+ * mirrored into localStorage under a per-project key so the
+ * RenderFinalButton on the same page can pick it up at click time
+ * without prop-drilling through the whole tree. The user's last
+ * selection persists across page refreshes — re-renders don't lose it.
+ * ============================================================ */
+
+const PRESET_STORAGE_KEY = (projectId: string) => `caption-preset:${projectId}`;
+
+function readPresetFromStorage(
+  projectId: string,
+  initial: CaptionPresetId,
+): CaptionPresetId {
+  if (typeof window === 'undefined') return initial;
+  const v = window.localStorage.getItem(PRESET_STORAGE_KEY(projectId));
+  if (!v) return initial;
+  return CAPTION_PRESETS.some((p) => p.id === v) ? (v as CaptionPresetId) : initial;
+}
+
+export function CaptionPresetPicker({
+  projectId,
+  initialPresetId,
+}: {
+  projectId: string;
+  initialPresetId: CaptionPresetId;
+}) {
+  const [selected, setSelected] = useState<CaptionPresetId>(initialPresetId);
+
+  // Hydrate from localStorage on mount so a refresh after picking a
+  // non-default preset shows the correct selection.
+  useEffect(() => {
+    setSelected(readPresetFromStorage(projectId, initialPresetId));
+  }, [projectId, initialPresetId]);
+
+  const onPick = (id: CaptionPresetId) => {
+    setSelected(id);
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(PRESET_STORAGE_KEY(projectId), id);
+    }
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-baseline justify-between">
+        <h3 className="text-base font-semibold">סגנון כתוביות</h3>
+        <span className="text-xs text-muted-foreground">
+          הסגנון יחול על הסרטון הסופי
+        </span>
+      </div>
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+        {CAPTION_PRESETS.map((preset) => {
+          const isSelected = preset.id === selected;
+          // Build text styling 100% via inline styles so the actual
+          // hex colors hit the DOM regardless of Tailwind's purge or
+          // theme config. Stroke = layered text-shadow approximating
+          // an ASS outline; block = the text sits inside a solid
+          // black card (mimics borderStyle:3).
+          const textStyle: React.CSSProperties = {
+            color: preset.preview.color,
+            fontWeight: 900,
+            letterSpacing: '-0.01em',
+            ...(preset.preview.stroke
+              ? {
+                  textShadow:
+                    '2px 0 0 #000, -2px 0 0 #000, 0 2px 0 #000, 0 -2px 0 #000, ' +
+                    '2px 2px 0 #000, -2px 2px 0 #000, 2px -2px 0 #000, -2px -2px 0 #000, ' +
+                    '0 2px 4px rgba(0,0,0,0.9)',
+                }
+              : {
+                  textShadow: '0 1px 2px rgba(0,0,0,0.6)',
+                }),
+            ...(preset.preview.block
+              ? {
+                  backgroundColor: 'rgba(0,0,0,0.85)',
+                  padding: '6px 12px',
+                  borderRadius: '6px',
+                }
+              : {}),
+          };
+          return (
+            <button
+              key={preset.id}
+              type="button"
+              onClick={() => onPick(preset.id)}
+              className={cn(
+                'group relative rounded-xl border-2 overflow-hidden text-right transition focus:outline-none focus:ring-2 focus:ring-accent bg-card',
+                isSelected
+                  ? 'border-accent ring-2 ring-accent/40'
+                  : 'border-border hover:border-foreground/40',
+              )}
+              title={preset.descriptionHe}
+            >
+              {/* Preview tile — solid dark "scene" background with the
+                  caption rendered at the bottom-third where it'd land
+                  in the final mp4. All colors are inline styles so
+                  the rendered hex matches exactly what the ASS file
+                  will produce. */}
+              <div
+                className="aspect-[4/5] w-full flex items-end justify-center relative overflow-hidden"
+                style={{ backgroundColor: '#1f1f23' }}
+              >
+                {/* Warm window-light highlight at the top — suggests a
+                    face/subject lit from the side. */}
+                <div
+                  aria-hidden
+                  className="absolute inset-0"
+                  style={{
+                    background:
+                      'radial-gradient(ellipse 70% 45% at 50% 28%, rgba(180,140,90,0.32) 0%, transparent 70%)',
+                  }}
+                />
+                {/* Faint head-shape silhouette to imply a subject. */}
+                <div
+                  aria-hidden
+                  className="absolute"
+                  style={{
+                    left: '50%',
+                    top: '22%',
+                    transform: 'translateX(-50%)',
+                    width: '48%',
+                    height: '44%',
+                    borderRadius: '50%',
+                    background:
+                      'radial-gradient(circle, rgba(255,220,180,0.16) 0%, rgba(255,220,180,0.04) 50%, transparent 75%)',
+                  }}
+                />
+                {/* Bottom dim — solid black gradient so caption text
+                    always has high contrast against the "scene". */}
+                <div
+                  aria-hidden
+                  className="absolute inset-x-0 bottom-0"
+                  style={{
+                    height: '55%',
+                    background:
+                      'linear-gradient(to top, rgba(0,0,0,0.75) 0%, rgba(0,0,0,0.4) 50%, rgba(0,0,0,0) 100%)',
+                  }}
+                />
+
+                {/* The caption sample. */}
+                <div
+                  className="relative w-full px-3 text-center"
+                  style={{ paddingBottom: '14%' }}
+                  dir="rtl"
+                >
+                  {preset.id === 'word_pop' ? (
+                    <span
+                      style={{
+                        ...textStyle,
+                        fontSize: '32px',
+                        display: 'inline-block',
+                        transform: 'scale(1.1)',
+                      }}
+                    >
+                      {preset.preview.sample}
+                    </span>
+                  ) : (
+                    <span
+                      style={{
+                        ...textStyle,
+                        fontSize: '15px',
+                        lineHeight: 1.15,
+                        display: 'inline-block',
+                      }}
+                    >
+                      {preset.preview.sample}
+                    </span>
+                  )}
+                </div>
+
+                {isSelected && (
+                  <div
+                    className="absolute top-2 right-2 text-[10px] font-bold rounded-full px-2 py-0.5 shadow"
+                    style={{ backgroundColor: '#a3e635', color: '#0a0a0a' }}
+                  >
+                    ✓ נבחר
+                  </div>
+                )}
+              </div>
+
+              {/* Footer label below the preview. */}
+              <div className="p-2 space-y-0.5 bg-card">
+                <div className="text-sm font-semibold">{preset.labelHe}</div>
+                <div className="text-[11px] text-muted-foreground line-clamp-2">
+                  {preset.descriptionHe}
+                </div>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================
  * RenderFinalButton — Step 6 trigger
  * ============================================================ */
 
@@ -985,10 +1187,14 @@ export function RenderFinalButton({
   projectId,
   allClipsReady,
   creditsBalance,
+  initialPresetId,
+  captionsEnabled,
 }: {
   projectId: string;
   allClipsReady: boolean;
   creditsBalance: number;
+  initialPresetId?: CaptionPresetId;
+  captionsEnabled?: boolean;
 }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
@@ -1002,7 +1208,18 @@ export function RenderFinalButton({
     setPending(true);
     setStatusText('שולח לרינדור…');
     try {
-      const res = await fetch(`/api/projects/${projectId}/render`, { method: 'POST' });
+      // Read the user's caption-style choice off the same localStorage
+      // key the picker writes to. When captions are disabled we still
+      // send the value (server stores it for the next render) but the
+      // worker will ignore it.
+      const captionsPreset = captionsEnabled
+        ? readPresetFromStorage(projectId, initialPresetId ?? DEFAULT_CAPTION_PRESET_ID)
+        : initialPresetId ?? DEFAULT_CAPTION_PRESET_ID;
+      const res = await fetch(`/api/projects/${projectId}/render`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ captionsPreset }),
+      });
       const data = (await res.json()) as {
         success?: boolean;
         jobId?: string;

@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState, useEffect, useRef, useState, useTransition } from 'react';
+import { useCallback, useEffect, useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 
 // Custom events used by GenerateAllButton ↔ SceneCard so each tile can
@@ -19,7 +19,6 @@ import { ProgressBar } from '@/components/ui/progress-bar';
 import { ElapsedTimer } from '@/components/ui/elapsed-timer';
 import { cn } from '@/lib/utils';
 import {
-  generateSceneImageAction,
   updateScenePromptAction,
   type GenerateSceneImageState,
 } from './actions';
@@ -247,11 +246,99 @@ function isFresh(at: string | null, ttlMs: number): boolean {
 }
 
 export function SceneCard(props: SceneCardProps) {
-  const action = generateSceneImageAction.bind(null, props.sceneId);
-  const [state, formAction, pending] = useActionState<GenerateSceneImageState, FormData>(
-    action,
-    undefined,
-  );
+  // Single-scene "regenerate" button. Fires the parallel-friendly route
+  // handler (POST /api/scenes/[id]/generate) instead of the server
+  // action. Why: Next.js 15 serializes server actions per route — two
+  // SceneCards on the same page calling the action concurrently would
+  // run sequentially, so clicking "regen" on scenes 1 + 3 + 4 would
+  // process scene 1 fully before scene 3 even starts. The route
+  // handler has no such serialization, so all three regen calls run
+  // in parallel (subject to provider rate limits + spend cap).
+  const [state, setState] = useState<GenerateSceneImageState>(undefined);
+  const [pending, setPending] = useState(false);
+  // V11.5 — local mirror of the latest LLM-regenerated prompt. Used so
+  // the inline preview + editor textarea reflect the new prompt
+  // immediately after the regen-prompt call, without waiting for a
+  // router.refresh() round-trip. Reset to null when the server-side
+  // prop catches up (handled by an effect below).
+  const [livePrompt, setLivePrompt] = useState<string | null>(null);
+  // Independent pending state for the "🎲 פרומט חדש" button so
+  // generating a new prompt doesn't grey out the "↻ צור מחדש" button.
+  const [promptPending, setPromptPending] = useState(false);
+  // Hoisted here so the callbacks below can call router.refresh()
+  // without a temporal-dead-zone error. The original `router`
+  // declaration further down the component now reuses this binding.
+  const router = useRouter();
+
+  const handleRegenerate = useCallback(async () => {
+    if (pending) return;
+    setPending(true);
+    setState(undefined);
+    try {
+      const res = await fetch(`/api/scenes/${props.sceneId}/generate`, {
+        method: 'POST',
+      });
+      const body = (await res.json().catch(() => null)) as
+        | (GenerateSceneImageState & { success?: boolean; safetyRetryApplied?: boolean })
+        | null;
+      if (!body) {
+        setState({ error: 'יצירת התמונה נכשלה: תגובה לא תקינה מהשרת' });
+        return;
+      }
+      if (body.success) {
+        setState(body.safetyRetryApplied ? { safetyRetryApplied: true } : undefined);
+      } else {
+        setState({
+          error: body.error,
+          needsCredits: body.needsCredits,
+          safetyBlocked: body.safetyBlocked,
+          timedOut: body.timedOut,
+        });
+      }
+    } catch (err) {
+      setState({ error: `יצירת התמונה נכשלה: ${(err as Error).message}` });
+    } finally {
+      setPending(false);
+    }
+  }, [pending, props.sceneId]);
+
+  // V11.5 — "🎲 פרומט חדש" button. Asks the LLM for a fresh
+  // visual_prompt_english (different camera / beat / lighting,
+  // grounded in the product dossier + script + scene type) and
+  // persists it on the Scene. Does NOT trigger image generation —
+  // user reviews the new prompt, can edit it, can click again for
+  // another variant, and decides themselves when to spend a credit
+  // on a new image. Multiple cards can run this in parallel.
+  const handleRegenPromptOnly = useCallback(async () => {
+    if (promptPending) return;
+    setPromptPending(true);
+    setState(undefined);
+    try {
+      const res = await fetch(`/api/scenes/${props.sceneId}/regen-prompt`, {
+        method: 'POST',
+      });
+      const body = (await res.json().catch(() => null)) as
+        | { success: boolean; visualPromptEnglish?: string; error?: string }
+        | null;
+      if (!body?.success || !body.visualPromptEnglish) {
+        setState({
+          error: body?.error ?? 'לא הצלחתי לייצר פרומט חדש. נסה שוב.',
+        });
+        return;
+      }
+      // Reflect the new prompt locally so the inline preview AND the
+      // editor's draft mirror it instantly. The server already
+      // persisted it; a soft router.refresh() will catch other parts
+      // of the tree (admin counters etc).
+      setLivePrompt(body.visualPromptEnglish);
+      setDraftPrompt(body.visualPromptEnglish);
+      router.refresh();
+    } catch (err) {
+      setState({ error: `יצירת פרומט חדש נכשלה: ${(err as Error).message}` });
+    } finally {
+      setPromptPending(false);
+    }
+  }, [promptPending, props.sceneId, router]);
   const [editingPrompt, setEditingPrompt] = useState(false);
   const [draftPrompt, setDraftPrompt] = useState(props.visualPromptEnglish);
   const [savingPrompt, startSaving] = useTransition();
@@ -261,7 +348,6 @@ export function SceneCard(props: SceneCardProps) {
   // imageUrl prop (so the prop stays the source of truth between batches).
   const [liveImageUrl, setLiveImageUrl] = useState<string | null>(null);
   const [batchPolling, setBatchPolling] = useState(false);
-  const router = useRouter();
   const propsRef = useRef(props);
   propsRef.current = props;
 
@@ -272,6 +358,14 @@ export function SceneCard(props: SceneCardProps) {
       setLiveImageUrl(null);
     }
   }, [props.imageUrl, liveImageUrl]);
+
+  // Same idea for the live prompt mirror — clear once the
+  // server-rendered prop matches what the client just wrote.
+  useEffect(() => {
+    if (livePrompt && livePrompt === props.visualPromptEnglish) {
+      setLivePrompt(null);
+    }
+  }, [props.visualPromptEnglish, livePrompt]);
 
   // Poll this scene's state while a batch run is in progress. Listens to
   // window-level events fired by GenerateAllButton, polls /api/scenes/{id}
@@ -489,16 +583,24 @@ export function SceneCard(props: SceneCardProps) {
           )}
         </div>
 
-        {/* Visual prompt — editable */}
+        {/* Visual prompt — editable. Shows livePrompt (LLM-regenerated)
+            when set, else the server-side prop. */}
         {!editingPrompt ? (
           <div className="space-y-1">
-            <div className="text-xs text-muted-foreground">תיאור ויזואלי (אנגלית):</div>
+            <div className="text-xs text-muted-foreground flex items-center gap-2">
+              <span>תיאור ויזואלי (אנגלית):</span>
+              {livePrompt && (
+                <span className="text-[10px] text-emerald-600 dark:text-emerald-400">
+                  • פרומט חדש
+                </span>
+              )}
+            </div>
             <div
               className="text-xs text-muted-foreground/80 line-clamp-3 cursor-pointer hover:text-foreground"
               onClick={() => setEditingPrompt(true)}
               dir="ltr"
             >
-              {props.visualPromptEnglish}
+              {livePrompt ?? props.visualPromptEnglish}
             </div>
           </div>
         ) : (
@@ -529,17 +631,34 @@ export function SceneCard(props: SceneCardProps) {
           </div>
         )}
 
-        {/* Action row */}
+        {/* Action row — three buttons:
+              1. 🎲 פרומט חדש  → asks LLM for a fresh visual_prompt_english
+                 variant. Doesn't generate an image. User can click again
+                 for another variant, or edit the prompt manually.
+              2. ↻ צור מחדש    → generates an image with the CURRENT
+                 prompt (no LLM call for the prompt itself).
+              3. ✨ צור תמונה  → first-time generation when no image exists. */}
         <div className="flex items-center justify-between gap-2 pt-2 border-t border-border">
           <div className="text-xs text-muted-foreground">
             {props.imageGenerationCount > 0 ? `${props.imageGenerationCount} ניסיונות` : ''}
           </div>
-          <form action={formAction}>
+          <div className="flex gap-2 flex-wrap justify-end">
             <Button
-              type="submit"
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={promptPending || pending}
+              onClick={handleRegenPromptOnly}
+              title="LLM יציע פרומט שונה מהקיים (זווית/תאורה/סצנה אחרת). לא נוצרת תמונה — רק פרומט. תוכל ללחוץ שוב לוואריאציה נוספת."
+            >
+              {promptPending ? '✨ מייצר פרומט…' : '🎲 פרומט חדש'}
+            </Button>
+            <Button
+              type="button"
               size="sm"
               variant={hasImage ? 'outline' : 'default'}
-              disabled={showGeneratingOverlay}
+              disabled={showGeneratingOverlay || promptPending}
+              onClick={handleRegenerate}
             >
               {showGeneratingOverlay
                 ? 'יוצר…'
@@ -547,7 +666,7 @@ export function SceneCard(props: SceneCardProps) {
                   ? '↻ צור מחדש (1 קרדיט)'
                   : '✨ צור תמונה (1 קרדיט)'}
             </Button>
-          </form>
+          </div>
         </div>
 
         {state?.error && (

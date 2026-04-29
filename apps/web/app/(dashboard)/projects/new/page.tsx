@@ -31,6 +31,13 @@ interface ScrapeResponse {
     heroImageUrl?: string;
     sourcePlatform: string;
   };
+  /** V11.7 — small LLM auto-suggest. Null when the helper had nothing
+   *  useful to say (missing description / API key not set / quota). */
+  suggestions?: {
+    targetAudience: string;
+    categoryId: ProductCategoryId;
+    reason: string;
+  } | null;
 }
 
 export default function NewProjectWizard() {
@@ -82,7 +89,21 @@ export default function NewProjectWizard() {
       setDescription(result.data.description);
       setHeroImageUrl(result.data.heroImageUrl ?? '');
       setAdditionalImages(result.data.images.slice(1, 6));
-      setCategory(guessCategory({ name: result.data.productName, description: result.data.description }));
+
+      // V11.7 — prefer LLM suggestions when present (both fields). Fall
+      // back to the keyword heuristic for category and an empty
+      // targetAudience when the suggester didn't run (missing
+      // OPENAI_API_KEY, junk description, etc.).
+      const llmCategory = result.suggestions?.categoryId;
+      const llmAudience = result.suggestions?.targetAudience?.trim();
+      setCategory(
+        llmCategory && llmCategory !== 'other'
+          ? llmCategory
+          : guessCategory({ name: result.data.productName, description: result.data.description }),
+      );
+      if (llmAudience) {
+        setTargetAudience(llmAudience);
+      }
     } catch (err) {
       setScrapeError(`שגיאה: ${(err as Error).message}`);
     } finally {
@@ -215,6 +236,19 @@ export default function NewProjectWizard() {
           </Field>
 
           <Field label="תיאור המוצר *" htmlFor="description">
+            {scrapeResult?.warnings.includes('weak-description') && (
+              <div className="rounded-md border border-yellow-500/50 bg-yellow-500/10 p-3 text-xs space-y-1">
+                <div className="font-semibold text-yellow-700 dark:text-yellow-400">
+                  ⚠ לא הצלחנו לחלץ תיאור איכותי מעמוד המוצר
+                </div>
+                <div className="text-muted-foreground">
+                  הסקרייפר זיהה שהתיאור שמגיע מהאתר הוא קוד CSS / JavaScript (לא טקסט אמיתי על המוצר). המערכת ניקתה את זה — אבל זה אומר שאין מספיק מידע לתסריטים.
+                  <strong className="block mt-1 text-foreground">
+                    הדבק/כתוב כאן ידנית מה המוצר עושה, למי הוא מיועד, ואילו בעיות הוא פותר — אחרת ה-LLM יקבל קלט חלש וייצר תסריטים גנריים.
+                  </strong>
+                </div>
+              </div>
+            )}
             <Textarea
               id="description"
               value={description}

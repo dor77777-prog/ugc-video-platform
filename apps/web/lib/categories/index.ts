@@ -154,39 +154,205 @@ export function categoryGuidance(id: string | null | undefined): string {
   return cat.guidance;
 }
 
-// Lightweight heuristic to guess a category from product name + description.
-// Used as a default in step 1 — user can always override.
+// Lightweight heuristic to guess a category from product name +
+// description. Used as a default in step 1 — user can always override,
+// and the V11 dossier path overrides it again with a much-better LLM
+// classification (see mapDossierCategoryToId below).
+//
+// We score each category instead of first-match because many product
+// descriptions hit more than one keyword family (e.g. a haircare
+// serum's description mentions "serum" too — but should land on
+// haircare, not skincare). The category with the most keyword hits
+// wins; ties break on declaration order.
+const CATEGORY_KEYWORDS: Array<{ id: ProductCategoryId; words: string[] }> = [
+  {
+    id: 'haircare',
+    words: [
+      // English
+      'shampoo', 'conditioner', 'hair mask', 'hair oil', 'hair serum',
+      'hair growth', 'hair treatment', 'scalp', 'scalp serum', 'scalp treatment',
+      'follicle', 'roots', 'dandruff', 'hair loss', 'thinning hair',
+      'hair brush', 'hair roller', 'leave-in', 'heat protectant', 'split ends',
+      'hair styling', 'curl cream', 'frizz', 'porosity',
+      // Hebrew
+      'שמפו', 'מרכך', 'מסכת שיער', 'שמן שיער', 'סרום שיער',
+      'קרקפת', 'שורשי השיער', 'שורשים', 'נשירת שיער', 'שיער מידלדל',
+      'מברשת שיער', 'גידול שיער', 'קשקשים', 'מסלסל', 'מחליק שיער',
+    ],
+  },
+  {
+    id: 'skincare',
+    words: [
+      // English — explicit FACE skincare
+      'face serum', 'face cream', 'moisturizer', 'cleanser', 'toner',
+      'spf', 'sunscreen', 'face wash', 'face mask', 'eye cream',
+      'retinol', 'hyaluronic', 'niacinamide', 'vitamin c serum', 'face peel',
+      'acne', 'pimple', 'wrinkle', 'anti-aging', 'pore', 'blackhead',
+      'face oil', 'serum', 'skincare', 'skin care',
+      // Hebrew
+      'סרום פנים', 'קרם פנים', 'קרם לחות', 'מנקה פנים', 'טונר',
+      'הגנה מהשמש', 'מסכת פנים', 'קרם עיניים', 'רטינול',
+      'אקנה', 'פצעונים', 'קמטים', 'נוגד הזדקנות', 'נקבוביות',
+    ],
+  },
+  {
+    id: 'beauty',
+    words: [
+      'lipstick', 'mascara', 'foundation', 'concealer', 'blush', 'eyeliner',
+      'eyeshadow', 'highlighter', 'bronzer', 'lip gloss', 'lip liner',
+      'brow', 'eyebrow', 'nail polish', 'manicure', 'pedicure',
+      'איפור', 'שפתון', 'מסקרה', 'מייקאפ', 'אייליינר', 'צללית', 'סומק',
+      'גבות', 'לק', 'מניקור', 'פדיקור',
+    ],
+  },
+  {
+    id: 'fitness',
+    words: [
+      'protein', 'whey', 'pre-workout', 'pre workout', 'creatine', 'bcaa',
+      'workout', 'gym', 'fitness', 'crossfit', 'yoga mat', 'resistance band',
+      'dumbbell', 'kettlebell', 'training', 'recovery', 'muscle',
+      'חלבון', 'אימון', 'אימונים', 'כושר', 'יוגה', 'מתח', 'משקולות',
+      'חדר כושר', 'התאוששות',
+    ],
+  },
+  {
+    id: 'food_snack',
+    words: [
+      'snack', 'chocolate', 'bar', 'cookie', 'biscuit', 'soda', 'juice',
+      'energy drink', 'protein bar', 'granola', 'cereal', 'candy',
+      'tea', 'coffee', 'beverage', 'sparkling water',
+      'חטיף', 'משקה', 'שוקולד', 'קפה', 'תה', 'עוגייה', 'גרנולה',
+      'דגנים', 'ממתק', 'מיץ',
+    ],
+  },
+  {
+    id: 'kitchen_tool',
+    words: [
+      'blender', 'pan', 'pot', 'cookware', 'spatula', 'whisk', 'knife set',
+      'cutting board', 'air fryer', 'toaster', 'kettle', 'mixer',
+      'food processor', 'cookie sheet', 'measuring cup',
+      'מחבת', 'סיר', 'בלנדר', 'מיקסר', 'סכין', 'קרש חיתוך',
+      'אייר פרייר', 'טוסטר', 'קומקום',
+    ],
+  },
+  {
+    id: 'fashion',
+    words: [
+      'shirt', 't-shirt', 'tshirt', 'dress', 'jeans', 'jacket', 'coat',
+      'shoes', 'sneakers', 'sandals', 'boots', 'bag', 'handbag', 'backpack',
+      'belt', 'scarf', 'hat', 'sunglasses', 'wallet', 'denim',
+      'בגד', 'בגדים', 'נעליים', 'חולצה', 'שמלה', 'מכנסיים', 'ג׳ינס',
+      'תיק', 'משקפי שמש', 'כובע', 'סנדלים',
+    ],
+  },
+  {
+    id: 'tech_gadget',
+    words: [
+      'headphone', 'headphones', 'earbud', 'earbuds', 'charger', 'cable',
+      'usb-c', 'speaker', 'bluetooth', 'phone case', 'screen protector',
+      'gadget', 'tablet', 'laptop stand', 'wireless', 'powerbank',
+      'אוזניות', 'מטען', 'מטענים', 'רמקול', 'בלוטות', 'כיסוי לטלפון',
+      'מגן מסך', 'גאדג׳ט', 'מטען נייד',
+    ],
+  },
+  {
+    id: 'wellness_sleep',
+    words: [
+      'mattress', 'pillow', 'sleep', 'sleep aid', 'melatonin', 'sleep mask',
+      'silk pillowcase', 'memory foam', 'weighted blanket', 'meditation',
+      'מזרון', 'כרית', 'שינה', 'שינה טובה', 'מלטונין', 'מסכת שינה',
+      'שמיכה כבדה', 'מדיטציה',
+    ],
+  },
+  {
+    id: 'baby_kids',
+    words: [
+      'baby', 'toddler', 'newborn', 'diaper', 'stroller', 'pacifier',
+      'baby food', 'baby bottle', 'crib', 'bib', 'kid', 'child',
+      'תינוק', 'תינוקת', 'חיתול', 'חיתולים', 'עגלה', 'מוצץ',
+      'בקבוק תינוק', 'מיטת תינוק', 'ילדים', 'ילד',
+    ],
+  },
+  {
+    id: 'pets',
+    words: [
+      'dog', 'cat', 'pet', 'leash', 'collar', 'pet food', 'cat litter',
+      'pet bed', 'pet toy', 'aquarium',
+      'כלב', 'חתול', 'חיית מחמד', 'מזון לכלב', 'מזון לחתול', 'רצועה',
+    ],
+  },
+  {
+    id: 'home_cleaning',
+    words: [
+      'cleaner', 'detergent', 'wipes', 'mop', 'sponge', 'spray bottle',
+      'all-purpose', 'multi-surface', 'descaler', 'fabric softener',
+      'ניקוי', 'מטהר', 'מנקה', 'סבון כלים', 'מגבונים', 'מטהר אוויר',
+    ],
+  },
+  {
+    id: 'jewelry_accessory',
+    words: [
+      'necklace', 'ring', 'bracelet', 'earring', 'pendant', 'chain',
+      'watch', 'jewelry', 'gold', 'silver', 'diamond',
+      'תכשיט', 'תכשיטים', 'שרשרת', 'טבעת', 'עגיל', 'צמיד', 'שעון יד',
+    ],
+  },
+  {
+    id: 'supplement',
+    words: [
+      'vitamin', 'supplement', 'omega', 'omega-3', 'collagen', 'magnesium',
+      'multivitamin', 'probiotic', 'fish oil', 'biotin', 'zinc', 'b12',
+      'turmeric', 'ashwagandha',
+      'ויטמין', 'תוסף', 'תוסף תזונה', 'אומגה', 'קולגן', 'מגנזיום',
+      'פרוביוטיקה', 'ביוטין',
+    ],
+  },
+];
+
 export function guessCategory(input: { name: string; description: string }): ProductCategoryId {
   const text = `${input.name ?? ''} ${input.description ?? ''}`.toLowerCase();
-  const has = (...needles: string[]) => needles.some((n) => text.includes(n));
+  if (text.trim().length < 3) return 'other';
+  let bestId: ProductCategoryId = 'other';
+  let bestScore = 0;
+  for (const { id, words } of CATEGORY_KEYWORDS) {
+    let score = 0;
+    for (const w of words) {
+      if (!w) continue;
+      const needle = w.toLowerCase();
+      // Word-boundary match for ASCII; `includes` for Hebrew/multi-char.
+      if (/^[\x00-\x7F]+$/.test(needle)) {
+        const re = new RegExp(`\\b${needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`);
+        if (re.test(text)) score++;
+      } else if (text.includes(needle)) {
+        score++;
+      }
+    }
+    if (score > bestScore) {
+      bestScore = score;
+      bestId = id;
+    }
+  }
+  // Single-keyword hits in `other`-leaning text aren't strong enough.
+  // Require at least one match before promoting away from 'other'.
+  return bestScore > 0 ? bestId : 'other';
+}
 
-  if (has('serum', 'cream', 'moisturizer', 'cleanser', 'toner', 'spf', 'סרום', 'קרם פנים', 'קרם לחות', 'מנקה'))
-    return 'skincare';
-  if (has('shampoo', 'conditioner', 'hair mask', 'שמפו', 'מרכך'))
-    return 'haircare';
-  if (has('lipstick', 'mascara', 'foundation', 'blush', 'eyeliner', 'איפור', 'שפתון'))
-    return 'beauty';
-  if (has('protein', 'whey', 'pre-workout', 'creatine', 'חלבון', 'יותר אנרגיה', 'אימון'))
-    return 'fitness';
-  if (has('snack', 'chocolate', 'bar', 'drink', 'soda', 'חטיף', 'משקה', 'שוקולד'))
-    return 'food_snack';
-  if (has('blender', 'pan', 'pot', 'kitchen', 'cookware', 'spatula', 'מחבת', 'סיר', 'בלנדר'))
-    return 'kitchen_tool';
-  if (has('shirt', 'dress', 'jeans', 'jacket', 'shoes', 'sneakers', 'בגד', 'נעליים', 'חולצה', 'שמלה'))
-    return 'fashion';
-  if (has('headphone', 'earbud', 'charger', 'cable', 'speaker', 'phone case', 'gadget', 'אוזניות', 'מטען'))
-    return 'tech_gadget';
-  if (has('mattress', 'pillow', 'sleep', 'melatonin', 'מזרון', 'כרית', 'שינה'))
-    return 'wellness_sleep';
-  if (has('baby', 'toddler', 'diaper', 'stroller', 'תינוק', 'תינוקת', 'חיתול', 'עגלה'))
-    return 'baby_kids';
-  if (has('dog', 'cat', 'pet', 'leash', 'collar', 'כלב', 'חתול', 'חיית מחמד'))
-    return 'pets';
-  if (has('cleaner', 'detergent', 'wipes', 'mop', 'ניקוי', 'מטהר'))
-    return 'home_cleaning';
-  if (has('necklace', 'ring', 'bracelet', 'earring', 'תכשיט', 'שרשרת', 'טבעת', 'עגיל'))
-    return 'jewelry_accessory';
-  if (has('vitamin', 'supplement', 'omega', 'collagen', 'magnesium', 'ויטמין', 'תוסף'))
-    return 'supplement';
-  return 'other';
+// Map a free-form category string from the V11 Product Intelligence
+// dossier ("scalp serum applicator" / "haircare / hair growth" /
+// "Israeli skincare brand") onto one of our discrete category IDs.
+// Used by scripts/actions.ts to override the heuristic guess once
+// the dossier is built — same fuzzy keyword approach as
+// guessCategory, just runs against the dossier's category +
+// subcategory + productType strings.
+export function mapDossierCategoryToId(
+  dossierCategory: string | null | undefined,
+  dossierSubcategory?: string | null,
+  dossierProductType?: string | null,
+): ProductCategoryId {
+  const text = [dossierCategory, dossierSubcategory, dossierProductType]
+    .filter((x): x is string => typeof x === 'string' && x.length > 0)
+    .join(' ')
+    .toLowerCase();
+  if (!text.trim()) return 'other';
+  return guessCategory({ name: text, description: '' });
 }

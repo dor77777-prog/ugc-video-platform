@@ -16,9 +16,12 @@ import { getOrCreateAppUser } from '@/lib/auth/sync-user';
 import { renderQueue } from '@/lib/queue';
 import { creditsForFinalRender, getPlanConfig } from '@/lib/plans';
 import { videoModeFromProductData } from '@/lib/video-mode';
+import { CAPTION_PRESETS, type CaptionPresetId } from '@ugc-video/shared';
+
+const VALID_PRESET_IDS = new Set<string>(CAPTION_PRESETS.map((p) => p.id));
 
 export async function POST(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id: projectId } = await params;
@@ -84,6 +87,33 @@ export async function POST(
         needsCredits: true,
       },
       { status: 402 },
+    );
+  }
+
+  // V12 — accept an optional captionsPreset id in the body. When
+  // present and valid, persist it to productData.captionsPreset so
+  // the worker reads it during composition. Invalid / missing falls
+  // back to the default preset on the worker side.
+  const body = (await req.json().catch(() => null)) as
+    | { captionsPreset?: string }
+    | null;
+  const requestedPreset = body?.captionsPreset;
+  const willPersist = !!requestedPreset && VALID_PRESET_IDS.has(requestedPreset);
+  console.log(
+    `[render-api] project=${project.id} captionsPreset request=${requestedPreset ?? '(none)'} valid=${willPersist}`,
+  );
+  if (willPersist) {
+    const currentData = (project.productData as Record<string, unknown> | null) ?? {};
+    const merged = {
+      ...currentData,
+      captionsPreset: requestedPreset as CaptionPresetId,
+    };
+    await prisma.project.update({
+      where: { id: project.id },
+      data: { productData: merged as object },
+    });
+    console.log(
+      `[render-api] project=${project.id} → productData.captionsPreset = ${requestedPreset}`,
     );
   }
 
