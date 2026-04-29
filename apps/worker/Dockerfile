@@ -1,22 +1,28 @@
 FROM node:20-slim
 
-RUN apt-get update && apt-get install -y ffmpeg && rm -rf /var/lib/apt/lists/*
+# ffmpeg is the only runtime system dep — needed for final video composition
+# (concat-filter, libass caption burn-in). openssl is required by Prisma 6
+# at runtime on slim images.
+RUN apt-get update && apt-get install -y ffmpeg openssl && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
+# Install deps with dev included — tsx (used to run worker TS at runtime)
+# lives in devDependencies, and Railway defaults NODE_ENV=production which
+# would otherwise skip it.
 COPY package*.json ./
 COPY apps/worker/package.json ./apps/worker/
 COPY packages/shared/package.json ./packages/shared/
 COPY packages/prompts/package.json ./packages/prompts/
 COPY prisma ./prisma/
 
-RUN npm ci --workspace=@ugc-video/worker --workspace=@ugc-video/shared --workspace=@ugc-video/prompts --include-workspace-root
+RUN npm ci --include=dev --workspace=@ugc-video/worker --workspace=@ugc-video/shared --workspace=@ugc-video/prompts --include-workspace-root
 
 COPY apps/worker ./apps/worker/
 COPY packages/shared ./packages/shared/
 COPY packages/prompts ./packages/prompts/
 COPY tsconfig.base.json ./
 
-RUN npm run prisma:generate
+RUN npx prisma generate
 
-CMD ["node", "--import", "tsx/esm", "apps/worker/src/index.ts"]
+CMD ["npx", "tsx", "apps/worker/src/index.ts"]
