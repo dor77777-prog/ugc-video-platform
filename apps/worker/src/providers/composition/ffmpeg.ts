@@ -25,6 +25,7 @@ import { promises as fs } from 'fs';
 import { spawn } from 'child_process';
 import path from 'path';
 import os from 'os';
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import {
   CompositionProvider,
   CompositionInput,
@@ -252,23 +253,26 @@ export const ffmpegCompositionProvider: CompositionProvider & {
 
       await runFfmpeg(args);
 
-      // 5. Move into apps/web/public/uploads/finals/<projectId>/...
-      // We compute the destination path off the env that the web app uses
-      // for storage. The worker shares the same apps/web/public dir on
-      // disk in dev. In prod, this would push to S3 instead.
-      const finalsDir = input.finalsDir ?? path.join(
-        process.env.PUBLIC_UPLOADS_DIR ??
-          path.join(process.cwd(), '..', 'web', 'public', 'uploads'),
-        'finals',
-      );
-      await fs.mkdir(finalsDir, { recursive: true });
+      // 5. Persist the final MP4 — R2 in production, local disk in dev.
       const finalName = `${Date.now()}.mp4`;
-      const finalPath = path.join(finalsDir, finalName);
-      await fs.copyFile(finalLocal, finalPath);
-
       const totalDuration = scenes.reduce((sum, s) => sum + s.durationSeconds, 0);
+      let finalVideoUrl: string;
+
+      if (process.env.CLOUDFLARE_R2_BUCKET_NAME) {
+        finalVideoUrl = await uploadToR2(finalLocal, `finals/${finalName}`, 'video/mp4');
+      } else {
+        const finalsDir = input.finalsDir ?? path.join(
+          process.env.PUBLIC_UPLOADS_DIR ??
+            path.join(process.cwd(), '..', 'web', 'public', 'uploads'),
+          'finals',
+        );
+        await fs.mkdir(finalsDir, { recursive: true });
+        await fs.copyFile(finalLocal, path.join(finalsDir, finalName));
+        finalVideoUrl = `/uploads/finals/${finalName}`;
+      }
+
       return {
-        finalVideoUrl: `/uploads/finals/${finalName}`,
+        finalVideoUrl,
         durationSeconds: totalDuration,
         provider: 'ffmpeg-local',
       };
@@ -406,6 +410,24 @@ function sanitizeAssText(text: string): string {
     .replace(/\{/g, '\\{')
     .replace(/\}/g, '\\}')
     .replace(/\n/g, '\\N');
+}
+
+async function uploadToR2(localPath: string, key: string, contentType: string): Promise<string> {
+  const accountId = process.env.CLOUDFLARE_R2_ACCOUNT_ID ?? '';
+  const accessKeyId = process.env.CLOUDFLARE_R2_ACCESS_KEY_ID ?? '';
+  const secretAccessKey = process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY ?? '';
+  const bucket = process.env.CLOUDFLARE_R2_BUCKET_NAME ?? '';
+  const publicUrl = (process.env.CLOUDFLARE_R2_PUBLIC_URL ?? '').replace(/\/+$/, '');
+
+  const client = new S3Client({
+    region: 'auto',
+    endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
+    credentials: { accessKeyId, secretAccessKey },
+  });
+
+  const body = await fs.readFile(localPath);
+  await client.send(new PutObjectCommand({ Bucket: bucket, Key: key, Body: body, ContentType: contentType }));
+  return `${publicUrl}/${key}`;
 }
 
 function formatAssTime(seconds: number): string {
