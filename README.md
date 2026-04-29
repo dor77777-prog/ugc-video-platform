@@ -8,6 +8,69 @@ Brand tagline: **מודעות וידאו שמוכרות. תכל'ס.**
 End-to-end functional. Every wizard step uses real providers (no mocks in the main path).
 See [STATUS.md](./STATUS.md) for the full implemented / mocked / missing breakdown.
 
+### What V11 added (Apr 29)
+- **Creative Intelligence pipeline.** Replaced the previous "shallow
+  scraped text → script" path with a layered planning stack that
+  drives every downstream creative decision.
+- **Product Dossier** —
+  [`lib/product-intelligence/product-dossier.ts`](apps/web/lib/product-intelligence/product-dossier.ts)
+  builds a strict 32-field dossier (productMechanism, painPoints,
+  mustShowVisuals, mustAvoidVisuals, visualFailureModes,
+  visualEvidenceRequirements, israeliRealismCues,
+  conservativeAssumptions, etc.) via gpt-5.4-mini.
+- **Product Visual Analysis** —
+  [`lib/product-intelligence/product-visual-analysis.ts`](apps/web/lib/product-intelligence/product-visual-analysis.ts)
+  is a gpt-4o-mini vision pass on the hero image that returns the
+  physical truth of the product: `activePart`, `contactPoint`,
+  `substanceVisualType`, `likelyModelMistakes` — the "cheap fakes"
+  a generic image model loves to produce.
+- **Audience Inference** —
+  [`lib/product-intelligence/audience-inference.ts`](apps/web/lib/product-intelligence/audience-inference.ts)
+  derives concrete Israeli personas, daily use moments, problem
+  context, realistic Israeli settings, and the best ad frameworks
+  for this product/audience combination.
+- All three are stitched into a single
+  `Project.productData.intelligence` bundle (built lazily at script-
+  generation time when missing) and injected into the script engine
+  via a structured `🧠 PRODUCT INTELLIGENCE` block in the user
+  message. The script LLM is now bound to mirror dossier.productMechanism,
+  ground specific_situation in audience.dailyUseMoments, and cite
+  mustShowVisuals from product/demo scenes.
+- **Image Brief Builder** (deterministic, no LLM) —
+  [`lib/image-briefs/image-brief-builder.ts`](apps/web/lib/image-briefs/image-brief-builder.ts)
+  composes a strict ImageBrief per scene from dossier + visual
+  analysis + audience: mustShow, mustAvoid, environmentDetails,
+  cameraInstruction, compositionInstruction, productAccuracyInstruction,
+  israeliContextInstruction, negativeConstraints. The
+  `finalImagePrompt` REPLACES the old narration-driven prompt going
+  into gpt-image-2.
+- **Image QA evaluator** —
+  [`lib/image-qa/image-qa-evaluator.ts`](apps/web/lib/image-qa/image-qa-evaluator.ts)
+  is a gpt-4o-mini vision call that scores the generated image
+  against the brief on 9 checks (productUseAccuracy,
+  visualProofStrength, environmentMatch, israeliRealism,
+  mustShowSatisfied, mustAvoidViolated, productVisibility,
+  narrationAlignment, sceneTypeMatch). Pass threshold = 0.8 + no
+  critical mustAvoid violation.
+- **Auto-regen loop** — failed QA → corrective brief
+  (`buildCorrectiveBrief` tightens mustShow with `correctiveActions`
+  and extends mustAvoid with `failureReasons`) → regenerate, up to
+  `IMAGE_QA_MAX_RETRIES=2`. After exhausting retries the scene is
+  flagged `needsManualReview=true` and the last attempt is shipped.
+- **Schema (migration `v11_image_qa`)** — Scene gains
+  `imageBriefJson`, `imageQaJson`, `imageRegenAttempts`,
+  `needsManualReview`. `Project.productData.intelligence` carries the
+  dossier/visual/audience bundle in JSON (no migration).
+- **Problem-scene support** — the brief builder relaxes product
+  visibility for scenes typed `problem_visual` / `problem_context`
+  / `failed_method` / `before_state`, and the QA gives them a
+  `visualProofStrength` check that asks "is the pain visible?"
+  rather than "is the product correctly used?".
+- **Israeli realism** is now enforced TWICE: once in the brief
+  (`israeliContextInstruction` is appended to every prompt) and
+  once in QA (`israeliRealism` check fails on foreign suburban /
+  oversized US kitchens / non-Israeli outlets).
+
 ### What V10 added (Apr 29)
 - **Premium Hebrew captions are live.** The old proportional chunking
   (5 words / scene-duration ÷ word-count) is gone — it was the source

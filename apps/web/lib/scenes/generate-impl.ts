@@ -5,6 +5,7 @@
 // actions per-route but does NOT serialize Route Handlers, so the
 // "Generate all" loop now actually runs scenes concurrently.
 
+import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db';
 import { findAvatar, describeAvatar } from '@/lib/avatars/catalog';
 import {
@@ -15,12 +16,20 @@ import {
 } from '@/lib/llm/scene-images';
 import { LlmConfigError } from '@/lib/llm/scripts';
 import { getStorage } from '@/lib/storage';
-import { recordApiCallStart, recordApiCallComplete } from '@/lib/usage/log';
-import { priceOpenAiImage } from '@/lib/usage/pricing';
+import { recordApiCallStart, recordApiCallComplete, recordApiCall } from '@/lib/usage/log';
+import { priceOpenAiImage, priceOpenAiText } from '@/lib/usage/pricing';
 import { buildCreditMutationOps } from '@/lib/usage/credits';
 import { checkRateLimit, RateLimitedError } from '@/lib/usage/rate-limit';
 import { checkSpendCap, SpendCapExceededError } from '@/lib/usage/spend-cap';
 import { PER_OPERATION_CREDITS, FIRST_REGEN_FREE } from '@/lib/plans';
+import {
+  buildImageBrief,
+  buildCorrectiveBrief,
+  isProblemSceneType,
+  type ImageBrief,
+} from '@/lib/image-briefs/image-brief-builder';
+import { evaluateImageQa, type ImageQaResult } from '@/lib/image-qa/image-qa-evaluator';
+import type { ProductIntelligence } from '@/lib/product-intelligence';
 
 const COST_PER_SCENE_IMAGE = PER_OPERATION_CREDITS.image; // 2 credits
 
@@ -134,16 +143,40 @@ async function generateSceneImageImplInner(
   const categoryId = typeof data.category === 'string' ? data.category : null;
   const totalScenes = await prisma.scene.count({ where: { scriptId: scene.scriptId } });
 
-  let result;
-  const imageStartedAt = Date.now();
-  const imageCallId = await recordApiCallStart({
-    provider: 'openai',
-    operation: 'image_gen',
-    model: process.env.OPENAI_IMAGE_MODEL || 'gpt-image-2',
-    units: 1,
-    userId,
-    projectId: project.id,
+  // V11 — pull the Product Intelligence bundle off productData. Used
+  // by the deterministic Image Brief Builder (which replaces the old
+  // narration → image prompt path) and by the QA evaluator below.
+  const intelligence =
+    ((data as { intelligence?: ProductIntelligence | null }).intelligence ?? null) as
+      | ProductIntelligence
+      | null;
+
+  // V11 — build the deterministic Image Brief BEFORE calling
+  // gpt-image-2. The brief replaces the old narration-driven prompt
+  // path: it pulls mustShow / mustAvoid / Israeli realism / product
+  // accuracy directly from the dossier + visual analysis, so the
+  // image model receives a contract instead of a poem.
+  const sceneGenType = (scene as { sceneGenerationType?: string | null }).sceneGenerationType ?? '';
+  const isProblem = isProblemSceneType(sceneGenType);
+  let brief: ImageBrief = buildImageBrief({
+    sceneNumber: scene.sceneOrder + 1,
+    totalScenes,
+    sceneGoal: (scene as { sceneGoal?: string | null }).sceneGoal ?? '',
+    sceneGenerationType: sceneGenType,
+    faceVisibility: (scene as { faceVisibility?: string | null }).faceVisibility ?? '',
+    spokenTextHebrew: scene.textHebrew,
+    rawVisualBrief: scene.visualPromptEnglish,
+    cameraDirection: scene.cameraDirection,
+    primarySubject: (scene as { primarySubject?: string | null }).primarySubject ?? null,
+    mustShowProduct: (scene as { mustShowProduct?: boolean | null }).mustShowProduct ?? null,
+    productVisibilityPriority:
+      (scene as { productVisibilityPriority?: string | null }).productVisibilityPriority ?? null,
+    cameraFocus: (scene as { cameraFocus?: string | null }).cameraFocus ?? null,
+    showFace: (scene as { showFace?: boolean | null }).showFace ?? null,
+    intelligence,
+    isProblemScene: isProblem,
   });
+
   // If the scene will be lip-synced downstream, the still must look like
   // a frame from a real silent UGC speaking video — not a posed
   // portrait. We read explicit DB columns first, fall back to the
@@ -158,88 +191,203 @@ async function generateSceneImageImplInner(
           sceneGoal: scene.sceneGoal,
           sceneType: scene.sceneType,
         }).requiresLipSync;
-  try {
-    result = await generateSceneImage({
-      productImageUrl: heroImageUrl,
-      avatarImageUrl: selectedAvatar?.imageUrl ?? null,
-      categoryId,
-      promptInput: {
-        productName: project.productName ?? 'Product',
-        productBrand: typeof data.brand === 'string' ? data.brand : null,
-        productDescription: typeof data.description === 'string' ? data.description : null,
-        sceneVisualBrief: scene.visualPromptEnglish,
-        sceneOrder: scene.sceneOrder,
-        totalScenes,
-        sceneType: scene.sceneType,
-        aspectRatio,
-        avatarPresent: !!selectedAvatar,
-        productPresent: !!heroImageUrl,
-        avatarDescription: selectedAvatar ? describeAvatar(selectedAvatar) : '',
-        silentTalkingPlate,
-        // V4 product-first metadata. Pass through so the prompt builder
-        // can swap the opener from "of THE EXACT person" to a
-        // product-led composition when the LLM committed to one.
-        primarySubject:
-          (scene as { primarySubject?: string | null }).primarySubject ?? undefined,
-        mustShowProduct:
-          (scene as { mustShowProduct?: boolean | null }).mustShowProduct ?? undefined,
-        productVisibilityPriority:
-          (scene as { productVisibilityPriority?: string | null }).productVisibilityPriority ??
-          undefined,
-        cameraFocus: (scene as { cameraFocus?: string | null }).cameraFocus ?? undefined,
-        showFace: (scene as { showFace?: boolean | null }).showFace ?? undefined,
-      },
-      quality: 'medium',
+
+  // ── Auto-regen loop ────────────────────────────────────────────────────
+  // Generate → persist → run QA → on fail rebuild a corrective brief
+  // and try again, up to IMAGE_QA_MAX_RETRIES additional attempts. Each
+  // attempt is a billed gpt-image-2 call ($0.06) + a billed QA call
+  // ($0.005); the loop is bounded so the worst case is ~3x the cost.
+  const MAX_RETRIES = Number.isFinite(Number(process.env.IMAGE_QA_MAX_RETRIES))
+    ? Number(process.env.IMAGE_QA_MAX_RETRIES)
+    : 2;
+  // Skip QA entirely when explicitly disabled (env switch for the rare
+  // "ship the first frame regardless" case). Default ON.
+  const QA_ENABLED = process.env.IMAGE_QA_ENABLED !== 'false';
+
+  const previousAttempts =
+    (scene as { imageRegenAttempts?: number | null }).imageRegenAttempts ?? 0;
+
+  let result;
+  let url: string;
+  let qaResult: ImageQaResult | null = null;
+  let attempt = 0;
+  let lastError: { message: string; code?: 'timeout' | 'safety' | 'config' | 'generic' } | null = null;
+
+  while (true) {
+    const imageStartedAt = Date.now();
+    const imageCallId = await recordApiCallStart({
+      provider: 'openai',
+      operation: 'image_gen',
+      model: process.env.OPENAI_IMAGE_MODEL || 'gpt-image-2',
+      units: 1,
+      userId,
+      projectId: project.id,
     });
-  } catch (err) {
-    const errMsg = (err as Error).message;
+    try {
+      result = await generateSceneImage({
+        productImageUrl: heroImageUrl,
+        avatarImageUrl: selectedAvatar?.imageUrl ?? null,
+        categoryId,
+        promptInput: {
+          productName: project.productName ?? 'Product',
+          productBrand: typeof data.brand === 'string' ? data.brand : null,
+          productDescription: typeof data.description === 'string' ? data.description : null,
+          // V11: replace the raw narration brief with the deterministic
+          // ImageBrief.finalImagePrompt. The prompt builder still wraps
+          // it with the avatar identity anchor + safety tokens, but the
+          // creative content is now the contract from the brief.
+          sceneVisualBrief: brief.finalImagePrompt,
+          sceneOrder: scene.sceneOrder,
+          totalScenes,
+          sceneType: scene.sceneType,
+          aspectRatio,
+          avatarPresent: !!selectedAvatar,
+          productPresent: !!heroImageUrl,
+          avatarDescription: selectedAvatar ? describeAvatar(selectedAvatar) : '',
+          silentTalkingPlate,
+          // V4 product-first metadata. Pass through so the prompt builder
+          // can swap the opener from "of THE EXACT person" to a
+          // product-led composition when the LLM committed to one.
+          primarySubject:
+            (scene as { primarySubject?: string | null }).primarySubject ?? undefined,
+          mustShowProduct:
+            (scene as { mustShowProduct?: boolean | null }).mustShowProduct ?? undefined,
+          productVisibilityPriority:
+            (scene as { productVisibilityPriority?: string | null }).productVisibilityPriority ??
+            undefined,
+          cameraFocus: (scene as { cameraFocus?: string | null }).cameraFocus ?? undefined,
+          showFace: (scene as { showFace?: boolean | null }).showFace ?? undefined,
+        },
+        quality: 'medium',
+      });
+    } catch (err) {
+      const errMsg = (err as Error).message;
+      await recordApiCallComplete(imageCallId, {
+        success: false,
+        errorMessage: errMsg,
+        durationMs: Date.now() - imageStartedAt,
+      });
+      if (err instanceof LlmConfigError) {
+        return { success: false, error: err.message };
+      }
+      if (err instanceof SceneImageTimeoutError) {
+        return {
+          success: false,
+          error: 'OpenAI לא הגיב תוך 3 דקות לסצנה זו. נסה שוב — אם זה חוזר על עצמו, יש עומס/תקלה אצלם.',
+          timedOut: true,
+        };
+      }
+      if (err instanceof SceneImageSafetyError) {
+        return {
+          success: false,
+          error:
+            'OpenAI סירבו ליצור את הסצנה גם בלי תמונת המוצר וגם עם הוראות modesty. ערוך ידנית את ה-visual_prompt_english (הסר/החלף מילים כמו bodysuit / shaper / lingerie / sexy / revealing / skin-tight), או דלג על הסצנה הזו.',
+          safetyBlocked: true,
+        };
+      }
+      lastError = { message: errMsg, code: 'generic' };
+      return { success: false, error: `יצירת התמונה נכשלה: ${errMsg}` };
+    }
+
     await recordApiCallComplete(imageCallId, {
-      success: false,
-      errorMessage: errMsg,
-      durationMs: Date.now() - imageStartedAt,
+      success: true,
+      model: result.model,
+      costUsd: priceOpenAiImage(result.model, result.quality, result.size),
+      units: 1,
+      durationMs: result.durationMs,
     });
-    if (err instanceof LlmConfigError) return { success: false, error: err.message };
-    if (err instanceof SceneImageTimeoutError) {
-      return {
+
+    // Persist to storage so QA can read the bytes back.
+    const storage = await getStorage();
+    const bytes = Buffer.from(result.base64, 'base64');
+    const filename = `${scene.id}-${Date.now()}.png`;
+    const persisted = await storage.putBytes({
+      folder: `scenes/${project.id}`,
+      filename,
+      data: bytes,
+      contentType: 'image/png',
+    });
+    url = persisted.url;
+
+    // ── Image QA pass ─────────────────────────────────────────────────
+    // Skipped on talking-head + safety-retry (the safety retry already
+    // dropped the product image; we don't want to regen-loop on a
+    // visual that intentionally lost the product) + when env disabled.
+    const skipQa = !QA_ENABLED || result.safetyRetryApplied;
+    if (skipQa) break;
+
+    const qaCallId = await recordApiCallStart({
+      provider: 'openai',
+      operation: 'image_qa',
+      model: process.env.OPENAI_IMAGE_QA_MODEL ?? 'gpt-4o-mini',
+      userId,
+      projectId: project.id,
+    });
+    const qaStartedAt = Date.now();
+    try {
+      qaResult = await evaluateImageQa({
+        imageUrl: url,
+        brief,
+        visualAnalysis: intelligence?.visualAnalysis ?? null,
+        isProblemScene: isProblem,
+        isTalkingHead: silentTalkingPlate,
+      });
+      await recordApiCallComplete(qaCallId, {
+        success: true,
+        model: qaResult.model,
+        costUsd: priceOpenAiText(qaResult.model, qaResult.usage.inputTokens, qaResult.usage.outputTokens),
+        inputTokens: qaResult.usage.inputTokens,
+        outputTokens: qaResult.usage.outputTokens,
+        durationMs: Date.now() - qaStartedAt,
+      });
+    } catch (err) {
+      // QA failure is non-fatal — fall through with the image we have.
+      // Better to ship an un-QA'd frame than to block on a QA outage.
+      console.warn(`[scene-image] QA failed for scene=${sceneId}:`, (err as Error).message);
+      await recordApiCallComplete(qaCallId, {
         success: false,
-        error: 'OpenAI לא הגיב תוך 3 דקות לסצנה זו. נסה שוב — אם זה חוזר על עצמו, יש עומס/תקלה אצלם.',
-        timedOut: true,
-      };
+        errorMessage: (err as Error).message,
+        durationMs: Date.now() - qaStartedAt,
+      });
+      qaResult = null;
+      break;
     }
-    if (err instanceof SceneImageSafetyError) {
-      return {
-        success: false,
-        error:
-          'OpenAI סירבו ליצור את הסצנה גם בלי תמונת המוצר וגם עם הוראות modesty. ערוך ידנית את ה-visual_prompt_english (הסר/החלף מילים כמו bodysuit / shaper / lingerie / sexy / revealing / skin-tight), או דלג על הסצנה הזו.',
-        safetyBlocked: true,
-      };
+
+    if (qaResult.passed) break;
+
+    // Failed QA. If we have retries left, build a corrective brief and
+    // try again. Otherwise mark the scene needs_manual_review and ship
+    // the last attempt.
+    if (attempt >= MAX_RETRIES) {
+      console.warn(
+        `[scene-image] scene=${sceneId} exhausted ${MAX_RETRIES} regen retries — shipping last attempt and flagging needsManualReview`,
+      );
+      break;
     }
-    return { success: false, error: `יצירת התמונה נכשלה: ${errMsg}` };
+    console.log(
+      `[scene-image] scene=${sceneId} QA failed (score=${qaResult.score.toFixed(2)}, attempt=${attempt + 1}/${MAX_RETRIES}) — regenerating with corrective brief. reasons: ${qaResult.failureReasons.join(' | ')}`,
+    );
+    brief = buildCorrectiveBrief({
+      prev: brief,
+      failureReasons: qaResult.failureReasons,
+      correctiveActions: qaResult.correctiveActions,
+    });
+    attempt++;
   }
-
-  await recordApiCallComplete(imageCallId, {
-    success: true,
-    model: result.model,
-    costUsd: priceOpenAiImage(result.model, result.quality, result.size),
-    units: 1,
-    durationMs: result.durationMs,
-  });
-
-  const storage = await getStorage();
-  const bytes = Buffer.from(result.base64, 'base64');
-  const filename = `${scene.id}-${Date.now()}.png`;
-  const { url } = await storage.putBytes({
-    folder: `scenes/${project.id}`,
-    filename,
-    data: bytes,
-    contentType: 'image/png',
-  });
+  void lastError;
 
   // V6: image keeps first-regen-free policy via FIRST_REGEN_FREE map.
   // (image + voice keep this UX; clips dropped it for margin reasons.)
   const prevImgCount = scene.imageGenerationCount ?? 0;
   const isFirstRegen = prevImgCount === 1 && FIRST_REGEN_FREE.image;
   const charge = isFirstRegen ? 0 : COST_PER_SCENE_IMAGE;
+
+  // V11 — record the brief + QA on Scene so the wizard UI + admin can
+  // surface the score, failure reasons, and corrective actions
+  // without recomputing. previousAttempts tracks how many regen loops
+  // fired this run; it accumulates across "regenerate scene" clicks.
+  const totalRegenAttempts = previousAttempts + attempt;
+  const needsManualReview = qaResult ? !qaResult.passed && attempt >= MAX_RETRIES : false;
 
   await prisma.$transaction([
     prisma.scene.update({
@@ -250,6 +398,12 @@ async function generateSceneImageImplInner(
         imageGeneratedAt: new Date(),
         imageGenerationCount: { increment: 1 },
         imageProvider: result.model,
+        imageBriefJson: brief as unknown as Prisma.InputJsonValue,
+        imageQaJson: qaResult
+          ? (qaResult as unknown as Prisma.InputJsonValue)
+          : Prisma.JsonNull,
+        imageRegenAttempts: totalRegenAttempts,
+        needsManualReview,
       },
     }),
     ...buildCreditMutationOps(prisma, {
@@ -257,7 +411,13 @@ async function generateSceneImageImplInner(
       amount: -charge,
       reason: isFirstRegen ? 'first_regen_free:scene_image' : 'spent:scene_image',
       ref: sceneId,
-      metadata: { previousCount: prevImgCount, model: result.model },
+      metadata: {
+        previousCount: prevImgCount,
+        model: result.model,
+        qaScore: qaResult?.score ?? null,
+        qaPassed: qaResult?.passed ?? null,
+        regenAttempts: attempt,
+      },
     }),
     prisma.asset.create({
       data: {
@@ -270,7 +430,16 @@ async function generateSceneImageImplInner(
           sceneOrder: scene.sceneOrder,
           quality: result.quality,
           size: result.size,
-        },
+          qa: qaResult
+            ? {
+                passed: qaResult.passed,
+                score: qaResult.score,
+                checks: { ...qaResult.checks },
+                failureReasons: qaResult.failureReasons,
+                regenAttempts: attempt,
+              }
+            : null,
+        } as unknown as Prisma.InputJsonValue,
       },
     }),
   ]);

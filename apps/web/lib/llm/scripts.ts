@@ -30,6 +30,12 @@ export interface ProductInput {
   durationSeconds: number;
   price?: string | null;
   currency?: string | null;
+  /** V11 Product Intelligence bundle. When present, the script engine
+   *  uses dossier + visual analysis + audience inference as the
+   *  authoritative source of truth for hooks, scene order, mustShow,
+   *  mustAvoid, and audience tone. Falls back to the lean ProductInput
+   *  fields above when null (legacy projects pre-V11). */
+  intelligence?: import('@/lib/product-intelligence').ProductIntelligence | null;
   // The avatar the user already picked (from step 2).
   avatarDescription?: string | null;
   /**
@@ -462,6 +468,15 @@ function buildSingleFrameworkPrompt(
     `תקציב מילים בעברית לכל הסקריפט: יעד ${mode.totalSpokenWordsTarget} מילים, hard max ${mode.totalSpokenWordsHardMax}.`,
     `אסור לחרוג מ-${mode.maxTotalDurationMs / 1000}s — הסכום של duration_seconds לכל הסצנות חייב להיות ב-[${mode.minTotalDurationMs / 1000}, ${mode.maxTotalDurationMs / 1000}]s.`,
   ].join('\n');
+  // V11 — Product Intelligence block. When present, this is the
+  // authoritative input the LLM grounds every script in: dossier,
+  // visual analysis, audience inference. The lean ProductInput
+  // fields below are kept for back-compat but the LLM is told to
+  // PREFER the intelligence block when both are present.
+  const intelligenceBlock = p.intelligence
+    ? buildIntelligencePromptBlock(p.intelligence)
+    : null;
+
   const lines: (string | null)[] = [
     `שם המוצר: ${p.productName}`,
     p.brand ? `מותג: ${p.brand}` : null,
@@ -472,6 +487,7 @@ function buildSingleFrameworkPrompt(
     'תיאור המוצר:',
     p.description,
     '',
+    intelligenceBlock,
     p.categoryLabel || p.categoryGuidance
       ? [
           `קטגוריה: ${p.categoryLabel ?? p.categoryId ?? 'unknown'}`,
@@ -590,4 +606,103 @@ function toGenerated(s: LlmScript, regenerated: boolean): GeneratedScript {
     raw: s,
     angle: FRAMEWORK_TO_LEGACY_ANGLE[s.framework] ?? 'problem_solution',
   };
+}
+
+// V11 — render the Product Intelligence bundle into a structured user
+// prompt block. This is the single biggest creative-quality lever:
+// the LLM grounds every script in dossier.painPoints,
+// audience.dailyUseMoments, visualAnalysis.activePart, and the
+// must-show / must-avoid lists. Scenes that contradict the dossier's
+// proof requirements are now visible to the model up front.
+function buildIntelligencePromptBlock(
+  intel: import('@/lib/product-intelligence').ProductIntelligence,
+): string {
+  const d = intel.dossier;
+  const v = intel.visualAnalysis;
+  const a = intel.audience;
+  const list = (xs: string[]) => (xs.length === 0 ? '(none)' : xs.map((x) => `  - ${x}`).join('\n'));
+  const visualBlock =
+    v && v.activePart
+      ? [
+          '',
+          '🎥 PRODUCT VISUAL ANALYSIS (vision pass on hero image):',
+          `objectDescription: ${v.objectDescription}`,
+          `activePart: ${v.activePart}`,
+          `howToHold: ${v.howToHold}`,
+          `howToUseVisually: ${v.howToUseVisually}`,
+          `contactPoint: ${v.contactPoint}`,
+          `substanceVisualType: ${v.substanceVisualType || '(no substance / N/A)'}`,
+          `textureAndMaterial: ${v.textureAndMaterial}`,
+          `bestDemoAngles:`,
+          list(v.bestDemoAngles),
+          `mustShowForDemo:`,
+          list(v.mustShowForDemo),
+          `mustAvoidForDemo:`,
+          list(v.mustAvoidForDemo),
+          `likelyModelMistakes (the image model WILL produce these unless we explicitly forbid them):`,
+          list(v.likelyModelMistakes),
+        ].join('\n')
+      : '';
+  return [
+    '',
+    '═══════════════════════════════════════════',
+    '🧠 PRODUCT INTELLIGENCE — USE THIS, NOT THE LEAN FIELDS ABOVE.',
+    '═══════════════════════════════════════════',
+    'Every script you write must be grounded in the dossier + visual analysis + audience inference below. Do NOT generate a generic UGC ad. Every spoken line must reflect a specific painPoint or daily moment from the dossier; every product/demo scene must visually prove a visualEvidenceRequirement.',
+    '',
+    '📦 PRODUCT DOSSIER:',
+    `category: ${d.category} / subcategory: ${d.subcategory} / productType: ${d.productType}`,
+    `productMechanism: ${d.productMechanism}`,
+    `applicationMethod: ${d.applicationMethod}`,
+    `applicatorType: ${d.applicatorType} / packaging: ${d.packagingType} / texture: ${d.textureType} / outputSubstance: ${d.outputSubstance}`,
+    'painPoints:',
+    list(d.painPoints),
+    'desiredOutcomes:',
+    list(d.desiredOutcomes),
+    'purchaseTriggers:',
+    list(d.purchaseTriggers),
+    'mainObjections:',
+    list(d.mainObjections),
+    'usageSteps:',
+    list(d.usageSteps),
+    'mustShowVisuals (camera MUST capture these in product/demo scenes):',
+    list(d.mustShowVisuals),
+    'mustAvoidVisuals (camera MUST NOT show these even if the model defaults to them):',
+    list(d.mustAvoidVisuals),
+    'visualEvidenceRequirements (the audience NEEDS to see these to believe the product):',
+    list(d.visualEvidenceRequirements),
+    'visualFailureModes (cheap fakes a generic image model loves to produce):',
+    list(d.visualFailureModes),
+    'israeliRealismCues:',
+    list(d.israeliRealismCues),
+    'conservativeAssumptions (treat as soft, never as hard claims in spoken text):',
+    list(d.conservativeAssumptions),
+    visualBlock,
+    '',
+    '👥 AUDIENCE INFERENCE:',
+    'primaryAudience:',
+    list(a.primaryAudience),
+    'dailyUseMoments (specific Israeli moments — drive specific_situation in creative_strategy):',
+    list(a.dailyUseMoments),
+    'problemContext:',
+    list(a.problemContext),
+    'emotionalTriggers:',
+    list(a.emotionalTriggers),
+    'purchaseObjections:',
+    list(a.purchaseObjections),
+    'realisticIsraeliSettings (use ONLY these for environment_type / scene location):',
+    list(a.realisticIsraeliSettings),
+    `toneRecommendation: ${a.toneRecommendation}`,
+    `visualStrategyRecommendation: ${a.visualStrategyRecommendation}`,
+    '',
+    '⚠ Hard rules:',
+    '- creative_strategy.product_mechanism MUST mirror dossier.productMechanism — don\'t invent a different mechanism.',
+    '- creative_strategy.audience_pain MUST come from dossier.painPoints OR audience.problemContext (paraphrase to Hebrew is fine, but do not invent a new pain).',
+    '- specific_situation in creative_strategy MUST anchor in audience.dailyUseMoments — concrete, local, specific.',
+    '- product_demo / closeup_product / hands_only scenes MUST cite at least one mustShowVisuals item in visual_prompt_english.',
+    '- Never describe a scene that contradicts mustAvoidVisuals (e.g. white cream when substanceVisualType is transparent serum).',
+    '- environment_type MUST come from audience.realisticIsraeliSettings or dossier.likelyUseEnvironments — no foreign suburban kitchens.',
+    '═══════════════════════════════════════════',
+    '',
+  ].join('\n');
 }

@@ -149,6 +149,50 @@ export async function generateScriptsAction(
     );
     const categoryId = (typeof data.category === 'string' ? data.category : null) as ProductCategoryId | null;
     const category = findCategory(categoryId);
+
+    // V11 — Product Intelligence. If the project's productData already
+    // has an `intelligence` block (built once during scrape / Step 1
+    // editing), reuse it. Otherwise build it now lazily so the script
+    // engine never runs without dossier + audience grounding. Errors
+    // here are non-fatal: we fall back to the lean ProductInput path
+    // and the script engine just doesn't get the structured block.
+    const cachedIntel = (data.intelligence ?? null) as
+      | import('@/lib/product-intelligence').ProductIntelligence
+      | null;
+    let intelligence = cachedIntel;
+    if (!intelligence) {
+      try {
+        const { buildProductIntelligence } = await import('@/lib/product-intelligence');
+        const built = await buildProductIntelligence({
+          productName: project.productName ?? 'מוצר ללא שם',
+          description: typeof data.description === 'string' ? data.description : '',
+          brand: typeof data.brand === 'string' ? data.brand : null,
+          features: Array.isArray(data.features)
+            ? (data.features as unknown[]).filter((x): x is string => typeof x === 'string')
+            : [],
+          price: typeof data.price === 'string' ? data.price : null,
+          currency: typeof data.currency === 'string' ? data.currency : null,
+          sourceUrl: typeof data.sourceUrl === 'string' ? data.sourceUrl : null,
+          userNotes: typeof data.userNotes === 'string' ? data.userNotes : null,
+          categoryGuess: category?.labelEnglish ?? categoryId ?? null,
+          heroImageUrl: typeof data.heroImageUrl === 'string' ? data.heroImageUrl : null,
+        });
+        intelligence = built.intelligence;
+        // Persist for reuse on regen + scene image generation. Merge
+        // back into productData without clobbering other keys.
+        const merged = { ...data, intelligence };
+        await prisma.project.update({
+          where: { id: projectId },
+          data: { productData: merged as object },
+        });
+      } catch (err) {
+        console.warn(
+          '[scripts] product intelligence build failed — falling back to lean ProductInput:',
+          (err as Error).message,
+        );
+      }
+    }
+
     const result = await generateScripts(
       {
         productName: project.productName ?? 'מוצר ללא שם',
@@ -158,6 +202,7 @@ export async function generateScriptsAction(
         durationSeconds: typeof data.durationSeconds === 'number' ? data.durationSeconds : 15,
         price: typeof data.price === 'string' ? data.price : null,
         currency: typeof data.currency === 'string' ? data.currency : null,
+        intelligence,
         avatarDescription: selectedAvatar ? describeAvatar(selectedAvatar) : null,
         avatarGender: selectedAvatar?.gender ?? null,
         categoryId,

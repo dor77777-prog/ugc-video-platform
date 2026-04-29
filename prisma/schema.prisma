@@ -377,6 +377,18 @@ model Scene {
   captionChunksJson          Json?
   captionsGeneratedAt        DateTime?
 
+  // V11 creative-pipeline artifacts (2026-04-29).
+  //   imageBriefJson         — strict ImageBrief used to produce imageUrl
+  //   imageQaJson            — last QA result (score, checks, reasons)
+  //   imageRegenAttempts     — how many times the auto-regen loop fired
+  //   needsManualReview      — true when retries were exhausted
+  // Stored on Scene rather than Asset so the wizard UI can render the
+  // QA badge without joining; admin/forensics reads them directly.
+  imageBriefJson             Json?
+  imageQaJson                Json?
+  imageRegenAttempts         Int        @default(0)
+  needsManualReview          Boolean    @default(false)
+
   @@unique([scriptId, sceneOrder])
   @@index([scriptId])
 }
