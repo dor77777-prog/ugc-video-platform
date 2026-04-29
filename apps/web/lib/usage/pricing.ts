@@ -71,20 +71,33 @@ export function priceElevenLabsTts(model: string, charCount: number): number {
   return (charCount / 1000) * rate;
 }
 
-// Kling AI — observed effective $/second by model (April 2026).
+// Kling AI — empirical token-based pricing (Apr 2026 console reading).
 //
-// Standard pack base unit price = $0.126/unit. Tier modes:
+// Kling's actual billing unit is the "token", priced at:
+//
+//   $160 plan  /  293 tokens  =  $0.546 / token
+//
+// Empirical token consumption from the user's account log:
+//
+//   5 tokens → 5 clips    (1.00 tok/clip = $0.55/clip)
+//   5 tokens → 4 clips    (1.25 tok/clip = $0.68/clip)
+//   8 tokens → 5 clips    (1.60 tok/clip = $0.87/clip)
+//   8 tokens → 4 clips    (2.00 tok/clip = $1.09/clip)
+//
+//   Average: 6.5 tokens / 4.5 clips = 1.44 tok/clip ≈ $0.79/clip
+//
+// Lip-Sync v1 charges +1 additional token per call = +$0.546.
+//
+// We keep the legacy `units × $0.126 = USD` shape so existing call sites
+// don't change, but the v3-omni + lipsync per-second rates are tuned so
+// the typical 5s call lands on the empirical token cost. Not perfectly
+// linear in seconds (Kling charges in tokens, not seconds) but accurate
+// for the 3-10s range our pipeline uses.
+//
+// Standard pack tiers (lower-tier models we no longer use as the default):
 //   std × 1s × no audio = 0.6 units = $0.084 / sec
 //   pro × 1s × no audio = 0.8 units = $0.112 / sec
 //   4k                  = 3.0 units = $0.420 / sec
-//
-// BUT v3-omni is priced separately (higher tier — Kling charges ~$0.73–
-// $0.91 per 5s clip in production, observed in our account). That maps
-// to ~$0.16/sec or ~1.3 units/sec. We treat it as its own row so the
-// admin/usage view shows accurate spend.
-//
-// Legacy v2-master / v1-6 still use the std rate. Keys end with model
-// + duration to keep the old call sites working.
 const KLING_UNIT_PRICE_USD = 0.126;
 const KLING_UNITS_PER_SECOND: Record<string, number> = {
   i2v_std_no_audio: 0.6,
@@ -94,19 +107,20 @@ const KLING_UNITS_PER_SECOND: Record<string, number> = {
   i2v_pro_with_video_no_audio: 1.2,
   i2v_4k_with_audio: 3.0,
   i2v_4k_with_video_no_audio: 3.0,
-  // v3-omni: empirical mid-point of $0.73–$0.91 per 5s = $0.164/sec,
-  // ÷ $0.126 unit = ~1.3 units/sec.
-  i2v_v3_omni: 1.3,
-  // Lip-sync functional model (when enabled).
-  lipsync: 0.15,
+  // v3-omni: 1.44 tokens × $0.546 = $0.7862 per typical clip.
+  // For a 5s clip → rate = $0.7862 / 5 / $0.126 = 1.248 units/sec.
+  i2v_v3_omni: 1.248,
+  // Lip-Sync v1: 1 token × $0.546 = $0.546 per call.
+  // For a 5s call → rate = $0.546 / 5 / $0.126 = 0.867 units/sec.
+  lipsync: 0.867,
 };
 const KLING_FIXED_DURATION_5S: Record<string, number> = {
   i2v_std_5s_no_audio: KLING_UNITS_PER_SECOND.i2v_std_no_audio! * 5,
   i2v_std_5s_with_audio: KLING_UNITS_PER_SECOND.i2v_std_with_audio! * 5,
   i2v_pro_5s_no_audio: KLING_UNITS_PER_SECOND.i2v_pro_no_audio! * 5,
   i2v_pro_5s_with_audio: KLING_UNITS_PER_SECOND.i2v_pro_with_audio! * 5,
-  i2v_v3_omni_5s: KLING_UNITS_PER_SECOND.i2v_v3_omni! * 5, // ~$0.82
-  lipsync_5s: KLING_UNITS_PER_SECOND.lipsync! * 5,
+  i2v_v3_omni_5s: KLING_UNITS_PER_SECOND.i2v_v3_omni! * 5, // ~$0.79
+  lipsync_5s: KLING_UNITS_PER_SECOND.lipsync! * 5, // ~$0.55
 };
 export function priceKling(operation: string, durationSeconds = 5): number {
   const units =

@@ -87,10 +87,24 @@
 - Tunnel: cloudflared → `PUBLIC_BASE_URL` (regenerated when it drops)
 - Worker: BullMQ (`render` + `maintenance` queues; hourly Kling stuck-task sweep)
 
-**Cost per finished 5-scene video:**
-- Script: $0.02 | Images: $0.20 | Voices: $0.04 | Vision analysis: $0.005 | i2v: $4.10 | LipSync (2 talking): $0.04 | Composition: $0
-- **Total ≈ $4.40** (down from estimated $0.96 — Kling v3-omni is $0.82/5s, not the $0.42 we initially assumed)
-- Charged to user: 12 credits × $0.50 = $6 → **margin ≈ 27%**
+**Cost per finished video — empirical (Apr 2026 user-account console):**
+
+Kling token economics: `$160 / 293 tokens = $0.546 / token`. Observed average **1.44 tokens / clip** across real generations → **$0.79 per i2v clip** (was previously modeled as $0.82 → updated). Lip-Sync charges +1 token per call = **+$0.55 per lipsync scene**.
+
+For a 5-scene video with 1 lipsync (15s mode) or 2 lipsync (30s mode):
+
+| Item | 15s (4 scenes, 1 lipsync) | 30s (5 scenes, 2 lipsync) |
+|------|---------------------------|---------------------------|
+| Script (gpt) | $0.02 | $0.02 |
+| Images (gpt-image-2) | $0.16 (4 × $0.04) | $0.20 (5 × $0.04) |
+| Voices (ElevenLabs) | $0.04 | $0.05 |
+| Vision motion analysis | $0.005 | $0.005 |
+| **i2v (Kling)** | **$3.16** (4 × $0.79) | **$3.95** (5 × $0.79) |
+| **LipSync (Kling)** | **$0.55** (1 × $0.55) | **$1.09** (2 × $0.55) |
+| Composition (ffmpeg local) | $0 | $0 |
+| **Total** | **≈ $3.94** | **≈ $5.32** |
+
+Charged to user: 12 credits × $0.50 = $6 → **margin ≈ 35% on 15s, ≈ 11% on 30s**. Margin compression on 30s is real — bump pricing or cap lipsync to 1 scene for the lower tier.
 
 **Open issues:**
 - Music: **DISABLED** by default — auto-default track sounded bad and a curated free-music library hasn't been picked. Toggle in Step 1 still saved (`productData.backgroundMusic`) but the composer no-ops it. To re-enable: drop royalty-free tracks (Pixabay/Mixkit/YouTube Audio Library) into `apps/web/public/music/`, build a picker in Step 1, then unhide the `musicUrl` line in [render-processor.ts](apps/worker/src/processors/render-processor.ts).

@@ -26,8 +26,10 @@ export class SpendCapExceededError extends Error {
 
 // Global default if User.spendCapUsd is null. Tuned to comfortably
 // allow ~10 finished videos/day at our current cost mix:
-//   per-video cost ≈ $0.96 (5 scenes × ($0.04 image + $0.01 voice +
-//   $0.82 Kling) + $0.02 script). Default $10/day → ~10 videos.
+//   per-video cost ≈ $4.40 (5 scenes × ($0.04 image + $0.01 voice +
+//   $0.79 Kling i2v + $0.55 lipsync × 1-2 scenes) + $0.02 script).
+//   Default $10/day → ~2 finished videos at the new pricing — bump
+//   per-user via User.spendCapUsd for higher-volume customers.
 const DEFAULT_CAP_USD = 10;
 
 export async function checkSpendCap(userId: string): Promise<{ capUsd: number; spentUsd: number }> {

@@ -1,8 +1,8 @@
 // Per-user rate limit for expensive provider operations.
 //
 // Why: a user double-clicking "regenerate" 30 times in 2 seconds will
-// spam Kling/OpenAI 30 times — at $0.82 per Kling i2v that's $25 burned
-// in seconds. Same for ElevenLabs / OpenAI.
+// spam Kling/OpenAI 30 times — at $0.79 per Kling i2v (or +$0.55 per
+// lipsync) that's $24-40 burned in seconds. Same for ElevenLabs / OpenAI.
 //
 // Storage: ApiCall table. Each call we make is logged there with userId
 // + operation + createdAt. The rate-limit check is a count(*) query
