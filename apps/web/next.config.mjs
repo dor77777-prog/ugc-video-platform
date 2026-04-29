@@ -12,39 +12,22 @@ const nextConfig = {
       dynamic: 0,
     },
   },
-  // ffmpeg-static + ffprobe-static ship platform-specific binaries inside
-  // node_modules. Next.js's file tracer skips these because the path is
-  // resolved at runtime via a string export. Force-include them so Vercel
-  // bundles the binaries with any function that mux's audio (the scene
-  // clip API route).
+  // ffmpeg-static ships a platform-specific binary inside node_modules.
+  // Next.js's file tracer skips it because the path is resolved at runtime
+  // via a string export. Force-include the binary so Vercel bundles it
+  // with the scene clip API route (which calls muxVoiceOntoVideo).
   //
-  // CRITICAL: include ONLY the Linux x64 ffprobe binary, not the whole
-  // bin/ tree. ffprobe-static ships every platform (darwin/linux/win32 ×
-  // x64/arm) and the full tree is 335MB — pushes the function past the
-  // 300MB Vercel hard limit. Linux x64 alone is ~62MB.
+  // We deliberately do NOT include ffprobe-static here — duration probing
+  // moved to the pure-JS music-metadata package (~300KB) so we can stay
+  // under Vercel's 250MB function size limit.
   outputFileTracingIncludes: {
     '/api/scenes/[id]/clip': [
       './node_modules/ffmpeg-static/ffmpeg',
       './node_modules/ffmpeg-static/index.js',
       './node_modules/ffmpeg-static/package.json',
-      './node_modules/ffprobe-static/index.js',
-      './node_modules/ffprobe-static/package.json',
-      './node_modules/ffprobe-static/bin/linux/x64/ffprobe',
       '../../node_modules/ffmpeg-static/ffmpeg',
       '../../node_modules/ffmpeg-static/index.js',
       '../../node_modules/ffmpeg-static/package.json',
-      '../../node_modules/ffprobe-static/index.js',
-      '../../node_modules/ffprobe-static/package.json',
-      '../../node_modules/ffprobe-static/bin/linux/x64/ffprobe',
-    ],
-  },
-  outputFileTracingExcludes: {
-    '/api/scenes/[id]/clip': [
-      // Belt-and-suspenders: explicitly drop the non-Linux ffprobe
-      // platforms in case the include patterns accidentally pull
-      // them in via a glob upstream.
-      '**/node_modules/ffprobe-static/bin/darwin/**',
-      '**/node_modules/ffprobe-static/bin/win32/**',
     ],
   },
 };

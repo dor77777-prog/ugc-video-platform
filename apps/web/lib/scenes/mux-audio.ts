@@ -16,19 +16,18 @@ import path from 'path';
 import os from 'os';
 import { spawn } from 'child_process';
 import ffmpegStatic from 'ffmpeg-static';
-import ffprobeStatic from 'ffprobe-static';
+import { parseBuffer as parseMediaBuffer } from 'music-metadata';
 
-// Resolve the bundled ffmpeg/ffprobe binaries once at module load. The
-// Vercel serverless runtime doesn't have ffmpeg on PATH, so spawning
-// 'ffmpeg' or 'ffprobe' literally fails with ENOENT. Both *-static
-// packages ship a platform-specific binary inside node_modules, which
-// Vercel includes in the function bundle automatically.
+// Resolve the bundled ffmpeg binary once at module load. Vercel's
+// serverless runtime doesn't have ffmpeg on PATH, so spawning literal
+// 'ffmpeg' fails with ENOENT. ffmpeg-static ships one platform-specific
+// binary inside node_modules.
 //
-// On Linux the binary needs to be marked executable (npm install
-// preserves the bit on most setups, but Vercel's installer strips it
-// occasionally — guard with a chmod on first use).
+// We deliberately do NOT use ffprobe-static here — it ships every
+// platform's binary (335MB total) and pushes the function bundle past
+// the 250MB Vercel limit. probeDurationSeconds() below uses the
+// pure-JS music-metadata library instead.
 const FFMPEG_BIN: string = ffmpegStatic ?? 'ffmpeg';
-const FFPROBE_BIN: string = ffprobeStatic.path ?? 'ffprobe';
 
 export class MuxError extends Error {
   constructor(message: string) {
@@ -128,46 +127,29 @@ export async function readUrlAsBuffer(url: string): Promise<Buffer> {
   return Buffer.from(await res.arrayBuffer());
 }
 
-// Measure a media file's actual duration in seconds via ffprobe. Used
-// after Kling Lip-Sync to verify the output isn't truncated relative
-// to the input voice MP3 — Kling occasionally returns a clip that's
-// SHORTER than the voice, which manifests as "speech ends mid-word
-// even though the system showed clip ≥ voice".
+// Measure a media file's actual duration in seconds. Used after Kling
+// Lip-Sync to verify the output isn't truncated relative to the input
+// voice MP3 — Kling occasionally returns a clip that's SHORTER than the
+// voice, which manifests as "speech ends mid-word even though the system
+// showed clip ≥ voice".
+//
+// Implementation: pure-JS via music-metadata (no native binary). We
+// deliberately don't use ffprobe-static here because its bin/ tree
+// (335MB across all platforms) blows past Vercel's function size limit.
+// music-metadata supports MP3/MP4/M4A/WAV/etc — the formats we actually
+// see in this pipeline.
 export async function probeDurationSeconds(bytes: Buffer): Promise<number> {
-  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'tachles-probe-'));
   try {
-    const filePath = path.join(tmp, 'media');
-    await fs.writeFile(filePath, bytes);
-    const out = await new Promise<string>((resolve, reject) => {
-      const p = spawn(FFPROBE_BIN, [
-        '-v',
-        'error',
-        '-show_entries',
-        'format=duration',
-        '-of',
-        'default=noprint_wrappers=1:nokey=1',
-        filePath,
-      ]);
-      let stdout = '';
-      let stderr = '';
-      p.stdout.on('data', (d) => (stdout += d.toString()));
-      p.stderr.on('data', (d) => (stderr += d.toString()));
-      p.on('error', (err) => reject(new MuxError(`ffprobe spawn: ${err.message}`)));
-      p.on('close', (code) => {
-        if (code === 0) resolve(stdout.trim());
-        else reject(new MuxError(`ffprobe exited ${code}: ${stderr.slice(-200)}`));
-      });
-    });
-    const seconds = parseFloat(out);
-    if (!Number.isFinite(seconds)) {
-      throw new MuxError(`ffprobe returned non-numeric duration: "${out}"`);
+    const meta = await parseMediaBuffer(bytes);
+    const seconds = meta.format.duration;
+    if (seconds === undefined || !Number.isFinite(seconds)) {
+      throw new MuxError(
+        `music-metadata returned non-numeric duration: "${seconds}"`,
+      );
     }
     return seconds;
-  } finally {
-    try {
-      await fs.rm(tmp, { recursive: true, force: true });
-    } catch {
-      /* best-effort */
-    }
+  } catch (err) {
+    if (err instanceof MuxError) throw err;
+    throw new MuxError(`music-metadata parse failed: ${(err as Error).message}`);
   }
 }
