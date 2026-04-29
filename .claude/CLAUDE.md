@@ -1,7 +1,7 @@
 # tachles — Claude Project Context
 
 Hebrew-first AI platform for Israeli UGC product video ads.
-**Current version:** V12.5 (2026-04-30)
+**Current version:** V12.7 (2026-04-30)
 **Production:** https://tachles-lac.vercel.app
 **Output:** 9:16 MP4 ads, 15s or 30s, Hebrew voice-over + RTL captions + background music.
 
@@ -43,6 +43,8 @@ Hebrew-first AI platform for Israeli UGC product video ads.
 - V12.3 — Remaining 4 disk readers patched (kling.imageToPayload, kling.downloadAsBuffer, pixverse.resolveToBytes, mux-audio.readUrlAsBuffer). All `process.cwd()/public/` outside `LocalStorage` adapter and `read-public-asset.ts` itself eliminated.
 - V12.4 — Voice-sample preview CORS fix. R2 returns 403 on OPTIONS preflight (admin-scope token needed to set CORS). `voice-presets.ts sampleUrl` reverted to `/api/voice/sample/<id>` (same-origin). API route lookup chain: R2 → local disk → ElevenLabs synth → cache back to BOTH. New helper `scripts/set-r2-cors.ts` for when an admin R2 token is available.
 - V12.5 — Live provider balance dashboard. `lib/providers/balance.ts` queries Kling `/account/costs`, PixVerse `/openapi/v2/account/balance`, ElevenLabs `/v1/user/subscription`, and OpenAI `/v1/organization/costs` in parallel; surfaced at the top of `/admin/costs` with 60s revalidation. Soft-fails per-provider — an outage on one doesn't break the page.
+- V12.6 — Graceful per-provider fallback. When a balance fetcher fails (HTTP 401/403/network), the card falls back to local `ApiCall` aggregates (30d spend + call count) instead of just showing the error. `ProviderFallbackCard` keeps the error visible in a `<details>` block with a fix hint.
+- V12.7 — OpenAI parser fix + admin key. `fetchOpenAIBalance` was crashing because `/v1/organization/costs` sometimes returns `amount.value` as a string and `+` was concatenating. Coerced with `Number(...)`. New env var `OPENAI_ADMIN_API_KEY` (sk-admin-…) is preferred over `OPENAI_API_KEY` for Administration API reads — regular keys (sk-svcacct, sk-…) are scoped to model invocation only.
 
 ---
 

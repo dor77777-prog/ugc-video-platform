@@ -3,7 +3,7 @@
 Hebrew-first AI platform for generating Israeli UGC product video ads from a product URL.
 
 **Brand:** מודעות וידאו שמוכרות. תכל'ס.
-**Status:** V12.5 (April 30 2026) — end-to-end functional, all wizard steps use real providers, no mocks in the active path. Live provider balance dashboard at `/admin/costs`.
+**Status:** V12.7 (April 30 2026) — end-to-end functional, all wizard steps use real providers, no mocks in the active path. Live provider balance dashboard at `/admin/costs` shows real data for all 4 paid providers (Kling, PixVerse, ElevenLabs, OpenAI) — V12.6 adds graceful per-provider fallback to local spend aggregates, V12.7 fixes the OpenAI parser and adds a dedicated admin-scope key (`OPENAI_ADMIN_API_KEY`).
 **Production:** https://tachles-lac.vercel.app (Vercel web + Railway worker + Supabase Postgres + Redis Cloud + Cloudflare R2).
 **Output:** 9:16 MP4 ads, 15s or 30s, with Hebrew voice-over + RTL captions + background music.
 
@@ -107,6 +107,11 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY="..."
 ADMIN_EMAILS="you@example.com"
 
 OPENAI_API_KEY="sk-..."
+# Optional — admin-scope key (sk-admin-…) used ONLY for /v1/organization/costs
+# reads on the /admin/costs balance card. Regular OPENAI_API_KEY can't read
+# Administration API resources. If unset, the dashboard card falls back to
+# local ApiCall aggregates (V12.6 fallback).
+OPENAI_ADMIN_API_KEY=""
 ELEVENLABS_API_KEY="..."
 
 # Kling — Bearer token (wrappers) OR AK/SK pair (official api-singapore)

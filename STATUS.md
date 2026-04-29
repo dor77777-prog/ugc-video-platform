@@ -1,9 +1,13 @@
 # tachles · STATUS
 
-Living document. Last update: **2026-04-30** (V12.5 — live provider
-balance dashboard at `/admin/costs` showing remaining capacity for
-Kling / PixVerse / ElevenLabs / OpenAI; voice-sample CORS preflight
-fix routes previews back through Vercel API for same-origin cache).
+Living document. Last update: **2026-04-30** (V12.7 — OpenAI balance
+fetcher hardened: explicit `Number()` coercion in the daily-spend
+reduce loop fixes a `total30.toFixed is not a function` crash when
+`/v1/organization/costs` returns `amount.value` as a string. Now all 4
+provider cards in `/admin/costs` show real data using the new
+`OPENAI_ADMIN_API_KEY` env var — admin-scoped key dedicated to
+Administration API reads, separate from `OPENAI_API_KEY` used for
+model invocation).
 
 This is the deep spec — what each subsystem actually does, where it
 lives, what's real vs mocked, and known issues. For a high-level pitch
@@ -555,6 +559,8 @@ versus the typical 30s-mode video cost.
 
 | Tag | Date | Headline |
 |-----|------|----------|
+| **V12.7** | 2026-04-30 | **OpenAI balance parser fix + admin-scope key.** `fetchOpenAIBalance` was crashing with `total30.toFixed is not a function` because `/v1/organization/costs` sometimes returns `amount.value` as a string and `+` was concatenating, not adding. Coerce with `Number(r.amount?.value ?? 0)`. New env var `OPENAI_ADMIN_API_KEY` (sk-admin-…) — dedicated admin-scope key for Administration API reads, preferred over `OPENAI_API_KEY` (which is restricted to model invocation). All 4 cards on `/admin/costs` now show live data: Kling, PixVerse, ElevenLabs, OpenAI ($11.07 / 30d, $4.40 / 24h on smoke test). |
+| **V12.6** | 2026-04-30 | **Graceful per-provider fallback** on `/admin/costs`. When a balance fetcher fails (HTTP 401 / 403 / network), the card no longer just shows the error — it falls back to local `ApiCall` aggregates (30d spend + call count) so the page stays useful. New helper `ProviderFallbackCard` keeps the error visible in a `<details>` block with a fix hint (e.g. "add user_read scope to ElevenLabs key"). |
 | **V12.5** | 2026-04-30 | **Live provider balance dashboard** in `/admin/costs`. New `lib/providers/balance.ts` fetches live capacity from all 4 paid providers in parallel, soft-fails per-provider, caches 60s. Cards show: Kling (remaining units / clips / USD value, per-pack table with expiry), PixVerse (credit_monthly + credit_package / scenes / USD), ElevenLabs (tier + chars + reset date / scenes / USD), OpenAI (24h / 7d / 30d spend cuts via `/v1/organization/costs`). |
 | **V12.4** | 2026-04-30 | **Voice-sample CORS preflight fix.** R2 bucket returns 403 on OPTIONS preflight (admin-only token can configure CORS), so `<audio>` Range requests for cross-origin samples failed with "Failed to fetch". Reverted `voice-presets.ts sampleUrl` to `/api/voice/sample/<id>` (same-origin). API route lookup chain now: R2 first → local disk → ElevenLabs synth on demand → cache to BOTH R2 + disk. Saves ~$0.005 per click after first hit. New helper script: `scripts/set-r2-cors.ts` (waiting for an admin-scope R2 token to apply). |
 | **V12.3** | 2026-04-30 | All disk reads via `readPublicAsset`. Patched `kling.imageToPayload`, `kling.downloadAsBuffer`, `pixverse.resolveToBytes`, `mux-audio.readUrlAsBuffer` so the entire downstream pipeline (Kling i2v / PixVerse lip-sync / ffmpeg mux) is Vercel-safe. No more `process.cwd()/public/` calls outside `LocalStorage` adapter + the helper itself. |

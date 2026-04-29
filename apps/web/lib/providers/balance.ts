@@ -301,8 +301,14 @@ export interface OpenAIBalanceError {
 export async function fetchOpenAIBalance(): Promise<
   OpenAIBalance | OpenAIBalanceError
 > {
-  const apiKey = process.env.OPENAI_API_KEY?.trim();
-  if (!apiKey) return { ok: false, error: 'OPENAI_API_KEY not configured' };
+  // Prefer the dedicated admin key (sk-admin-...) when set — that's the
+  // only key shape OpenAI authorizes for /v1/organization/costs +
+  // /v1/organization/usage. The regular sk-svcacct- / sk-... keys are
+  // restricted to model invocation scopes.
+  const apiKey =
+    process.env.OPENAI_ADMIN_API_KEY?.trim() ||
+    process.env.OPENAI_API_KEY?.trim();
+  if (!apiKey) return { ok: false, error: 'OPENAI_API_KEY / OPENAI_ADMIN_API_KEY not configured' };
 
   // OpenAI's costs API takes Unix-seconds start_time + bucket_width.
   const now = Math.floor(Date.now() / 1000);
@@ -342,8 +348,10 @@ export async function fetchOpenAIBalance(): Promise<
     const cutoff7 = now - 7 * 24 * 60 * 60;
     const cutoff24 = now - 24 * 60 * 60;
     for (const bucket of json.data ?? []) {
-      const dayUsd = (bucket.results ?? []).reduce(
-        (sum, r) => sum + (r.amount?.value ?? 0),
+      // OpenAI sometimes returns amount.value as a string ("0.0123") and
+      // sometimes as a number — coerce explicitly so `+` always adds.
+      const dayUsd = (bucket.results ?? []).reduce<number>(
+        (sum, r) => sum + Number(r.amount?.value ?? 0),
         0,
       );
       total30 += dayUsd;
