@@ -9,7 +9,9 @@ WORKDIR /app
 
 # Install deps with dev included — tsx (used to run worker TS at runtime)
 # lives in devDependencies, and Railway defaults NODE_ENV=production which
-# would otherwise skip it.
+# would otherwise skip it. The workspace packages (@ugc-video/shared and
+# @ugc-video/prompts) export .ts files directly, so tsx is required at
+# runtime — pre-compiling won't help.
 COPY package*.json ./
 COPY apps/worker/package.json ./apps/worker/
 COPY packages/shared/package.json ./packages/shared/
@@ -25,4 +27,8 @@ COPY tsconfig.base.json ./
 
 RUN npx prisma generate
 
-CMD ["sh", "-c", "echo '=== src/ contents ==='; ls -la apps/worker/src/; echo '=== launching ==='; exec npx tsx apps/worker/src/index.ts"]
+# Run from inside apps/worker — same cwd as `npm run dev:worker` uses
+# locally. Without this cd, tsx (invoked from /app) misresolves the
+# relative `./env` import inside the monorepo's hoisted node_modules.
+WORKDIR /app/apps/worker
+CMD ["sh", "-c", "echo '=== src/ contents ==='; ls -la src/; echo '=== launch tsx ==='; exec npx tsx src/index.ts"]
