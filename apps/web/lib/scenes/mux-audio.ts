@@ -117,14 +117,18 @@ async function runFfmpeg(args: string[]): Promise<void> {
 
 // Read a local /uploads/... URL OR a remote URL into bytes. Used for
 // pulling the voice MP3 from disk before muxing.
+//
+// V12.3 — production-safe: readPublicAsset handles disk (dev),
+// Vercel HTTP fallback (where public/ is excluded from the function
+// bundle), and absolute URLs (R2) all in one path.
 export async function readUrlAsBuffer(url: string): Promise<Buffer> {
-  if (url.startsWith('/')) {
-    const filePath = path.join(process.cwd(), 'public', url.replace(/^\/+/, ''));
-    return fs.readFile(filePath);
+  const { readPublicAsset } = await import('@/lib/storage/read-public-asset');
+  try {
+    const { bytes } = await readPublicAsset(url);
+    return bytes;
+  } catch (err) {
+    throw new MuxError(`Failed to fetch ${url}: ${(err as Error).message}`);
   }
-  const res = await fetch(url);
-  if (!res.ok) throw new MuxError(`Failed to fetch ${url}: HTTP ${res.status}`);
-  return Buffer.from(await res.arrayBuffer());
 }
 
 // Measure a media file's actual duration in seconds. Used after Kling

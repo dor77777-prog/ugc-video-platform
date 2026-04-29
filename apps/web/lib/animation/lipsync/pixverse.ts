@@ -137,10 +137,11 @@ function newTraceId(): string {
 // we read directly from disk. That's how we recover from "fetch failed"
 // during a tunnel hiccup — the file is right there on disk.
 async function resolveToBytes(url: string): Promise<{ bytes: Buffer; filename: string }> {
-  const fs = await import('fs/promises');
   const path = await import('path');
 
-  // Shape 2: same-host public URL → treat as local /uploads path.
+  // Shape 2: same-host public URL → strip the host so readPublicAsset
+  // treats it as a local /uploads path (works in dev) and falls back
+  // to HTTP fetch from PUBLIC_BASE_URL on Vercel.
   const publicBase = (process.env.PUBLIC_BASE_URL ?? '').replace(/\/+$/, '');
   let effective = url;
   if (publicBase && url.startsWith(publicBase + '/')) {
@@ -148,13 +149,14 @@ async function resolveToBytes(url: string): Promise<{ bytes: Buffer; filename: s
   }
 
   if (effective.startsWith('/')) {
-    const filePath = path.join(process.cwd(), 'public', effective.replace(/^\/+/, ''));
+    // V12.3 — production-safe via the central helper.
+    const { readPublicAsset } = await import('@/lib/storage/read-public-asset');
     try {
-      const bytes = await fs.readFile(filePath);
-      return { bytes, filename: path.basename(filePath) };
+      const { bytes } = await readPublicAsset(effective);
+      return { bytes, filename: path.basename(effective) };
     } catch (err) {
       throw new LipSyncProviderError(
-        `Failed to read ${filePath}: ${(err as Error).message}`,
+        `Failed to read ${effective}: ${(err as Error).message}`,
         'pixverse',
       );
     }

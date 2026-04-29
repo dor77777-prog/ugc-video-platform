@@ -137,9 +137,10 @@ async function imageToPayload(imageUrl: string): Promise<string> {
     return imageUrl;
   }
   if (imageUrl.startsWith('/')) {
-    const filePath = path.join(process.cwd(), 'public', imageUrl.replace(/^\/+/, ''));
-    const buf = await fs.readFile(filePath);
-    return buf.toString('base64');
+    // V12.1 — readPublicAsset handles disk + Vercel HTTP fallback.
+    const { readPublicAsset } = await import('@/lib/storage/read-public-asset');
+    const { bytes } = await readPublicAsset(imageUrl);
+    return bytes.toString('base64');
   }
   return imageUrl; // assume already base64
 }
@@ -355,18 +356,13 @@ async function pollAndDownload(
 /* ---------- Misc helpers ---------- */
 
 async function downloadAsBuffer(url: string): Promise<Buffer> {
-  // /uploads/* is local; everything else is over the network. The mock
-  // path uses this for the silent video URL, which may be either.
-  if (url.startsWith('/')) {
-    const filePath = path.join(process.cwd(), 'public', url.replace(/^\/+/, ''));
-    return fs.readFile(filePath);
-  }
-  const res = await fetch(url);
-  if (!res.ok) {
-    throw new Error(`Failed to download Kling output: HTTP ${res.status}`);
-  }
-  const ab = await res.arrayBuffer();
-  return Buffer.from(ab);
+  // V12.3 — production-safe: readPublicAsset handles both local disk
+  // (dev) and HTTP fallback to PUBLIC_BASE_URL (Vercel where public/
+  // is excluded from the function bundle), plus absolute URLs (R2)
+  // pass straight through.
+  const { readPublicAsset } = await import('@/lib/storage/read-public-asset');
+  const { bytes } = await readPublicAsset(url);
+  return bytes;
 }
 
 function sleep(ms: number): Promise<void> {
