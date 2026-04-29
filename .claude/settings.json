@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run typecheck)",
+      "Bash(npm run typecheck --workspaces --if-present)",
+      "Bash(npm run prisma:generate)",
+      "Bash(npm run prisma:studio)",
+      "Bash(npm run test:render)",
+      "Bash(npx prisma generate)",
+      "Bash(npx prisma format)",
+      "Bash(npx prisma validate)",
+      "Bash(ls:*)",
+      "Bash(find:*)",
+      "Bash(grep:*)",
+      "Bash(cat:*)",
+      "Bash(git log:*)",
+      "Bash(git diff:*)",
+      "Bash(git status)",
+      "Bash(git branch:*)",
+      "Bash(git show:*)",
+      "Bash(node --version)",
+      "Bash(npm --version)",
+      "Bash(npx tsc --noEmit:*)"
+    ]
+  }
+}
