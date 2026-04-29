@@ -3,7 +3,7 @@
 Hebrew-first AI platform for generating Israeli UGC product video ads from a product URL.
 
 **Brand:** מודעות וידאו שמוכרות. תכל'ס.
-**Status:** V12.3 (April 30 2026) — end-to-end functional, all wizard steps use real providers, no mocks in the active path.
+**Status:** V12.5 (April 30 2026) — end-to-end functional, all wizard steps use real providers, no mocks in the active path. Live provider balance dashboard at `/admin/costs`.
 **Production:** https://tachles-lac.vercel.app (Vercel web + Railway worker + Supabase Postgres + Redis Cloud + Cloudflare R2).
 **Output:** 9:16 MP4 ads, 15s or 30s, with Hebrew voice-over + RTL captions + background music.
 
@@ -275,7 +275,7 @@ quality and accept the cost.
 | Page | What it shows |
 |------|---------------|
 | `/admin` | 24 h KPIs: signups, active users, queue depth, recent failed jobs |
-| `/admin/costs` | Live in-flight ApiCalls (with elapsed timer), per-provider cost cards, **operation pricing table** (USD cost / credits charged / list margin %), **15s vs 30s video estimate**, **plan economics** (effective credit value, underwater warnings), 30-day per-project leaderboard, latency P50/avg/max, recent failures, last 50 calls |
+| `/admin/costs` | **V12.5: live balance cards for all 4 paid providers** (Kling pack units / PixVerse credits / ElevenLabs chars / OpenAI 24h-7d-30d spend, refreshed every 60s) · Live in-flight ApiCalls with elapsed timer · per-provider cost cards · **operation pricing table** (USD cost / credits charged / list margin %) · **15s vs 30s video estimate** · **plan economics** (effective credit value, underwater warnings) · 30-day per-project leaderboard · latency P50/avg/max · recent failures · last 50 calls |
 | `/admin/users` | User list, plan, credits balance, per-user `spendCapUsd` override, ban toggle, manual credit grant + reason |
 | `/admin/projects` | Project list, product name, status, owner |
 | `/admin/renders` | RenderJob list, status filter, error message inspector |

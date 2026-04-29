@@ -1,9 +1,9 @@
 # tachles · STATUS
 
-Living document. Last update: **2026-04-30** (V12.3 — production deploy
-on Vercel + Railway with R2 cloud storage; all `process.cwd()/public/`
-disk reads routed through `readPublicAsset` so the pipeline is fully
-serverless-safe; static catalogs hosted directly on Cloudflare R2).
+Living document. Last update: **2026-04-30** (V12.5 — live provider
+balance dashboard at `/admin/costs` showing remaining capacity for
+Kling / PixVerse / ElevenLabs / OpenAI; voice-sample CORS preflight
+fix routes previews back through Vercel API for same-origin cache).
 
 This is the deep spec — what each subsystem actually does, where it
 lives, what's real vs mocked, and known issues. For a high-level pitch
@@ -555,6 +555,8 @@ versus the typical 30s-mode video cost.
 
 | Tag | Date | Headline |
 |-----|------|----------|
+| **V12.5** | 2026-04-30 | **Live provider balance dashboard** in `/admin/costs`. New `lib/providers/balance.ts` fetches live capacity from all 4 paid providers in parallel, soft-fails per-provider, caches 60s. Cards show: Kling (remaining units / clips / USD value, per-pack table with expiry), PixVerse (credit_monthly + credit_package / scenes / USD), ElevenLabs (tier + chars + reset date / scenes / USD), OpenAI (24h / 7d / 30d spend cuts via `/v1/organization/costs`). |
+| **V12.4** | 2026-04-30 | **Voice-sample CORS preflight fix.** R2 bucket returns 403 on OPTIONS preflight (admin-only token can configure CORS), so `<audio>` Range requests for cross-origin samples failed with "Failed to fetch". Reverted `voice-presets.ts sampleUrl` to `/api/voice/sample/<id>` (same-origin). API route lookup chain now: R2 first → local disk → ElevenLabs synth on demand → cache to BOTH R2 + disk. Saves ~$0.005 per click after first hit. New helper script: `scripts/set-r2-cors.ts` (waiting for an admin-scope R2 token to apply). |
 | **V12.3** | 2026-04-30 | All disk reads via `readPublicAsset`. Patched `kling.imageToPayload`, `kling.downloadAsBuffer`, `pixverse.resolveToBytes`, `mux-audio.readUrlAsBuffer` so the entire downstream pipeline (Kling i2v / PixVerse lip-sync / ffmpeg mux) is Vercel-safe. No more `process.cwd()/public/` calls outside `LocalStorage` adapter + the helper itself. |
 | **V12.2** | 2026-04-30 | Static catalogs migrated to R2. 25 avatars + 17 music tracks + 30 voice samples uploaded to bucket `ugc-video` (132 MB). `apps/web/lib/avatars/catalog.ts` returns `https://pub-eb116bdbeab8486f96ecf7c4fbc1014a.r2.dev/avatars/<id>.png`; same pattern for music + voice samples. New uploader: `npx tsx apps/web/scripts/upload-static-assets-to-r2.ts`. |
 | **V12.1** | 2026-04-30 | `lib/storage/read-public-asset.ts` — central helper with disk-first + HTTP-fallback strategy. Replaces 5 disk-only readers (scene-images, motion-analysis, face-gate, image-qa, product-visual-analysis). Solves Vercel ENOENT after `7aac7bc` excluded `public/` from the function bundle. |

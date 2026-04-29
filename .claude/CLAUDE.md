@@ -1,7 +1,7 @@
 # tachles — Claude Project Context
 
 Hebrew-first AI platform for Israeli UGC product video ads.
-**Current version:** V12.3 (2026-04-30)
+**Current version:** V12.5 (2026-04-30)
 **Production:** https://tachles-lac.vercel.app
 **Output:** 9:16 MP4 ads, 15s or 30s, Hebrew voice-over + RTL captions + background music.
 
@@ -41,6 +41,8 @@ Hebrew-first AI platform for Israeli UGC product video ads.
 - V12.1 — `lib/storage/read-public-asset.ts` helper. Try-disk → fallback-HTTP. Replaced 5 disk-only readers (scene-images, motion-analysis, face-gate, image-qa, product-visual-analysis).
 - V12.2 — Static catalogs (avatars + music + voice samples) migrated to R2. URLs hard-coded in catalog files. Bulk uploader: `apps/web/scripts/upload-static-assets-to-r2.ts`.
 - V12.3 — Remaining 4 disk readers patched (kling.imageToPayload, kling.downloadAsBuffer, pixverse.resolveToBytes, mux-audio.readUrlAsBuffer). All `process.cwd()/public/` outside `LocalStorage` adapter and `read-public-asset.ts` itself eliminated.
+- V12.4 — Voice-sample preview CORS fix. R2 returns 403 on OPTIONS preflight (admin-scope token needed to set CORS). `voice-presets.ts sampleUrl` reverted to `/api/voice/sample/<id>` (same-origin). API route lookup chain: R2 → local disk → ElevenLabs synth → cache back to BOTH. New helper `scripts/set-r2-cors.ts` for when an admin R2 token is available.
+- V12.5 — Live provider balance dashboard. `lib/providers/balance.ts` queries Kling `/account/costs`, PixVerse `/openapi/v2/account/balance`, ElevenLabs `/v1/user/subscription`, and OpenAI `/v1/organization/costs` in parallel; surfaced at the top of `/admin/costs` with 60s revalidation. Soft-fails per-provider — an outage on one doesn't break the page.
 
 ---
 
