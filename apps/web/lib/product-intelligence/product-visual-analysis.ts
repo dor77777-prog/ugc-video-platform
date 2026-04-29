@@ -12,8 +12,6 @@
 // rather than block the dossier — the script engine still gets the
 // text-only dossier; image QA just can't enforce the visual mistakes.
 
-import { promises as fs } from 'fs';
-import path from 'path';
 import OpenAI from 'openai';
 import type { ProductVisualAnalysis } from './types';
 
@@ -176,18 +174,7 @@ interface ImageContentPart {
 }
 
 async function imageToContent(imageUrl: string): Promise<ImageContentPart> {
-  if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) {
-    return { type: 'image_url', image_url: { url: imageUrl } };
-  }
-  if (imageUrl.startsWith('/')) {
-    const filePath = path.join(process.cwd(), 'public', imageUrl.replace(/^\/+/, ''));
-    const buf = await fs.readFile(filePath);
-    const ext = (imageUrl.split('.').pop() ?? 'png').toLowerCase();
-    const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : 'image/png';
-    return {
-      type: 'image_url',
-      image_url: { url: `data:${mime};base64,${buf.toString('base64')}` },
-    };
-  }
-  return { type: 'image_url', image_url: { url: imageUrl } };
+  const { readPublicAssetAsDataUrl } = await import('@/lib/storage/read-public-asset');
+  const dataUrl = await readPublicAssetAsDataUrl(imageUrl);
+  return { type: 'image_url', image_url: { url: dataUrl } };
 }

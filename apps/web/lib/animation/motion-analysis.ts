@@ -16,8 +16,6 @@
 // believable.
 
 import OpenAI from 'openai';
-import { promises as fs } from 'fs';
-import path from 'path';
 
 const MODEL = process.env.OPENAI_MOTION_VISION_MODEL ?? 'gpt-4o-mini';
 const REQUEST_TIMEOUT_MS = 30_000;
@@ -205,19 +203,10 @@ interface ImageContentPart {
 }
 
 async function imageToContent(imageUrl: string): Promise<ImageContentPart> {
-  if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) {
-    return { type: 'image_url', image_url: { url: imageUrl } };
-  }
-  if (imageUrl.startsWith('/')) {
-    const filePath = path.join(process.cwd(), 'public', imageUrl.replace(/^\/+/, ''));
-    const buf = await fs.readFile(filePath);
-    const ext = (imageUrl.split('.').pop() ?? 'png').toLowerCase();
-    const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : 'image/png';
-    return {
-      type: 'image_url',
-      image_url: { url: `data:${mime};base64,${buf.toString('base64')}` },
-    };
-  }
-  // Already a data URL or base64 — pass through.
-  return { type: 'image_url', image_url: { url: imageUrl } };
+  // V12.1 — read-public-asset handles both disk + HTTP fallback so
+  // Vercel (where public/ is excluded from the function bundle)
+  // doesn't ENOENT on /avatars/*.png.
+  const { readPublicAssetAsDataUrl } = await import('@/lib/storage/read-public-asset');
+  const dataUrl = await readPublicAssetAsDataUrl(imageUrl);
+  return { type: 'image_url', image_url: { url: dataUrl } };
 }

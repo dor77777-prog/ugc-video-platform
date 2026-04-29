@@ -1,6 +1,4 @@
 import OpenAI, { toFile } from 'openai';
-import { promises as fs } from 'fs';
-import path from 'path';
 import {
   buildScenePrompt,
   type SceneImagePromptInput,
@@ -231,32 +229,12 @@ async function urlToFile(
   url: string,
   fallbackName: string,
 ): Promise<Awaited<ReturnType<typeof toFile>>> {
-  // App-relative URL → read from public/ on disk.
-  if (url.startsWith('/')) {
-    const filePath = path.join(process.cwd(), 'public', url.replace(/^\/+/, ''));
-    const buf = await fs.readFile(filePath);
-    const ct = guessMimeFromExt(filePath);
-    return toFile(buf, fallbackName, { type: ct });
-  }
-
-  // Absolute URL → fetch over the network with its own timeout (60s).
-  const ac = new AbortController();
-  const timeoutId = setTimeout(() => ac.abort(), 60_000);
-  try {
-    const res = await fetch(url, { signal: ac.signal });
-    if (!res.ok) throw new Error(`Failed to fetch reference image: ${url} → HTTP ${res.status}`);
-    const buf = Buffer.from(await res.arrayBuffer());
-    const ct = res.headers.get('content-type') ?? 'image/png';
-    return toFile(buf, fallbackName, { type: ct });
-  } finally {
-    clearTimeout(timeoutId);
-  }
+  // V12.1 — readPublicAsset handles both local disk (dev) AND HTTP
+  // fetch from PUBLIC_BASE_URL (Vercel, where public/ isn't in the
+  // serverless function bundle). Eliminates the
+  // "ENOENT: /var/task/apps/web/public/avatars/eran.png" error.
+  const { readPublicAsset } = await import('@/lib/storage/read-public-asset');
+  const { bytes, contentType } = await readPublicAsset(url);
+  return toFile(bytes, fallbackName, { type: contentType });
 }
 
-function guessMimeFromExt(filePath: string): string {
-  const ext = path.extname(filePath).toLowerCase();
-  if (ext === '.jpg' || ext === '.jpeg') return 'image/jpeg';
-  if (ext === '.webp') return 'image/webp';
-  if (ext === '.gif') return 'image/gif';
-  return 'image/png';
-}

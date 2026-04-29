@@ -10,8 +10,6 @@
 // to a $0.06 image regen, the QA is essentially free — and prevents
 // shipping a frame that clearly contradicts the brief.
 
-import { promises as fs } from 'fs';
-import path from 'path';
 import OpenAI from 'openai';
 import type { ImageBrief } from '@/lib/image-briefs/image-brief-builder';
 import type { ProductVisualAnalysis } from '@/lib/product-intelligence';
@@ -247,18 +245,7 @@ interface ImageContentPart {
 }
 
 async function imageToContent(imageUrl: string): Promise<ImageContentPart> {
-  if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) {
-    return { type: 'image_url', image_url: { url: imageUrl } };
-  }
-  if (imageUrl.startsWith('/')) {
-    const filePath = path.join(process.cwd(), 'public', imageUrl.replace(/^\/+/, ''));
-    const buf = await fs.readFile(filePath);
-    const ext = (imageUrl.split('.').pop() ?? 'png').toLowerCase();
-    const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : 'image/png';
-    return {
-      type: 'image_url',
-      image_url: { url: `data:${mime};base64,${buf.toString('base64')}` },
-    };
-  }
-  return { type: 'image_url', image_url: { url: imageUrl } };
+  const { readPublicAssetAsDataUrl } = await import('@/lib/storage/read-public-asset');
+  const dataUrl = await readPublicAssetAsDataUrl(imageUrl);
+  return { type: 'image_url', image_url: { url: dataUrl } };
 }

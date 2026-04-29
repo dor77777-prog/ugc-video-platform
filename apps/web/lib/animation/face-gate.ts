@@ -171,21 +171,8 @@ export async function runFaceGate(input: {
 }
 
 async function resolveImageForOpenAI(url: string): Promise<string> {
-  if (url.startsWith('http://') || url.startsWith('https://')) {
-    return url;
-  }
-  // Local /uploads path → data URL.
-  if (url.startsWith('/')) {
-    const fs = await import('fs/promises');
-    const path = await import('path');
-    const filePath = path.join(process.cwd(), 'public', url.replace(/^\/+/, ''));
-    const bytes = await fs.readFile(filePath);
-    const ext = path.extname(filePath).toLowerCase();
-    const mime =
-      ext === '.png' ? 'image/png' :
-      ext === '.webp' ? 'image/webp' :
-      'image/jpeg';
-    return `data:${mime};base64,${bytes.toString('base64')}`;
-  }
-  return url; // best effort
+  // V12.1 — readPublicAssetAsDataUrl handles both local disk (dev)
+  // and HTTP fallback (Vercel public/ excluded from bundle).
+  const { readPublicAssetAsDataUrl } = await import('@/lib/storage/read-public-asset');
+  return readPublicAssetAsDataUrl(url);
 }
