@@ -1,0 +1,26 @@
+# Railway-only ignore. The web app's public/ is 150MB+ of avatars and
+# music tracks that the worker doesn't touch. Vercel still gets them
+# because Vercel doesn't read this file.
+apps/web/public/
+apps/web/.next/
+apps/web/.vercel/
+
+# Worker doesn't need the web codebase at all (it only imports from the
+# packages/* workspaces). Excluding it keeps uploads tiny.
+apps/web/app/
+apps/web/components/
+apps/web/lib/
+apps/web/styles/
+apps/web/middleware.ts
+apps/web/next.config.mjs
+apps/web/postcss.config.mjs
+apps/web/tailwind.config.ts
+
+# Secrets bundle is git-ignored but belt-and-suspenders.
+ugc-video-platform-secrets/
+ugc-video-platform-secrets.zip
+
+# Local env files (never sent to Railway anyway).
+.env
+.env.local
+.env.production.tmp
