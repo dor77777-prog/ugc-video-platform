@@ -25,4 +25,4 @@ COPY tsconfig.base.json ./
 
 RUN npx prisma generate
 
-CMD ["npx", "tsx", "apps/worker/src/index.ts"]
+CMD ["sh", "-c", "echo '=== src/ contents ==='; ls -la apps/worker/src/; echo '=== launching ==='; exec npx tsx apps/worker/src/index.ts"]
