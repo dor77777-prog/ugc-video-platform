@@ -41,10 +41,14 @@ export function extractCheerioFallback($: CheerioAPI, baseUrl: string): CheerioF
   // Also strip obvious chrome (nav, header, footer, cookie banners,
   // recommended-products carousels) so the description scanner doesn't
   // pick up "Free shipping over $50" lines from the header.
+  // Also remove review/rating containers by both class AND id — the
+  // class-only selector misses elements like <section id="reviews">.
   $(
     'nav, header, footer, [role="navigation"], [role="banner"], [role="contentinfo"], ' +
       '[class*="cookie"], [class*="newsletter"], [class*="related"], [class*="recommend"], ' +
-      '[class*="reviews"], [class*="testimonial"], [class*="footer"], [class*="header"], [class*="nav-"]',
+      '[class*="reviews"], [class*="review"], [class*="testimonial"], [class*="rating"], ' +
+      '[class*="footer"], [class*="header"], [class*="nav-"], ' +
+      '[id*="reviews"], [id*="review"], [id*="testimonial"], [id*="rating"]',
   ).remove();
 
   const title = ($('h1').first().text().trim() ||

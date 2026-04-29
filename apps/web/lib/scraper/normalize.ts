@@ -120,7 +120,7 @@ function cleanDescription(s: string): string {
   // Many Shopify / JSON-LD product descriptions inline a <style>
   // block at the top of the description field, so this fix is
   // load-bearing.
-  return s
+  const stripped = s
     .replace(/<style\b[^>]*>[\s\S]*?<\/style\s*>/gi, ' ')
     .replace(/<script\b[^>]*>[\s\S]*?<\/script\s*>/gi, ' ')
     .replace(/<noscript\b[^>]*>[\s\S]*?<\/noscript\s*>/gi, ' ')
@@ -131,18 +131,29 @@ function cleanDescription(s: string): string {
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
     .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, 1500);
+    .trim();
+
+  // Strip lines that consist primarily of JSON key-value pairs — review
+  // structured data that sometimes arrives as raw text nodes rather than
+  // proper <script type="application/ld+json"> elements.
+  const cleaned = stripped
+    .split('\n')
+    .filter((line) => {
+      const jsonKeyCount = (line.match(/"[a-zA-Z_$][\w$]*"\s*:/g) ?? []).length;
+      return jsonKeyCount < 3;
+    })
+    .join('\n');
+
+  return cleaned.slice(0, 1500);
 }
 
-// Detect when a "description" is actually CSS/JS leakage. Triggers a
+// Detect when a "description" is actually CSS/JS/JSON-LD leakage. Triggers a
 // fallback to the next-best source. Patterns we look for:
 //   - high density of CSS-rule punctuation (`{`, `}`, `;`, `:`)
 //   - common CSS keywords AT WORD BOUNDARIES (`color:`, `background-`,
 //     `padding:`, `font-family:`, etc.)
 //   - JS function/var keywords
-// If the cleaned text contains any of those AND the share of CSS
-// punctuation chars is unusually high vs. natural language, reject it.
+//   - JSON-LD review / structured-data keys (`"@type":`, `"ratingValue":`, etc.)
 export function looksLikeCssOrJsGarbage(s: string): boolean {
   if (!s) return true;
   const len = s.length;
@@ -168,6 +179,15 @@ export function looksLikeCssOrJsGarbage(s: string): boolean {
   // JS function/var blocks.
   if (/\bfunction\s*\(/i.test(s) && /\}\s*$/.test(s)) return true;
   if (/\bvar\s+\w+\s*=/.test(s) && /\;\s*\w/.test(s)) return true;
+  // JSON-LD / structured-data review objects. These appear when a
+  // <script type="application/ld+json"> block is rendered as a text
+  // node, or when the "richest description" strategy picks up raw
+  // review JSON that leaked through cheerio's body scan.
+  if (/"@type"\s*:/.test(s)) return true;
+  if (/"ratingValue"\s*:|"reviewBody"\s*:|"aggregateRating"\s*:/i.test(s)) return true;
+  // High density of JSON key syntax (≥5 quoted-key: pairs = structured data).
+  const jsonKeys = (s.match(/"[a-zA-Z_$][\w$]*"\s*:/g) ?? []).length;
+  if (jsonKeys >= 5) return true;
   return false;
 }
 
