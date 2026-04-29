@@ -15,8 +15,13 @@ import {
   PLAN_CONFIGS,
   effectiveCreditValueUsd,
 } from '@/lib/plans';
+import { fetchAllProviderBalances } from '@/lib/providers/balance';
 
 export const dynamic = 'force-dynamic';
+// Cache the live-balance section for 60s — avoids hammering Kling +
+// PixVerse on every admin page refresh, but keeps the data fresh
+// enough to be actionable.
+export const revalidate = 60;
 
 const PROVIDER_LABEL: Record<string, string> = {
   openai: 'OpenAI',
@@ -162,6 +167,10 @@ export default async function AdminUsagePage() {
     }),
   ]);
 
+  // V12.5 — live balance check on Kling + PixVerse. Soft-fails per
+  // provider so an outage on one doesn't break the page.
+  const providerBalances = await fetchAllProviderBalances();
+
   // Hydrate top-projects with project names + owner emails. The groupBy
   // returns only projectId, so a single follow-up query gets the rest.
   const projectIds = topProjects.map((p) => p.projectId).filter((x): x is string => !!x);
@@ -248,6 +257,310 @@ export default async function AdminUsagePage() {
           </CardContent>
         </Card>
       )}
+
+      {/* V12.5 — live provider balance check (Kling pack units + PixVerse credits). */}
+      <Card>
+        <CardContent className="p-5 space-y-4">
+          <div className="space-y-1">
+            <h2 className="text-lg font-bold">יתרות חיות אצל הספקים</h2>
+            <p className="text-xs text-muted-foreground">
+              מתעדכן כל 60 שניות. חישוב הקליפים/סצנות הנותרים מבוסס על שיעור הצריכה הנצפה
+              (~6.24 Kling units לקליפ 5s, ~16 PixVerse credits לסצנת lipsync).
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Kling */}
+            <div className="rounded-lg border border-border p-4 space-y-3">
+              <div className="flex items-baseline justify-between">
+                <h3 className="font-semibold">Kling AI</h3>
+                <span className="text-[10px] text-muted-foreground">image-to-video</span>
+              </div>
+              {providerBalances.kling.ok ? (
+                <>
+                  <div className="grid grid-cols-3 gap-2 text-center">
+                    <div>
+                      <div className="text-2xl font-mono font-bold">
+                        {providerBalances.kling.totalRemainingUnits.toLocaleString()}
+                      </div>
+                      <div className="text-[10px] text-muted-foreground uppercase tracking-wider">
+                        units remaining
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-2xl font-mono font-bold">
+                        ~{providerBalances.kling.estimatedClipsRemaining}
+                      </div>
+                      <div className="text-[10px] text-muted-foreground uppercase tracking-wider">
+                        קליפים אפשריים
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-2xl font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                        {fmtUSD(providerBalances.kling.estimatedUsdRemaining)}
+                      </div>
+                      <div className="text-[10px] text-muted-foreground uppercase tracking-wider">
+                        ערך נשאר
+                      </div>
+                    </div>
+                  </div>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Pack</TableHead>
+                        <TableHead className="text-right">Total</TableHead>
+                        <TableHead className="text-right">Used</TableHead>
+                        <TableHead className="text-right">Remaining</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Expires</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {providerBalances.kling.packs.map((p) => (
+                        <TableRow key={p.name}>
+                          <TableCell className="text-xs font-mono" dir="ltr">
+                            {p.name}
+                          </TableCell>
+                          <TableCell className="text-right font-mono">{p.totalUnits}</TableCell>
+                          <TableCell className="text-right font-mono">{p.usedUnits.toFixed(1)}</TableCell>
+                          <TableCell className="text-right font-mono">{p.remainingUnits.toFixed(1)}</TableCell>
+                          <TableCell>
+                            {p.status === 'online' ? (
+                              <Badge variant="success">online</Badge>
+                            ) : p.status === 'runOut' ? (
+                              <Badge variant="destructive">runOut</Badge>
+                            ) : (
+                              <Badge variant="muted">{p.status}</Badge>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-xs text-muted-foreground">
+                            {p.expiresAt.toLocaleDateString('he-IL', {
+                              year: 'numeric',
+                              month: 'short',
+                              day: 'numeric',
+                            })}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                  <div className="text-[11px] text-muted-foreground">
+                    סה"כ צרכת לכל הזמנים: {providerBalances.kling.totalUsedUnits.toFixed(1)} units
+                    {' (≈ '}
+                    {Math.floor(providerBalances.kling.totalUsedUnits / 6.24)}
+                    {' קליפים)'}
+                  </div>
+                </>
+              ) : (
+                <div className="text-sm text-destructive">
+                  {providerBalances.kling.error}
+                </div>
+              )}
+            </div>
+
+            {/* PixVerse */}
+            <div className="rounded-lg border border-border p-4 space-y-3">
+              <div className="flex items-baseline justify-between">
+                <h3 className="font-semibold">PixVerse</h3>
+                <span className="text-[10px] text-muted-foreground">lip-sync</span>
+              </div>
+              {providerBalances.pixverse.ok ? (
+                <>
+                  <div className="grid grid-cols-3 gap-2 text-center">
+                    <div>
+                      <div className="text-2xl font-mono font-bold">
+                        {providerBalances.pixverse.totalCredits.toLocaleString()}
+                      </div>
+                      <div className="text-[10px] text-muted-foreground uppercase tracking-wider">
+                        px-credits
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-2xl font-mono font-bold">
+                        ~{providerBalances.pixverse.estimatedScenesRemaining}
+                      </div>
+                      <div className="text-[10px] text-muted-foreground uppercase tracking-wider">
+                        סצנות lipsync
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-2xl font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                        {fmtUSD(providerBalances.pixverse.estimatedUsdRemaining)}
+                      </div>
+                      <div className="text-[10px] text-muted-foreground uppercase tracking-wider">
+                        ערך נשאר
+                      </div>
+                    </div>
+                  </div>
+                  <div className="space-y-1 text-xs text-muted-foreground">
+                    <div>
+                      Monthly:{' '}
+                      <span className="font-mono">
+                        {providerBalances.pixverse.creditMonthly}
+                      </span>
+                      {' · '}
+                      Package:{' '}
+                      <span className="font-mono">
+                        {providerBalances.pixverse.creditPackage}
+                      </span>
+                    </div>
+                    <div className="text-[10px]">
+                      pack pricing: ${PIXVERSE_COST_MODEL.packagePriceUsd} ={' '}
+                      {PIXVERSE_COST_MODEL.packageCredits.toLocaleString()} credits = $
+                      {PIXVERSE_COST_MODEL.usdPerPixverseCredit.toFixed(5)} per credit ·{' '}
+                      observed{' '}
+                      {PIXVERSE_COST_MODEL.observedCreditsPerLipSyncScene} credits/scene = $
+                      {PIXVERSE_COST_MODEL.observedUsdPerLipSyncScene.toFixed(4)} per scene
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div className="text-sm text-destructive">
+                  {providerBalances.pixverse.error}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* ElevenLabs */}
+            <div className="rounded-lg border border-border p-4 space-y-3">
+              <div className="flex items-baseline justify-between">
+                <h3 className="font-semibold">ElevenLabs</h3>
+                <span className="text-[10px] text-muted-foreground">Hebrew TTS</span>
+              </div>
+              {providerBalances.elevenlabs.ok ? (
+                <>
+                  <div className="grid grid-cols-3 gap-2 text-center">
+                    <div>
+                      <div className="text-2xl font-mono font-bold">
+                        {providerBalances.elevenlabs.charactersRemaining.toLocaleString()}
+                      </div>
+                      <div className="text-[10px] text-muted-foreground uppercase tracking-wider">
+                        chars remaining
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-2xl font-mono font-bold">
+                        ~{Math.floor(providerBalances.elevenlabs.charactersRemaining / 200)}
+                      </div>
+                      <div className="text-[10px] text-muted-foreground uppercase tracking-wider">
+                        סצנות (~200 תווים)
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-2xl font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                        {fmtUSD(providerBalances.elevenlabs.estimatedUsdRemaining)}
+                      </div>
+                      <div className="text-[10px] text-muted-foreground uppercase tracking-wider">
+                        ערך נשאר
+                      </div>
+                    </div>
+                  </div>
+                  <div className="space-y-1 text-xs">
+                    <div className="text-muted-foreground">
+                      Tier:{' '}
+                      <span className="font-mono">
+                        {providerBalances.elevenlabs.tier}
+                      </span>
+                      {' · '}
+                      Used:{' '}
+                      <span className="font-mono">
+                        {providerBalances.elevenlabs.characterCount.toLocaleString()}
+                      </span>
+                      {' / '}
+                      <span className="font-mono">
+                        {providerBalances.elevenlabs.characterLimit.toLocaleString()}
+                      </span>
+                      {' chars'}
+                    </div>
+                    {providerBalances.elevenlabs.resetAt && (
+                      <div className="text-[10px] text-muted-foreground">
+                        מתאפס:{' '}
+                        {providerBalances.elevenlabs.resetAt.toLocaleDateString('he-IL', {
+                          year: 'numeric',
+                          month: 'short',
+                          day: 'numeric',
+                        })}
+                      </div>
+                    )}
+                    <div className="text-[10px] text-muted-foreground">
+                      Hebrew model (eleven_v3): $0.10 / 1K chars
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div className="text-sm text-destructive">
+                  {providerBalances.elevenlabs.error}
+                </div>
+              )}
+            </div>
+
+            {/* OpenAI */}
+            <div className="rounded-lg border border-border p-4 space-y-3">
+              <div className="flex items-baseline justify-between">
+                <h3 className="font-semibold">OpenAI</h3>
+                <span className="text-[10px] text-muted-foreground">
+                  scripts · images · vision
+                </span>
+              </div>
+              {providerBalances.openai.ok ? (
+                <>
+                  <div className="grid grid-cols-3 gap-2 text-center">
+                    <div>
+                      <div className="text-2xl font-mono font-bold">
+                        {fmtUSD(providerBalances.openai.totalSpentLast24hUsd)}
+                      </div>
+                      <div className="text-[10px] text-muted-foreground uppercase tracking-wider">
+                        24 שעות
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-2xl font-mono font-bold">
+                        {fmtUSD(providerBalances.openai.totalSpentLast7dUsd)}
+                      </div>
+                      <div className="text-[10px] text-muted-foreground uppercase tracking-wider">
+                        7 ימים
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-2xl font-mono font-bold">
+                        {fmtUSD(providerBalances.openai.totalSpentLast30dUsd)}
+                      </div>
+                      <div className="text-[10px] text-muted-foreground uppercase tracking-wider">
+                        30 ימים
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-[10px] text-muted-foreground">
+                    OpenAI לא חושף "יתרה נשארת" — רק spend נצבר. דווח מ-
+                    /v1/organization/costs.
+                  </div>
+                </>
+              ) : (
+                <div className="text-sm text-destructive whitespace-pre-wrap">
+                  {providerBalances.openai.error}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="text-[10px] text-muted-foreground border-t border-border pt-2">
+            עודכן ב-
+            {(providerBalances.kling.ok
+              ? providerBalances.kling.fetchedAt
+              : providerBalances.pixverse.ok
+                ? providerBalances.pixverse.fetchedAt
+                : providerBalances.elevenlabs.ok
+                  ? providerBalances.elevenlabs.fetchedAt
+                  : providerBalances.openai.ok
+                    ? providerBalances.openai.fetchedAt
+                    : new Date()
+            ).toLocaleTimeString('he-IL')}
+            {' · '}cache 60s
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Provider catalog — every paid third-party API the pipeline can
           touch + roughly what it costs per call. Pulled from
