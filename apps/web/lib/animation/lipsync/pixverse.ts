@@ -68,20 +68,34 @@ interface VideoResultResp {
   video_id?: number;
   id?: number;
   status?: string | number;
-  // Verified empirically against PixVerse production responses
-  // (Apr 2026): status === 1 means SUCCESS with the output URL
-  // populated. 5 means FAILED. The intermediate values (2, 3, 4)
-  // appear to be queue / processing states. We use the URL presence
-  // as the authoritative success signal — if status === 1 AND a
-  // url is set, we're done. Without a URL even on status === 1,
-  // we keep polling.
   url?: string;
   video_url?: string;
   err_msg?: string;
   size?: number;
   has_audio?: boolean;
   credits?: number;
+  outputWidth?: number;
+  outputHeight?: number;
+  path?: string;
 }
+// PixVerse status enum is unreliable. We've now seen TWO different
+// flips during real runs:
+//   incident 1 → status came back as `1` (which is "success") but our
+//                code treated it as "queued" because we'd guessed
+//                the enum was 1=queued / 3=success
+//   incident 2 → status came back as `5` (which is supposed to be
+//                "failed") but the URL + dimensions were ALREADY
+//                populated and the task transitioned to `1` seconds
+//                later, AKA `5` was a transient processing state
+//
+// Conclusion: the `status` field is NOT a reliable signal on its own.
+// What IS reliable is the COMPLETION DATA:
+//   - url is populated AND
+//   - outputWidth > 0 AND outputHeight > 0 AND
+//   - path is non-empty
+// When all of those are true → completed. Else → keep polling.
+// Only declare a task FAILED when the result endpoint itself errors
+// (ErrCode != 0) OR we exceed POLL_TIMEOUT_MS (handled by generate()).
 
 function getBaseUrl(): string {
   return (process.env.PIXVERSE_API_BASE_URL ?? DEFAULT_BASE_URL).replace(/\/+$/, '');
@@ -308,41 +322,28 @@ class PixverseLipSync implements LipSyncProvider {
     }
     const r = json.Resp;
     const url = r.url ?? r.video_url;
-    const statusRaw = String(r.status ?? '').toLowerCase();
+    const path = r.path;
+    const w = r.outputWidth ?? 0;
+    const h = r.outputHeight ?? 0;
 
-    // VERIFIED PixVerse status mapping (Apr 2026, against the real
-    // /openapi/v2/video/result/{id} response on the user's account):
-    //   1  → success (output URL is set)
-    //   5  → failed
-    //   2/3/4 → in progress (queued/processing). We don't rely on a
-    //   strict enum for these because PixVerse's docs don't
-    //   enumerate them and the response doesn't always include err_msg.
-    //
-    // The authoritative success signal is `URL is set` — we treat
-    // status 1 + URL as completed. Without a URL we treat status 1
-    // as still-processing (defensive — should not happen but the
-    // fallback is "wait and try again" rather than "fail and drop
-    // the actual successful output", which is what the previous
-    // mapping did for the user's task 400041701566498).
-    const isFailed = r.status === 5 || statusRaw === 'failed' || statusRaw === 'error';
-    if (isFailed) {
-      const detail = r.err_msg || `status=${r.status}`;
-      console.warn(
-        `[pixverse] result for ${providerJobId}: failed — ${detail}. ` +
-          `Full response: ${JSON.stringify(r).slice(0, 400)}`,
-      );
-      return { status: 'failed', errorMessage: r.err_msg ?? `pixverse status=${r.status}` };
-    }
-
-    const isSuccessByCode =
-      r.status === 1 || statusRaw === 'success' || statusRaw === 'completed';
-    if (isSuccessByCode && url) {
+    // Only signal we trust: COMPLETION DATA. URL set + non-empty path
+    // + non-zero dimensions = real output. The status field flips
+    // through 1 / 5 transiently and isn't reliable on its own.
+    const completionDataPresent = !!url && !!path && path.length > 0 && w > 0 && h > 0;
+    if (completionDataPresent && url) {
       return { status: 'completed', videoUrl: url };
     }
 
-    // Anything else → still in progress (queued or processing). The
-    // outer poll loop keeps calling until we get success-with-URL or
-    // a real failure status.
+    // Otherwise → still in progress. We do NOT terminate on status=5
+    // alone: empirically that's a transient state. The outer poll
+    // loop has its own POLL_TIMEOUT_MS (10 min) which will kick in
+    // for tasks that genuinely never produce output.
+    if (r.status === 5) {
+      console.log(
+        `[pixverse] ${providerJobId} status=5 but no completion data yet ` +
+          `(url=${!!url} path=${path?.length ?? 0} w=${w} h=${h}) — treating as transient, continuing to poll`,
+      );
+    }
     return { status: 'processing' };
   }
 
