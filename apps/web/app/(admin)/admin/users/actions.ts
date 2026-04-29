@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { prisma } from '@/lib/db';
 import { requireAdmin } from '@/lib/auth/sync-user';
+import { PLAN_CONFIGS } from '@/lib/plans';
 
 export async function addCreditsAction(formData: FormData) {
   const { dbUser: actor } = await requireAdmin();
@@ -101,7 +102,6 @@ export async function changePlanAction(formData: FormData) {
   const grantCredits = String(formData.get('grantCredits') ?? 'true') === 'true';
   if (!userId || !planRaw) return;
 
-  const { PLAN_CONFIGS } = await import('@/lib/plans');
   if (!(planRaw in PLAN_CONFIGS)) return; // ignore invalid slug
 
   const cfg = PLAN_CONFIGS[planRaw as keyof typeof PLAN_CONFIGS];
