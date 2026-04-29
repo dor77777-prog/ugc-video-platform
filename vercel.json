@@ -2,5 +2,6 @@
   "framework": "nextjs",
   "buildCommand": "npm run prisma:generate && npm run build:web",
   "outputDirectory": "apps/web/.next",
-  "installCommand": "npm ci --include=dev"
+  "installCommand": "npm ci --include=dev",
+  "regions": ["bom1"]
 }

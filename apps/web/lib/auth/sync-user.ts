@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import { Prisma, UserRole } from '@prisma/client';
 import { prisma } from '@/lib/db';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
+import { timed } from '@/lib/timing';
 
 function getAdminEmails(): string[] {
   return (process.env.ADMIN_EMAILS ?? '')
@@ -16,10 +17,10 @@ export async function requireAuth() {
   if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
     redirect('/login');
   }
-  const supabase = await createSupabaseServerClient();
+  const supabase = await timed('auth:createServerClient', () => createSupabaseServerClient());
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await timed('auth:getUser', () => supabase.auth.getUser());
   if (!user || !user.email) redirect('/login');
   return user;
 }
@@ -28,45 +29,51 @@ export async function requireAuth() {
 // create the same user (Next.js does parallel server fetches), the second one
 // catches the unique-violation and re-reads instead of crashing.
 export async function getOrCreateAppUser() {
-  const authUser = await requireAuth();
-  const email = authUser.email!.toLowerCase();
-  const adminEmails = getAdminEmails();
-  const isAdminEmail = adminEmails.includes(email);
+  return timed('auth:getOrCreateAppUser:total', async () => {
+    const authUser = await requireAuth();
+    const email = authUser.email!.toLowerCase();
+    const adminEmails = getAdminEmails();
+    const isAdminEmail = adminEmails.includes(email);
 
-  let dbUser = await prisma.user.findUnique({ where: { email } });
+    let dbUser = await timed('auth:user.findUnique', () =>
+      prisma.user.findUnique({ where: { email } }),
+    );
 
-  if (!dbUser) {
-    const totalUsers = await prisma.user.count();
-    const isFirstUser = totalUsers === 0;
-    const role: UserRole = isFirstUser || isAdminEmail ? UserRole.admin : UserRole.user;
-    try {
-      dbUser = await prisma.user.create({
-        data: { email, role, creditsBalance: 5 },
-      });
-    } catch (err) {
-      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
-        dbUser = await prisma.user.findUniqueOrThrow({ where: { email } });
-      } else {
-        throw err;
+    if (!dbUser) {
+      const totalUsers = await timed('auth:user.count', () => prisma.user.count());
+      const isFirstUser = totalUsers === 0;
+      const role: UserRole = isFirstUser || isAdminEmail ? UserRole.admin : UserRole.user;
+      try {
+        dbUser = await timed('auth:user.create', () =>
+          prisma.user.create({ data: { email, role, creditsBalance: 5 } }),
+        );
+      } catch (err) {
+        if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+          dbUser = await timed('auth:user.findOrThrow', () =>
+            prisma.user.findUniqueOrThrow({ where: { email } }),
+          );
+        } else {
+          throw err;
+        }
       }
     }
-  }
 
-  // Bootstrap: if no admin exists, promote the current user.
-  // Also keep ADMIN_EMAILS in sync — anyone listed there is always admin on next login.
-  const noAdminYet =
-    dbUser.role !== UserRole.admin &&
-    (await prisma.user.count({ where: { role: UserRole.admin } })) === 0;
-  if ((isAdminEmail || noAdminYet) && dbUser.role !== UserRole.admin) {
-    dbUser = await prisma.user.update({
-      where: { id: dbUser.id },
-      data: { role: UserRole.admin },
-    });
-  }
+    // Bootstrap: if no admin exists, promote the current user.
+    const noAdminYet =
+      dbUser.role !== UserRole.admin &&
+      (await timed('auth:adminCount', () =>
+        prisma.user.count({ where: { role: UserRole.admin } }),
+      )) === 0;
+    if ((isAdminEmail || noAdminYet) && dbUser.role !== UserRole.admin) {
+      dbUser = await timed('auth:user.promoteToAdmin', () =>
+        prisma.user.update({ where: { id: dbUser!.id }, data: { role: UserRole.admin } }),
+      );
+    }
 
-  if (dbUser.banned) redirect('/login?error=banned');
+    if (dbUser.banned) redirect('/login?error=banned');
 
-  return { authUser, dbUser };
+    return { authUser, dbUser };
+  });
 }
 
 // Same as getOrCreateAppUser but redirects non-admins to /dashboard.

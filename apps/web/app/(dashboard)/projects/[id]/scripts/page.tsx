@@ -8,6 +8,7 @@ import { notFound } from 'next/navigation';
 import { ScriptAngle } from '@prisma/client';
 import { prisma } from '@/lib/db';
 import { getOrCreateAppUser } from '@/lib/auth/sync-user';
+import { timed } from '@/lib/timing';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Stepper } from '@/components/wizard/stepper';
@@ -57,18 +58,25 @@ export default async function ScriptsPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  const pageStart = Date.now();
+  console.log(`[PAGE] /projects/[id]/scripts — render start`);
+
   const { id: projectId } = await params;
   const { dbUser } = await getOrCreateAppUser();
 
-  const project = await prisma.project.findFirst({
-    where: { id: projectId, userId: dbUser.id },
-    include: {
-      scripts: {
-        include: { scenes: { orderBy: { sceneOrder: 'asc' } } },
+  const project = await timed('scripts-page:project.findFirst+scripts+scenes', () =>
+    prisma.project.findFirst({
+      where: { id: projectId, userId: dbUser.id },
+      include: {
+        scripts: {
+          include: { scenes: { orderBy: { sceneOrder: 'asc' } } },
+        },
       },
-    },
-  });
+    }),
+  );
   if (!project) notFound();
+
+  console.log(`[PAGE] /projects/[id]/scripts — total render: ${Date.now() - pageStart}ms`);
 
   // Sort scripts: V2 scripts come first by framework order, V1 fall back to angle order.
   const scripts = [...project.scripts].sort((a, b) => {

@@ -32,3 +32,4 @@ coverage/
 
 # Runtime-generated user uploads
 apps/web/public/uploads/
+.vercel
