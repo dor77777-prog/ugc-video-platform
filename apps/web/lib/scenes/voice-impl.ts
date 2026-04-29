@@ -16,8 +16,9 @@ import { priceElevenLabsTts } from '@/lib/usage/pricing';
 import { buildCreditMutationOps } from '@/lib/usage/credits';
 import { checkRateLimit, RateLimitedError } from '@/lib/usage/rate-limit';
 import { checkSpendCap, SpendCapExceededError } from '@/lib/usage/spend-cap';
+import { PER_OPERATION_CREDITS, FIRST_REGEN_FREE } from '@/lib/plans';
 
-const COST_PER_VOICE = 1; // 1 credit per voice generation
+const COST_PER_VOICE = PER_OPERATION_CREDITS.voice; // 1 credit (gen or regen)
 
 export interface GenerateVoiceResult {
   success: boolean;
@@ -205,10 +206,10 @@ async function generateSceneVoiceImplInner(
     contentType: 'audio/mpeg',
   });
 
-  // First-regen-free: previous count of 1 = first regen on a previously
-  // successful voice. Don't charge for it.
+  // V6: voice keeps first-regen-free policy via FIRST_REGEN_FREE map.
+  // (image + voice keep this UX; clips dropped it for margin reasons.)
   const prevVoiceCount = scene.voiceGenerationCount ?? 0;
-  const isFirstRegen = prevVoiceCount === 1;
+  const isFirstRegen = prevVoiceCount === 1 && FIRST_REGEN_FREE.voice;
   const charge = isFirstRegen ? 0 : COST_PER_VOICE;
 
   await prisma.$transaction([

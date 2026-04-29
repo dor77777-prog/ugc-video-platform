@@ -7,6 +7,7 @@ import {
   toggleBanAction,
   refundCreditsAction,
   setSpendCapAction,
+  changePlanAction,
 } from './actions';
 
 export const dynamic = 'force-dynamic';
@@ -74,7 +75,27 @@ export default async function AdminUsersPage() {
                       )}
                     </TableCell>
                     <TableCell>
-                      <Badge variant="outline">{u.plan}</Badge>
+                      <form action={changePlanAction} className="flex items-center gap-1">
+                        <input type="hidden" name="userId" value={u.id} />
+                        <select
+                          name="plan"
+                          defaultValue={u.plan}
+                          className="text-xs font-mono border border-border rounded px-1.5 py-1 bg-card"
+                          title="תוכנית מנוי"
+                        >
+                          <option value="free_trial">free_trial</option>
+                          <option value="creator">creator ($49)</option>
+                          <option value="brand">brand ($149)</option>
+                          <option value="agency">agency ($499)</option>
+                        </select>
+                        <button
+                          type="submit"
+                          className="text-[10px] px-1.5 py-0.5 rounded border border-border hover:bg-muted"
+                          title="החלף תוכנית — מעניק קרדיטים חודשיים אוטומטית"
+                        >
+                          ✓
+                        </button>
+                      </form>
                     </TableCell>
                     <TableCell className="font-mono">{u.creditsBalance}</TableCell>
                     <TableCell

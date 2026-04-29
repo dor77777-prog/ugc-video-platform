@@ -14,7 +14,12 @@ import { checkSpendCap, SpendCapExceededError } from '@/lib/usage/spend-cap';
 import { findAvatar, describeAvatar } from '@/lib/avatars/catalog';
 import { findCategory, categoryGuidance, type ProductCategoryId } from '@/lib/categories';
 
-const GEN_COST_CREDITS = 1;
+// V6: script_batch = 2 credits (was 1). Real cost ≈ $0.02; we charge
+// $0.20 list — 90% margin on the cheapest LLM operation in the
+// pipeline. The constant flows from lib/plans.ts so per-op pricing
+// has one source of truth.
+import { PER_OPERATION_CREDITS } from '@/lib/plans';
+const GEN_COST_CREDITS = PER_OPERATION_CREDITS.script_batch;
 
 // V2: rich payload stored in Script.rawJson — the original LLM scripts plus
 // the strategy + hook options + score breakdown + the regen flag. Keeping

@@ -20,8 +20,9 @@ import { priceOpenAiImage } from '@/lib/usage/pricing';
 import { buildCreditMutationOps } from '@/lib/usage/credits';
 import { checkRateLimit, RateLimitedError } from '@/lib/usage/rate-limit';
 import { checkSpendCap, SpendCapExceededError } from '@/lib/usage/spend-cap';
+import { PER_OPERATION_CREDITS, FIRST_REGEN_FREE } from '@/lib/plans';
 
-const COST_PER_SCENE_IMAGE = 1;
+const COST_PER_SCENE_IMAGE = PER_OPERATION_CREDITS.image; // 2 credits
 
 export interface GenerateSceneResult {
   success: boolean;
@@ -234,10 +235,10 @@ async function generateSceneImageImplInner(
     contentType: 'image/png',
   });
 
-  // First-regen-free: previous count of 1 = first regen on a previously
-  // successful image. Don't charge for it.
+  // V6: image keeps first-regen-free policy via FIRST_REGEN_FREE map.
+  // (image + voice keep this UX; clips dropped it for margin reasons.)
   const prevImgCount = scene.imageGenerationCount ?? 0;
-  const isFirstRegen = prevImgCount === 1;
+  const isFirstRegen = prevImgCount === 1 && FIRST_REGEN_FREE.image;
   const charge = isFirstRegen ? 0 : COST_PER_SCENE_IMAGE;
 
   await prisma.$transaction([

@@ -14,8 +14,8 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getOrCreateAppUser } from '@/lib/auth/sync-user';
 import { renderQueue } from '@/lib/queue';
-
-const COST_FINAL_RENDER = 1;
+import { creditsForFinalRender, getPlanConfig } from '@/lib/plans';
+import { videoModeFromProductData } from '@/lib/video-mode';
 
 export async function POST(
   _req: Request,
@@ -55,9 +55,34 @@ export async function POST(
     );
   }
 
-  if (dbUser.creditsBalance < COST_FINAL_RENDER) {
+  // Plan gate: free_trial users can build a project end-to-end for the
+  // demo flow but cannot export the final video until they upgrade.
+  // Override per-user via admin-grant for influencer reviews etc.
+  const planConfig = getPlanConfig(dbUser.plan);
+  if (!planConfig.allowFinalRender) {
     return NextResponse.json(
-      { error: 'אין מספיק קרדיטים להרכבה הסופית', needsCredits: true },
+      {
+        error:
+          'יצוא הסרטון הסופי לא זמין בתקופת הניסיון. שדרג ל-Creator כדי לייצא לפורמט MP4.',
+        needsUpgrade: true,
+      },
+      { status: 402 },
+    );
+  }
+
+  // Final-render charge differs by duration mode: 8 credits for 15s,
+  // 12 credits for 30s. The cost covers worker compute + storage +
+  // bandwidth — local ffmpeg is ~$0 in raw spend, so almost the
+  // entire charge is margin (≥95%).
+  const videoMode = videoModeFromProductData(project.productData);
+  const finalRenderCost = creditsForFinalRender(videoMode.targetTotalDurationMs / 1000);
+
+  if (dbUser.creditsBalance < finalRenderCost) {
+    return NextResponse.json(
+      {
+        error: `אין מספיק קרדיטים להרכבה הסופית — צריך ${finalRenderCost}, יש לך ${dbUser.creditsBalance}.`,
+        needsCredits: true,
+      },
       { status: 402 },
     );
   }
@@ -74,7 +99,7 @@ export async function POST(
     });
     await tx.user.update({
       where: { id: dbUser.id },
-      data: { creditsBalance: { decrement: COST_FINAL_RENDER } },
+      data: { creditsBalance: { decrement: finalRenderCost } },
     });
     return job;
   });

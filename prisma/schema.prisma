@@ -67,11 +67,19 @@ enum AssetType {
   background_music
 }
 
+// Subscription plan tiers — stored as a string column so adding new
+// tiers is a one-line PR (no migration). The vocabulary lives in
+// lib/plans.ts. Default 'free_trial' for new signups.
+//   free_trial  → 30 one-time credits, no Kling clips by default
+//   creator     → $49/mo,  500 credits/mo, max 1 lipsync per video
+//   brand       → $149/mo, 1800 credits/mo, max 2 lipsync per video
+//   agency      → $499/mo, 6000 credits/mo, max 2 lipsync per video
+
 model User {
   id             String   @id @default(cuid())
   email          String   @unique
   role           UserRole @default(user)
-  plan           String   @default("free")
+  plan           String   @default("free_trial")
   creditsBalance Int      @default(0)
   banned         Boolean  @default(false)
 
@@ -79,6 +87,19 @@ model User {
   // the global default in lib/usage/spend-cap.ts. Admin sets this from
   // /admin/users when a user needs a higher limit (e.g. paid plan).
   spendCapUsd    Float?
+
+  // Plan billing state. Stripe will populate these later — for now they
+  // exist so admin can simulate plan transitions without a migration.
+  //   planAnnualBilling — true if the user prepaid annually (10-15% off,
+  //                        depending on plan). Affects effective_credit_value
+  //                        in lib/plans.ts.
+  //   planRenewsAt      — next monthly credit refill (or annual renewal if
+  //                        planAnnualBilling). NULL for free_trial.
+  //   planStartedAt     — when the user first entered the current plan
+  //                        (for analytics + LTV).
+  planAnnualBilling  Boolean   @default(false)
+  planRenewsAt       DateTime?
+  planStartedAt      DateTime?
 
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
@@ -89,6 +110,7 @@ model User {
   creditTransactions  CreditTransaction[]
 
   @@index([role])
+  @@index([plan])
 }
 
 // Append-only audit log of every credit movement on a user's balance.
@@ -304,6 +326,16 @@ model Scene {
   productVisibilityPriority  String?
   cameraFocus                String?
   showFace                   Boolean?
+
+  // Cached gpt-4o-mini vision motion analysis. We only re-call the
+  // model when imageUrl changes — if the user clicks "regenerate clip"
+  // on an image that hasn't been re-rendered, we reuse the prior
+  // analysis (saves ~$0.005 + 3-5s per regen). The cache key is the
+  // imageUrl that was analyzed; if scene.imageUrl !== motionAnalysisImageUrl,
+  // we re-analyze.
+  motionAnalysisJson      Json?
+  motionAnalysisImageUrl  String?
+  motionAnalysisAt        DateTime?
 
   @@unique([scriptId, sceneOrder])
   @@index([scriptId])

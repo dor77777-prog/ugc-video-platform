@@ -89,11 +89,56 @@ export async function toggleBanAction(formData: FormData) {
   revalidatePath('/admin/users');
 }
 
+// Change a user's plan. Validates the slug against PLAN_CONFIGS,
+// grants the new plan's monthly credits as a separate ledger entry
+// (so /admin/users history is auditable), and timestamps planStartedAt
+// + planRenewsAt for analytics + the eventual Stripe sync. Used by
+// admin to manually upgrade/downgrade until billing is wired.
 export async function changePlanAction(formData: FormData) {
   await requireAdmin();
   const userId = String(formData.get('userId'));
-  const plan = String(formData.get('plan'));
-  if (!userId || !plan) return;
-  await prisma.user.update({ where: { id: userId }, data: { plan } });
+  const planRaw = String(formData.get('plan'));
+  const grantCredits = String(formData.get('grantCredits') ?? 'true') === 'true';
+  if (!userId || !planRaw) return;
+
+  const { PLAN_CONFIGS } = await import('@/lib/plans');
+  if (!(planRaw in PLAN_CONFIGS)) return; // ignore invalid slug
+
+  const cfg = PLAN_CONFIGS[planRaw as keyof typeof PLAN_CONFIGS];
+  const now = new Date();
+  // Monthly renewal in 30 days. For free_trial, planRenewsAt stays NULL
+  // (no auto-refill) so the one-time 30 credits behave correctly.
+  const renewsAt = cfg.recurringCredits
+    ? new Date(now.getTime() + 30 * 24 * 3600 * 1000)
+    : null;
+
+  await prisma.$transaction(async (tx) => {
+    await tx.user.update({
+      where: { id: userId },
+      data: {
+        plan: planRaw,
+        planStartedAt: now,
+        planRenewsAt: renewsAt,
+      },
+    });
+    if (grantCredits && cfg.monthlyCredits > 0) {
+      await tx.user.update({
+        where: { id: userId },
+        data: { creditsBalance: { increment: cfg.monthlyCredits } },
+      });
+      await tx.creditTransaction.create({
+        data: {
+          userId,
+          amount: cfg.monthlyCredits,
+          reason: `plan_grant:${planRaw}`,
+          ref: planRaw,
+          metadata: {
+            triggered_by: 'admin_change_plan',
+            monthlyPriceUsd: cfg.monthlyPriceUsd,
+          },
+        },
+      });
+    }
+  });
   revalidatePath('/admin/users');
 }

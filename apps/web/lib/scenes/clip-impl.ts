@@ -36,6 +36,7 @@ import {
 } from '@/lib/animation/types';
 import { deriveSceneRouting } from '@/lib/animation/scene-routing';
 import { videoModeFromProductData } from '@/lib/video-mode';
+import { creditsForClip, getPlanConfig, FIRST_REGEN_FREE } from '@/lib/plans';
 import { toPublicUrl, PublicUrlError } from '@/lib/animation/public-url';
 import {
   analyzeSceneForMotion,
@@ -50,7 +51,9 @@ import { buildCreditMutationOps } from '@/lib/usage/credits';
 import { checkRateLimit, RateLimitedError } from '@/lib/usage/rate-limit';
 import { checkSpendCap, SpendCapExceededError } from '@/lib/usage/spend-cap';
 
-const COST_PER_CLIP = 1; // 1 credit per scene clip
+// Clip credit cost is now differentiated by lipsync vs b-roll. See
+// lib/plans.ts: clip_broll = 18 credits, clip_lipsync = 30 credits.
+// We resolve the right number once per scene via creditsForClip().
 
 // Pick the Kling clip duration to comfortably contain the voice.
 // Kling omni-video supports 3-15s as discrete seconds; we expose 3-10
@@ -236,18 +239,26 @@ async function generateSceneClipImplInner(
           sceneType: scene.sceneType,
         });
 
-  // ── Lipsync cap (per video duration mode) ──────────────────────────────
-  // The cap depends on the project's selected video duration:
-  //   15s mode → 1 lipsync scene  (sceneOrder ≤ 0)
-  //   30s mode → 2 lipsync scenes (sceneOrder ≤ 1)
-  // Without this, the LLM occasionally classifies later scenes as
-  // selfie_talking and we end up with 4 talking shots in a row,
-  // which (a) burns lipsync credits unnecessarily and (b) reads as
-  // a low-quality ad. We only apply the cap to AUTO-derived routing
-  // — if the user explicitly toggled "Lipsync" on the per-scene UI
-  // we honor that choice.
+  // ── Lipsync cap (per video duration mode + per plan) ───────────────────
+  // The effective cap is the MIN of:
+  //   1. Mode-based cap (15s → 1, 30s → 2 from videoMode.maxLipSyncScenes).
+  //   2. Plan-based cap (Creator → 1, Brand/Agency → 2 from
+  //      planConfig.maxLipSyncScenesPerVideo). Free trial → 0.
+  // So a Creator subscriber on 30s mode gets 1 lipsync, not 2 — the
+  // tighter limit wins.
+  // We only apply the cap to AUTO-derived routing; an explicit user
+  // toggle on the LipSync button still gets through (admin can
+  // override via plan grant if needed).
   const videoMode = videoModeFromProductData(scene.script.project.productData);
-  const lipSyncMaxSceneOrder = videoMode.maxLipSyncScenes - 1; // zero-indexed
+  const planLipSyncCap = (await prisma.user.findUnique({
+    where: { id: userId },
+    select: { plan: true },
+  }).then((u) => getPlanConfig(u?.plan).maxLipSyncScenesPerVideo)) ?? 0;
+  const effectiveLipSyncCap = Math.min(
+    videoMode.maxLipSyncScenes,
+    planLipSyncCap,
+  );
+  const lipSyncMaxSceneOrder = effectiveLipSyncCap - 1; // zero-indexed
   if (
     explicitRequiresLipSync == null &&
     routing.requiresLipSync &&
@@ -256,7 +267,8 @@ async function generateSceneClipImplInner(
     console.log(
       `[clip] scene=${sceneId} order=${scene.sceneOrder} mode=${videoMode.mode} — ` +
         `auto-routed as ${routing.sceneGenerationType} but lipsync cap ` +
-        `(${videoMode.maxLipSyncScenes} for ${videoMode.mode}) forces silent path. ` +
+        `(mode=${videoMode.maxLipSyncScenes}, plan=${planLipSyncCap}, ` +
+        `effective=${effectiveLipSyncCap}) forces silent path. ` +
         `User can override via the LipSync toggle.`,
     );
     routing.requiresLipSync = false;
@@ -280,11 +292,28 @@ async function generateSceneClipImplInner(
 
   const dbUser = await prisma.user.findUnique({
     where: { id: userId },
-    select: { creditsBalance: true },
+    select: { creditsBalance: true, plan: true },
   });
   if (!dbUser) return { success: false, error: 'משתמש לא נמצא' };
-  if (dbUser.creditsBalance < COST_PER_CLIP) {
-    return { success: false, error: 'אין מספיק קרדיטים', needsCredits: true };
+
+  // Clip credit cost is differentiated by lipsync vs b-roll (see
+  // lib/plans.ts). The free-trial plan disallows clip generation
+  // entirely — those users see the wizard but must upgrade to render.
+  const creditCost = creditsForClip(needsLipSync);
+  const planConfig = getPlanConfig(dbUser.plan);
+  if (planConfig.slug === 'free_trial') {
+    return {
+      success: false,
+      error: 'יצירת קליפים אינה זמינה בתקופת הניסיון. שדרג ל-Creator כדי להמשיך.',
+      needsCredits: true,
+    };
+  }
+  if (dbUser.creditsBalance < creditCost) {
+    return {
+      success: false,
+      error: `אין מספיק קרדיטים — צריך ${creditCost}, יש לך ${dbUser.creditsBalance}.`,
+      needsCredits: true,
+    };
   }
 
   const projectId = scene.script.project.id;
@@ -369,8 +398,12 @@ async function generateSceneClipImplInner(
         });
 
         const previousCount = scene.clipGenerationCount ?? 0;
-        const isFirstRegen = previousCount === 1;
-        const charge = isFirstRegen ? 0 : COST_PER_CLIP;
+        // V6 policy: clips are NOT first-regen-free (Kling cost too high).
+        // The flag is read from FIRST_REGEN_FREE so flipping policy is a
+        // one-line change. Provider-failure refunds still apply elsewhere.
+        const clipOpKey = needsLipSync ? 'clip_lipsync' : 'clip_broll';
+        const isFirstRegen = previousCount === 1 && FIRST_REGEN_FREE[clipOpKey];
+        const charge = isFirstRegen ? 0 : creditCost;
 
         await prisma.$transaction([
           prisma.scene.update({
@@ -436,52 +469,83 @@ async function generateSceneClipImplInner(
     }
   }
 
-  // ── Stage 0 — vision-grounded motion analysis ──────────────────────────
+  // ── Stage 0 — vision-grounded motion analysis (with cache) ─────────────
   // Look at the actual rendered scene image and ask gpt-4o-mini what
-  // should plausibly move. Without this, Kling gets a generic "hands
-  // move with intent" prompt regardless of what's in the frame, and
-  // ends up animating only the avatar's blinks. With it, Kling gets
-  // ground-truth motion: "the right hand tilts the HydroPure bottle,
-  // water flows into the glass, the avatar's gaze follows the pour".
-  // ~$0.001-0.005 per scene, ~3-5s latency.
+  // should plausibly move. With it, Kling gets ground-truth motion
+  // ("the right hand tilts the bottle, water flows...") instead of the
+  // generic "hands move with intent" fallback that animates only blinks.
+  //
+  // V6 cache: if scene.imageUrl matches scene.motionAnalysisImageUrl,
+  // we reuse the stored JSON instead of re-calling gpt-4o-mini. The
+  // cache is invalidated automatically when the user regenerates the
+  // image (which sets a new imageUrl). Saves ~$0.005 + 3-5s per clip
+  // regen on an unchanged image.
   let motionAnalysis: MotionAnalysis | null = null;
-  const motionAnalysisCallId = await recordApiCallStart({
-    provider: 'openai',
-    operation: 'motion_analysis',
-    model: process.env.OPENAI_MOTION_VISION_MODEL ?? 'gpt-4o-mini',
-    userId,
-    projectId,
-  });
-  const motionAnalysisStartedAt = Date.now();
-  try {
-    motionAnalysis = await analyzeSceneForMotion({
-      imageUrl: scene.imageUrl!,
-      visualBrief: scene.visualPromptEnglish,
-      isTalkingHead: routing.requiresLipSync,
-      sceneGenerationType: routing.sceneGenerationType,
-    });
-    await recordApiCallComplete(motionAnalysisCallId, {
-      success: true,
+  const cachedJson = (scene as { motionAnalysisJson?: unknown }).motionAnalysisJson;
+  const cachedImageUrl = (scene as { motionAnalysisImageUrl?: string | null })
+    .motionAnalysisImageUrl;
+  const cacheValid =
+    cachedJson != null &&
+    cachedImageUrl != null &&
+    cachedImageUrl === scene.imageUrl;
+
+  if (cacheValid) {
+    motionAnalysis = cachedJson as MotionAnalysis;
+    console.log(
+      `[clip] scene=${sceneId} motion-analysis CACHE HIT (image unchanged) — skipping gpt-4o-mini call`,
+    );
+  } else {
+    const motionAnalysisCallId = await recordApiCallStart({
+      provider: 'openai',
+      operation: 'motion_analysis',
       model: process.env.OPENAI_MOTION_VISION_MODEL ?? 'gpt-4o-mini',
-      costUsd: priceOpenAiText(
-        process.env.OPENAI_MOTION_VISION_MODEL ?? 'gpt-4o-mini',
-        motionAnalysis.usage.inputTokens,
-        motionAnalysis.usage.outputTokens,
-      ),
-      inputTokens: motionAnalysis.usage.inputTokens,
-      outputTokens: motionAnalysis.usage.outputTokens,
-      durationMs: Date.now() - motionAnalysisStartedAt,
+      userId,
+      projectId,
     });
-  } catch (err) {
-    // Vision analysis is best-effort. If it fails (timeout / quota /
-    // bad JSON), we fall back to the generic motion prompt — Kling will
-    // still produce something usable, just less specific.
-    await recordApiCallComplete(motionAnalysisCallId, {
-      success: false,
-      errorMessage: (err as Error).message,
-      durationMs: Date.now() - motionAnalysisStartedAt,
-    });
-    motionAnalysis = null;
+    const motionAnalysisStartedAt = Date.now();
+    try {
+      motionAnalysis = await analyzeSceneForMotion({
+        imageUrl: scene.imageUrl!,
+        visualBrief: scene.visualPromptEnglish,
+        isTalkingHead: routing.requiresLipSync,
+        sceneGenerationType: routing.sceneGenerationType,
+      });
+      await recordApiCallComplete(motionAnalysisCallId, {
+        success: true,
+        model: process.env.OPENAI_MOTION_VISION_MODEL ?? 'gpt-4o-mini',
+        costUsd: priceOpenAiText(
+          process.env.OPENAI_MOTION_VISION_MODEL ?? 'gpt-4o-mini',
+          motionAnalysis.usage.inputTokens,
+          motionAnalysis.usage.outputTokens,
+        ),
+        inputTokens: motionAnalysis.usage.inputTokens,
+        outputTokens: motionAnalysis.usage.outputTokens,
+        durationMs: Date.now() - motionAnalysisStartedAt,
+      });
+      // Persist the result so the next clip-regen on this same image
+      // reuses it. Best-effort — if the write fails (race with another
+      // worker, image just got swapped), we silently swallow.
+      await prisma.scene
+        .update({
+          where: { id: sceneId },
+          data: {
+            motionAnalysisJson: motionAnalysis as unknown as object,
+            motionAnalysisImageUrl: scene.imageUrl,
+            motionAnalysisAt: new Date(),
+          },
+        })
+        .catch(() => {/* best effort */});
+    } catch (err) {
+      // Vision analysis is best-effort. If it fails (timeout / quota /
+      // bad JSON), we fall back to the generic motion prompt — Kling will
+      // still produce something usable, just less specific.
+      await recordApiCallComplete(motionAnalysisCallId, {
+        success: false,
+        errorMessage: (err as Error).message,
+        durationMs: Date.now() - motionAnalysisStartedAt,
+      });
+      motionAnalysis = null;
+    }
   }
 
   const motionPrompt = buildKlingMotionPrompt({
@@ -730,12 +794,14 @@ async function generateSceneClipImplInner(
     contentType: 'video/mp4',
   });
 
-  // First-regen-free: previousCount === 1 means the user already had a
-  // clip on this scene (the first successful gen) and is now regenerating
-  // for the first time — give it free. Subsequent regens are paid.
+  // V6 policy: clips are NOT first-regen-free (Kling cost too high).
+  // The previousCount-aware branch is preserved + gated on
+  // FIRST_REGEN_FREE so policy flips with one constant change. Provider-
+  // failure refunds still apply via the catch blocks above.
   const previousCount = scene.clipGenerationCount ?? 0;
-  const isFirstRegen = previousCount === 1;
-  const charge = isFirstRegen ? 0 : COST_PER_CLIP;
+  const clipOpKey = needsLipSync ? 'clip_lipsync' : 'clip_broll';
+  const isFirstRegen = previousCount === 1 && FIRST_REGEN_FREE[clipOpKey];
+  const charge = isFirstRegen ? 0 : creditCost;
 
   await prisma.$transaction([
     prisma.scene.update({
