@@ -1,10 +1,14 @@
 // GET /api/voice/sample/[voiceId] — on-demand Hebrew voice preview.
 //
-// The VoicePicker UI plays this URL when the user clicks ▶ on a voice
-// card. We synthesize a short Hebrew sample via ElevenLabs Multilingual
-// v2, cache the MP3 to disk under public/voice-samples/, and stream it
-// back. Repeat clicks for the same voice id are served from the cache —
-// no extra API calls.
+// Same-origin proxy so the VoicePicker `<audio>` tag can play samples
+// without hitting CORS preflight against R2 (R2's `pub-*.r2.dev` domain
+// returns 403 on OPTIONS by default — fixing CORS on the bucket needs
+// admin-level R2 token; this proxy bypasses the requirement entirely).
+//
+// Lookup order (first hit wins):
+//   1. R2 — bucket key: voice-samples/<voiceId>.mp3 (production cache)
+//   2. Local disk — apps/web/public/voice-samples/<voiceId>.mp3 (dev cache)
+//   3. ElevenLabs synthesize on demand → cache to BOTH R2 + local disk
 //
 // Cost per first-time generation ≈ $0.005. After cache, $0.
 
@@ -13,11 +17,11 @@ import path from 'path';
 import { NextResponse } from 'next/server';
 import { generateHebrewVoiceover } from '@/lib/voice/elevenlabs';
 
-// Kept short on purpose — ElevenLabs charges 1 credit per character, and
-// dev API keys often have a tight per-key quota cap. ~20 chars × 12 voices
-// = 240 credits total to populate the full preview cache the first time.
+// Kept short on purpose — ElevenLabs charges 1 credit per character.
 const SAMPLE_TEXT = 'היי, ככה אני נשמעת בעברית.';
 const CACHE_DIR_REL = path.join('public', 'voice-samples');
+
+const R2_PUBLIC_BASE = (process.env.CLOUDFLARE_R2_PUBLIC_URL ?? '').replace(/\/+$/, '');
 
 export async function GET(
   _req: Request,
@@ -28,18 +32,31 @@ export async function GET(
     return NextResponse.json({ error: 'invalid voiceId' }, { status: 400 });
   }
 
+  // 1. Try R2 first (production has 30 voice samples there from V12.2).
+  if (R2_PUBLIC_BASE) {
+    try {
+      const r2Url = `${R2_PUBLIC_BASE}/voice-samples/${voiceId}.mp3`;
+      const r2Res = await fetch(r2Url);
+      if (r2Res.ok) {
+        const bytes = Buffer.from(await r2Res.arrayBuffer());
+        return audioResponse(bytes);
+      }
+    } catch {
+      /* fall through */
+    }
+  }
+
+  // 2. Try local disk cache (dev convenience).
   const cacheDir = path.join(process.cwd(), CACHE_DIR_REL);
   const cachePath = path.join(cacheDir, `${voiceId}.mp3`);
-
-  // 1. Try the cache first.
   try {
     const cached = await fs.readFile(cachePath);
     return audioResponse(cached);
   } catch {
-    /* fall through to generate */
+    /* fall through to synthesize */
   }
 
-  // 2. Synthesize.
+  // 3. Synthesize via ElevenLabs.
   let audioBytes: Buffer;
   try {
     const result = await generateHebrewVoiceover({
@@ -52,9 +69,6 @@ export async function GET(
     audioBytes = result.audioBytes;
   } catch (err) {
     const detail = (err as Error).message;
-    // Detect ElevenLabs's quota_exceeded so the picker can surface a useful
-    // Hebrew message ("API key out of credits") instead of generic "sample
-    // failed". Pattern matches the JSON error payload they return on 401.
     const reason = /quota_exceeded/i.test(detail)
       ? 'quota_exceeded'
       : /paid_plan_required|payment_required|library voices via the API/i.test(detail)
@@ -70,12 +84,26 @@ export async function GET(
     );
   }
 
-  // 3. Cache to disk for next time.
+  // 4. Cache to local disk (dev) and R2 (prod) for next time.
   try {
     await fs.mkdir(cacheDir, { recursive: true });
     await fs.writeFile(cachePath, audioBytes);
   } catch {
-    /* cache write is best-effort */
+    /* dev-disk cache best-effort */
+  }
+  if (R2_PUBLIC_BASE) {
+    try {
+      const { getStorage } = await import('@/lib/storage');
+      const storage = await getStorage();
+      await storage.putBytes({
+        folder: 'voice-samples',
+        filename: `${voiceId}.mp3`,
+        data: audioBytes,
+        contentType: 'audio/mpeg',
+      });
+    } catch {
+      /* R2 cache best-effort */
+    }
   }
 
   return audioResponse(audioBytes);
