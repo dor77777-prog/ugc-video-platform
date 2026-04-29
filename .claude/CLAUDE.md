@@ -28,7 +28,7 @@ Hebrew-first AI platform for Israeli UGC product video ads.
 | Service | Where | Notes |
 |---------|-------|-------|
 | Web (Next.js) | Vercel Hobby | **region: `bom1` (Mumbai)** — pinned in `vercel.json`. MUST stay co-located with Supabase or every Prisma query pays ~250ms cross-region latency. |
-| Worker (BullMQ) | Railway (Dockerfile) | `apps/worker/Dockerfile` + `railway.toml`. ffmpeg pre-installed in image. |
+| Worker (BullMQ) | Railway (Dockerfile) | `apps/worker/Dockerfile` + `railway.toml` + `.railwayignore`. ffmpeg pre-installed. CMD must `cd /app/apps/worker` before invoking `tsx` so monorepo-hoisted node_modules + relative imports (`./env`) resolve. railway.toml MUST NOT set `startCommand` — it overrides Dockerfile CMD. |
 | DB | Supabase `ap-south-1` | Pooler URL (port 6543) for app, direct URL (port 5432) for `prisma db push`. |
 | Queue | Redis Cloud (free) | `REDIS_URL` shared between web + worker. |
 | Object storage | Cloudflare R2 | `CLOUDFLARE_R2_BUCKET_NAME` env auto-switches `lib/storage/index.ts` from local to R2. |
@@ -231,3 +231,5 @@ Web + worker share the same .env at repo root.
 - Do not put `export const maxDuration` in a `'use server'` actions.ts file — Next.js rejects it. Put it in the page.tsx that renders the form calling that action.
 - Do not write final MP4s / images / voice MP3s to `apps/web/public/uploads/` in production code — Vercel's serverless filesystem is read-only between requests. Always go through `lib/storage/index.ts`.
 - Do not commit the `ugc-video-platform-secrets/` directory or its `.zip` — it contains live API keys (OpenAI, Kling, PixVerse, ElevenLabs, Supabase). It's git-ignored intentionally.
+- Do not put a `startCommand` in `railway.toml` — it silently overrides the Dockerfile `CMD`. Cost us a deploy where the .toml had a stale path that conflicted with the Dockerfile's WORKDIR, producing duplicated `apps/worker/apps/worker/...` paths and ERR_MODULE_NOT_FOUND crashes.
+- Do not pre-compile the worker's TypeScript expecting that to remove the tsx runtime requirement — the workspace packages (`@ugc-video/shared`, `@ugc-video/prompts`) declare `"main": "./src/index.ts"`, so the worker still imports `.ts` files at runtime and tsx is mandatory.

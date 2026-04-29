@@ -31,4 +31,4 @@ RUN npx prisma generate
 # locally. Without this cd, tsx (invoked from /app) misresolves the
 # relative `./env` import inside the monorepo's hoisted node_modules.
 WORKDIR /app/apps/worker
-CMD ["sh", "-c", "echo '=== src/ contents ==='; ls -la src/; echo '=== launch tsx ==='; exec npx tsx src/index.ts"]
+CMD ["npx", "tsx", "src/index.ts"]
