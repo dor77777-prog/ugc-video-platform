@@ -18,7 +18,13 @@ export interface AvatarProfile {
   region: string; // descriptor used by the prompt builder
 }
 
-const local = (id: string) => `/avatars/${id}.png`;
+// V12.2 — avatars are served from Cloudflare R2 in production (the
+// Vercel serverless function bundle excludes public/ to keep cold-start
+// fast). The R2 public URL is not a secret — it's a hard-coded CDN
+// endpoint. To re-upload after changing the catalog, run:
+//   npx tsx apps/web/scripts/upload-static-assets-to-r2.ts
+const R2_PUBLIC = 'https://pub-eb116bdbeab8486f96ecf7c4fbc1014a.r2.dev';
+const local = (id: string) => `${R2_PUBLIC}/avatars/${id}.png`;
 
 export const AVATAR_CATALOG: AvatarProfile[] = [
   // Female · 20-30

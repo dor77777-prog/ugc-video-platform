@@ -58,7 +58,7 @@ export const VOICE_PRESETS: VoicePreset[] = [
     gender: 'female',
     ageRange: '25-35',
     energy: 'energetic',
-    sampleUrl: '/api/voice/sample/KSyQzmsYhFbuOhqj1Xxv',
+    sampleUrl: 'https://pub-eb116bdbeab8486f96ecf7c4fbc1014a.r2.dev/voice-samples/KSyQzmsYhFbuOhqj1Xxv.mp3',
     description: 'דינמית ואנרגטית. UGC קלאסי לרילז ואינסטגרם.',
   },
   {
@@ -68,7 +68,7 @@ export const VOICE_PRESETS: VoicePreset[] = [
     gender: 'female',
     ageRange: '25-35',
     energy: 'energetic',
-    sampleUrl: '/api/voice/sample/q3Hv0ih6DaXr52fiQyrd',
+    sampleUrl: 'https://pub-eb116bdbeab8486f96ecf7c4fbc1014a.r2.dev/voice-samples/q3Hv0ih6DaXr52fiQyrd.mp3',
     description: 'אנרגיה מדבקת, התלהבות אמיתית. הכי טוב למודעות UGC.',
   },
   {
@@ -78,7 +78,7 @@ export const VOICE_PRESETS: VoicePreset[] = [
     gender: 'female',
     ageRange: '18-25',
     energy: 'energetic',
-    sampleUrl: '/api/voice/sample/7RxgWgwjutaZHWIknJAY',
+    sampleUrl: 'https://pub-eb116bdbeab8486f96ecf7c4fbc1014a.r2.dev/voice-samples/7RxgWgwjutaZHWIknJAY.mp3',
     description: 'אינפלואנסרית טיפוסית. מתאים לאופנה, יופי, lifestyle.',
   },
   {
@@ -88,7 +88,7 @@ export const VOICE_PRESETS: VoicePreset[] = [
     gender: 'female',
     ageRange: '25-35',
     energy: 'energetic',
-    sampleUrl: '/api/voice/sample/xAmuYLyEOAjjvwszDZPp',
+    sampleUrl: 'https://pub-eb116bdbeab8486f96ecf7c4fbc1014a.r2.dev/voice-samples/xAmuYLyEOAjjvwszDZPp.mp3',
     description: 'מותגי רילז + מודעות אינפלואנסר. נעימה ומחזירה לצפייה.',
   },
   {
@@ -98,7 +98,7 @@ export const VOICE_PRESETS: VoicePreset[] = [
     gender: 'female',
     ageRange: '25-35',
     energy: 'warm',
-    sampleUrl: '/api/voice/sample/k1tFw6wFoibtJrwu6GTz',
+    sampleUrl: 'https://pub-eb116bdbeab8486f96ecf7c4fbc1014a.r2.dev/voice-samples/k1tFw6wFoibtJrwu6GTz.mp3',
     description: 'דיבור טבעי ומחייך. מתאים לעדויות, סיפורי משתמשים.',
   },
   {
@@ -108,7 +108,7 @@ export const VOICE_PRESETS: VoicePreset[] = [
     gender: 'female',
     ageRange: '25-35',
     energy: 'warm',
-    sampleUrl: '/api/voice/sample/MOOG1hZESAxDt4UaletY',
+    sampleUrl: 'https://pub-eb116bdbeab8486f96ecf7c4fbc1014a.r2.dev/voice-samples/MOOG1hZESAxDt4UaletY.mp3',
     description: 'נשמעת כמו חברה אמיתית. אופטימית ומחברת.',
   },
   {
@@ -118,7 +118,7 @@ export const VOICE_PRESETS: VoicePreset[] = [
     gender: 'female',
     ageRange: '25-35',
     energy: 'warm',
-    sampleUrl: '/api/voice/sample/Hy28BjVfgieDVMiyQpQe',
+    sampleUrl: 'https://pub-eb116bdbeab8486f96ecf7c4fbc1014a.r2.dev/voice-samples/Hy28BjVfgieDVMiyQpQe.mp3',
     description: 'רכה ומשכנעת. מצוינת לסקינקייר, בריאות, וולנס.',
   },
   {
@@ -128,7 +128,7 @@ export const VOICE_PRESETS: VoicePreset[] = [
     gender: 'female',
     ageRange: '18-25',
     energy: 'warm',
-    sampleUrl: '/api/voice/sample/6fZce9LFNG3iEITDfqZZ',
+    sampleUrl: 'https://pub-eb116bdbeab8486f96ecf7c4fbc1014a.r2.dev/voice-samples/6fZce9LFNG3iEITDfqZZ.mp3',
     description: 'Gen Z warmth, מודרני וברור. מתאים לקוסמטיקה ומוצרי lifestyle.',
   },
   {
@@ -138,7 +138,7 @@ export const VOICE_PRESETS: VoicePreset[] = [
     gender: 'female',
     ageRange: '18-25',
     energy: 'energetic',
-    sampleUrl: '/api/voice/sample/a3AkyqGG4v8Pg7SWQ0Y3',
+    sampleUrl: 'https://pub-eb116bdbeab8486f96ecf7c4fbc1014a.r2.dev/voice-samples/a3AkyqGG4v8Pg7SWQ0Y3.mp3',
     description: 'מתוקה, נמרצת ואותנטית. מתאים לחטיפים, fashion, gadgets.',
   },
   {
@@ -148,7 +148,7 @@ export const VOICE_PRESETS: VoicePreset[] = [
     gender: 'female',
     ageRange: '25-35',
     energy: 'authoritative',
-    sampleUrl: '/api/voice/sample/7JbZPqJGWUfXXBim0T8U',
+    sampleUrl: 'https://pub-eb116bdbeab8486f96ecf7c4fbc1014a.r2.dev/voice-samples/7JbZPqJGWUfXXBim0T8U.mp3',
     description: 'אנרגטית אבל אמינה. מתאים לטיפים, recommendations, פיננסים.',
   },
   {
@@ -158,7 +158,7 @@ export const VOICE_PRESETS: VoicePreset[] = [
     gender: 'female',
     ageRange: '25-35',
     energy: 'calm',
-    sampleUrl: '/api/voice/sample/vnewfQdVVk9Y9DZWVRNm',
+    sampleUrl: 'https://pub-eb116bdbeab8486f96ecf7c4fbc1014a.r2.dev/voice-samples/vnewfQdVVk9Y9DZWVRNm.mp3',
     description: 'רגועה ומלוטשת. מתאים למדיטציה, שינה, קוסמטיקה טבעית.',
   },
   // ── Female · Social-media-tuned (V5 batch) ────────────────────────────
@@ -169,7 +169,7 @@ export const VOICE_PRESETS: VoicePreset[] = [
     gender: 'female',
     ageRange: '25-35',
     energy: 'authoritative',
-    sampleUrl: '/api/voice/sample/HPTKkesbXZFL5psCQECi',
+    sampleUrl: 'https://pub-eb116bdbeab8486f96ecf7c4fbc1014a.r2.dev/voice-samples/HPTKkesbXZFL5psCQECi.mp3',
     description: 'ברורה, בטוחה ומקצועית. UGC נקי לקטגוריות פיננסיות, ויטמינים, השוואות מחיר.',
   },
   {
@@ -179,7 +179,7 @@ export const VOICE_PRESETS: VoicePreset[] = [
     gender: 'female',
     ageRange: '25-35',
     energy: 'warm',
-    sampleUrl: '/api/voice/sample/4xV4IVezqtNakwHkS1l0',
+    sampleUrl: 'https://pub-eb116bdbeab8486f96ecf7c4fbc1014a.r2.dev/voice-samples/4xV4IVezqtNakwHkS1l0.mp3',
     description: 'נשמעת כמו חברה שמספרת לך משהו במכון של "תקשיבי, מצאתי דבר…". טבעית לרילז שיחתי.',
   },
   {
@@ -189,7 +189,7 @@ export const VOICE_PRESETS: VoicePreset[] = [
     gender: 'female',
     ageRange: '25-35',
     energy: 'energetic',
-    sampleUrl: '/api/voice/sample/OdzztLK2G0aDlU4Tqtvr',
+    sampleUrl: 'https://pub-eb116bdbeab8486f96ecf7c4fbc1014a.r2.dev/voice-samples/OdzztLK2G0aDlU4Tqtvr.mp3',
     description: 'מלוטשת ונמרצת. lifestyle, fashion, beauty.',
   },
   {
@@ -199,7 +199,7 @@ export const VOICE_PRESETS: VoicePreset[] = [
     gender: 'female',
     ageRange: '18-25',
     energy: 'calm',
-    sampleUrl: '/api/voice/sample/1qEiC6qsybMkmnNdVMbK',
+    sampleUrl: 'https://pub-eb116bdbeab8486f96ecf7c4fbc1014a.r2.dev/voice-samples/1qEiC6qsybMkmnNdVMbK.mp3',
     description: 'רגועה וטבעית. מתאים לוולנס, שינה, supplements, מוצרי עור עדינים.',
   },
   {
@@ -209,7 +209,7 @@ export const VOICE_PRESETS: VoicePreset[] = [
     gender: 'female',
     ageRange: '25-35',
     energy: 'calm',
-    sampleUrl: '/api/voice/sample/H6QPv2pQZDcGqLwDTIJQ',
+    sampleUrl: 'https://pub-eb116bdbeab8486f96ecf7c4fbc1014a.r2.dev/voice-samples/H6QPv2pQZDcGqLwDTIJQ.mp3',
     description: 'רכה, אינטימית, מטפתחת. סיפורי ASMR / לפני שינה / מותגי בית רך.',
   },
   {
@@ -219,7 +219,7 @@ export const VOICE_PRESETS: VoicePreset[] = [
     gender: 'female',
     ageRange: '25-35',
     energy: 'calm',
-    sampleUrl: '/api/voice/sample/50YSQEDPA2vlOxhCseP4',
+    sampleUrl: 'https://pub-eb116bdbeab8486f96ecf7c4fbc1014a.r2.dev/voice-samples/50YSQEDPA2vlOxhCseP4.mp3',
     description: 'רכה ומחוממת. UGC עדין למוצרים אינטימיים: היגיינה, וגינה, תינוקות, רגיעה.',
   },
   // ── Female · Mature voices ────────────────────────────────────────────
@@ -235,7 +235,7 @@ export const VOICE_PRESETS: VoicePreset[] = [
     gender: 'female',
     ageRange: '50+',
     energy: 'warm',
-    sampleUrl: '/api/voice/sample/1T2MOlQA0Xp3hNv1dBxp',
+    sampleUrl: 'https://pub-eb116bdbeab8486f96ecf7c4fbc1014a.r2.dev/voice-samples/1T2MOlQA0Xp3hNv1dBxp.mp3',
     description: 'אישה בוגרת, חמה ואותנטית. מתאים להמלצות אישיות, סיפורי אמא/דודה, פרודוקטים להורים.',
   },
   {
@@ -245,7 +245,7 @@ export const VOICE_PRESETS: VoicePreset[] = [
     gender: 'female',
     ageRange: '50+',
     energy: 'calm',
-    sampleUrl: '/api/voice/sample/D3ws14YxTqcjPaXEOehR',
+    sampleUrl: 'https://pub-eb116bdbeab8486f96ecf7c4fbc1014a.r2.dev/voice-samples/D3ws14YxTqcjPaXEOehR.mp3',
     description: 'רכה, איטית ומחושבת. מתאים לסיפורים אינטימיים, וולנס, supplements, מותגים בוגרים.',
   },
   // ── Male · UGC creators ────────────────────────────────────────────────
@@ -256,7 +256,7 @@ export const VOICE_PRESETS: VoicePreset[] = [
     gender: 'male',
     ageRange: '25-35',
     energy: 'warm',
-    sampleUrl: '/api/voice/sample/T4x5CtnhOiichhcqFzgg',
+    sampleUrl: 'https://pub-eb116bdbeab8486f96ecf7c4fbc1014a.r2.dev/voice-samples/T4x5CtnhOiichhcqFzgg.mp3',
     description: 'מיקרופון פנימי של סלולרי, אינפלואנסר אמיתי. UGC הכי משכנע.',
   },
   {
@@ -266,7 +266,7 @@ export const VOICE_PRESETS: VoicePreset[] = [
     gender: 'male',
     ageRange: '25-35',
     energy: 'warm',
-    sampleUrl: '/api/voice/sample/4e32WqNVWRquDa1OcRYZ',
+    sampleUrl: 'https://pub-eb116bdbeab8486f96ecf7c4fbc1014a.r2.dev/voice-samples/4e32WqNVWRquDa1OcRYZ.mp3',
     description: 'real-talk UGC review — נשמע כמו חבר ממליץ על מוצר.',
   },
   {
@@ -276,7 +276,7 @@ export const VOICE_PRESETS: VoicePreset[] = [
     gender: 'male',
     ageRange: '18-25',
     energy: 'energetic',
-    sampleUrl: '/api/voice/sample/DTGwzA4YLrWB1FAT6Uas',
+    sampleUrl: 'https://pub-eb116bdbeab8486f96ecf7c4fbc1014a.r2.dev/voice-samples/DTGwzA4YLrWB1FAT6Uas.mp3',
     description: 'צעיר, אקספרסיבי, מעורר השראה. מתאים לפיטנס, gadgets, מותגים.',
   },
   {
@@ -286,7 +286,7 @@ export const VOICE_PRESETS: VoicePreset[] = [
     gender: 'male',
     ageRange: '25-35',
     energy: 'authoritative',
-    sampleUrl: '/api/voice/sample/jHprmvvyQreWpRuutdmV',
+    sampleUrl: 'https://pub-eb116bdbeab8486f96ecf7c4fbc1014a.r2.dev/voice-samples/jHprmvvyQreWpRuutdmV.mp3',
     description: 'רגוע, בטוח, "אנושי". מותאם בדיוק למודעות שיחתיות.',
   },
   {
@@ -296,7 +296,7 @@ export const VOICE_PRESETS: VoicePreset[] = [
     gender: 'male',
     ageRange: '25-35',
     energy: 'authoritative',
-    sampleUrl: '/api/voice/sample/dtSEyYGNJqjrtBArPCVZ',
+    sampleUrl: 'https://pub-eb116bdbeab8486f96ecf7c4fbc1014a.r2.dev/voice-samples/dtSEyYGNJqjrtBArPCVZ.mp3',
     description: 'עמוק, נועז וחזק. מתאים לטק, רכב, supplements, B2B.',
   },
   // ── Male · Social-media-tuned (V5 batch) ──────────────────────────────
@@ -307,7 +307,7 @@ export const VOICE_PRESETS: VoicePreset[] = [
     gender: 'male',
     ageRange: '25-35',
     energy: 'authoritative',
-    sampleUrl: '/api/voice/sample/46hjOOMU6H10xnfCvy4L',
+    sampleUrl: 'https://pub-eb116bdbeab8486f96ecf7c4fbc1014a.r2.dev/voice-samples/46hjOOMU6H10xnfCvy4L.mp3',
     description: 'עמוק ובוטה, לפרסומות, סושיאל ונרציה. מצוין למודעות עם מסר חזק.',
   },
   {
@@ -317,7 +317,7 @@ export const VOICE_PRESETS: VoicePreset[] = [
     gender: 'male',
     ageRange: '25-35',
     energy: 'energetic',
-    sampleUrl: '/api/voice/sample/fIGaHjfrR8KmMy0vGEVJ',
+    sampleUrl: 'https://pub-eb116bdbeab8486f96ecf7c4fbc1014a.r2.dev/voice-samples/fIGaHjfrR8KmMy0vGEVJ.mp3',
     description: 'אנרגיה גבוהה לעולם המהיר של רילז וטיקטוק. fast direct response.',
   },
   {
@@ -327,7 +327,7 @@ export const VOICE_PRESETS: VoicePreset[] = [
     gender: 'male',
     ageRange: '25-35',
     energy: 'warm',
-    sampleUrl: '/api/voice/sample/AGhk9wKpcIV2UvBus4CY',
+    sampleUrl: 'https://pub-eb116bdbeab8486f96ecf7c4fbc1014a.r2.dev/voice-samples/AGhk9wKpcIV2UvBus4CY.mp3',
     description: 'ה-PVC הקלאסי של ElevenLabs. קול UGC כללי וגמיש.',
   },
   {
@@ -337,7 +337,7 @@ export const VOICE_PRESETS: VoicePreset[] = [
     gender: 'male',
     ageRange: '25-35',
     energy: 'warm',
-    sampleUrl: '/api/voice/sample/LnbSD8AFKmieu4yg2oud',
+    sampleUrl: 'https://pub-eb116bdbeab8486f96ecf7c4fbc1014a.r2.dev/voice-samples/LnbSD8AFKmieu4yg2oud.mp3',
     description: 'שיחה טבעית, סיפור, מודעות. מתאים לסקפטיקל-טסטמוניאל.',
   },
   {
@@ -347,7 +347,7 @@ export const VOICE_PRESETS: VoicePreset[] = [
     gender: 'male',
     ageRange: '25-35',
     energy: 'energetic',
-    sampleUrl: '/api/voice/sample/X7Nmzx8hn3qOAZD8GnBn',
+    sampleUrl: 'https://pub-eb116bdbeab8486f96ecf7c4fbc1014a.r2.dev/voice-samples/X7Nmzx8hn3qOAZD8GnBn.mp3',
     description: 'upbeat וכריזמטי. UGC אנרגטי, gadgets, פיטנס.',
   },
   {
@@ -357,7 +357,7 @@ export const VOICE_PRESETS: VoicePreset[] = [
     gender: 'male',
     ageRange: '25-35',
     energy: 'warm',
-    sampleUrl: '/api/voice/sample/QKtRSwAp8GyjgntJdISB',
+    sampleUrl: 'https://pub-eb116bdbeab8486f96ecf7c4fbc1014a.r2.dev/voice-samples/QKtRSwAp8GyjgntJdISB.mp3',
     description: 'casual, natural, ו-stylish. מתאים לאופנה, lifestyle, מותגי premium.',
   },
 ];

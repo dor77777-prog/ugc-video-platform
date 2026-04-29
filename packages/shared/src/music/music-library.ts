@@ -56,7 +56,7 @@ export const MUSIC_LIBRARY: readonly MusicTrack[] = [
   {
     id: 'mixkit-beautiful-dream-493',
     title: 'Beautiful Dream',
-    fileUrl: '/music/mixkit-beautiful-dream-493.mp3',
+    fileUrl: 'https://pub-eb116bdbeab8486f96ecf7c4fbc1014a.r2.dev/music/mixkit-beautiful-dream-493.mp3',
     source: 'user_provided',
     license: 'user_provided_free_to_use',
     attributionRequired: false,
@@ -71,7 +71,7 @@ export const MUSIC_LIBRARY: readonly MusicTrack[] = [
   {
     id: 'mixkit-hazy-after-hours-132',
     title: 'Hazy After Hours',
-    fileUrl: '/music/mixkit-hazy-after-hours-132.mp3',
+    fileUrl: 'https://pub-eb116bdbeab8486f96ecf7c4fbc1014a.r2.dev/music/mixkit-hazy-after-hours-132.mp3',
     source: 'user_provided',
     license: 'user_provided_free_to_use',
     attributionRequired: false,
@@ -86,7 +86,7 @@ export const MUSIC_LIBRARY: readonly MusicTrack[] = [
   {
     id: 'mixkit-valley-sunset-127',
     title: 'Valley Sunset',
-    fileUrl: '/music/mixkit-valley-sunset-127.mp3',
+    fileUrl: 'https://pub-eb116bdbeab8486f96ecf7c4fbc1014a.r2.dev/music/mixkit-valley-sunset-127.mp3',
     source: 'user_provided',
     license: 'user_provided_free_to_use',
     attributionRequired: false,
@@ -101,7 +101,7 @@ export const MUSIC_LIBRARY: readonly MusicTrack[] = [
   {
     id: 'mixkit-silent-descent-614',
     title: 'Silent Descent',
-    fileUrl: '/music/mixkit-silent-descent-614.mp3',
+    fileUrl: 'https://pub-eb116bdbeab8486f96ecf7c4fbc1014a.r2.dev/music/mixkit-silent-descent-614.mp3',
     source: 'user_provided',
     license: 'user_provided_free_to_use',
     attributionRequired: false,
@@ -116,7 +116,7 @@ export const MUSIC_LIBRARY: readonly MusicTrack[] = [
   {
     id: 'mixkit-spirit-in-the-woods-139',
     title: 'Spirit in the Woods',
-    fileUrl: '/music/mixkit-spirit-in-the-woods-139.mp3',
+    fileUrl: 'https://pub-eb116bdbeab8486f96ecf7c4fbc1014a.r2.dev/music/mixkit-spirit-in-the-woods-139.mp3',
     source: 'user_provided',
     license: 'user_provided_free_to_use',
     attributionRequired: false,
@@ -133,7 +133,7 @@ export const MUSIC_LIBRARY: readonly MusicTrack[] = [
   {
     id: 'mixkit-sun-and-his-daughter-580',
     title: 'Sun and His Daughter',
-    fileUrl: '/music/mixkit-sun-and-his-daughter-580.mp3',
+    fileUrl: 'https://pub-eb116bdbeab8486f96ecf7c4fbc1014a.r2.dev/music/mixkit-sun-and-his-daughter-580.mp3',
     source: 'user_provided',
     license: 'user_provided_free_to_use',
     attributionRequired: false,
@@ -148,7 +148,7 @@ export const MUSIC_LIBRARY: readonly MusicTrack[] = [
   {
     id: 'mixkit-romantic-659',
     title: 'Romantic',
-    fileUrl: '/music/mixkit-romantic-659.mp3',
+    fileUrl: 'https://pub-eb116bdbeab8486f96ecf7c4fbc1014a.r2.dev/music/mixkit-romantic-659.mp3',
     source: 'user_provided',
     license: 'user_provided_free_to_use',
     attributionRequired: false,
@@ -163,7 +163,7 @@ export const MUSIC_LIBRARY: readonly MusicTrack[] = [
   {
     id: 'mixkit-latin-lovers-39',
     title: 'Latin Lovers',
-    fileUrl: '/music/mixkit-latin-lovers-39.mp3',
+    fileUrl: 'https://pub-eb116bdbeab8486f96ecf7c4fbc1014a.r2.dev/music/mixkit-latin-lovers-39.mp3',
     source: 'user_provided',
     license: 'user_provided_free_to_use',
     attributionRequired: false,
@@ -178,7 +178,7 @@ export const MUSIC_LIBRARY: readonly MusicTrack[] = [
   {
     id: 'mixkit-discover-587',
     title: 'Discover',
-    fileUrl: '/music/mixkit-discover-587.mp3',
+    fileUrl: 'https://pub-eb116bdbeab8486f96ecf7c4fbc1014a.r2.dev/music/mixkit-discover-587.mp3',
     source: 'user_provided',
     license: 'user_provided_free_to_use',
     attributionRequired: false,
@@ -195,7 +195,7 @@ export const MUSIC_LIBRARY: readonly MusicTrack[] = [
   {
     id: 'mixkit-tech-house-vibes-130',
     title: 'Tech House Vibes',
-    fileUrl: '/music/mixkit-tech-house-vibes-130.mp3',
+    fileUrl: 'https://pub-eb116bdbeab8486f96ecf7c4fbc1014a.r2.dev/music/mixkit-tech-house-vibes-130.mp3',
     source: 'user_provided',
     license: 'user_provided_free_to_use',
     attributionRequired: false,
@@ -210,7 +210,7 @@ export const MUSIC_LIBRARY: readonly MusicTrack[] = [
   {
     id: 'mixkit-cbpd-400',
     title: 'CBPD',
-    fileUrl: '/music/mixkit-cbpd-400.mp3',
+    fileUrl: 'https://pub-eb116bdbeab8486f96ecf7c4fbc1014a.r2.dev/music/mixkit-cbpd-400.mp3',
     // Filename gives no mood hint — classify conservatively as a safe
     // generic UGC bed. Better to ship as the fallback bucket than to
     // miss it entirely.
@@ -228,7 +228,7 @@ export const MUSIC_LIBRARY: readonly MusicTrack[] = [
   {
     id: 'mixkit-deep-urban-623',
     title: 'Deep Urban',
-    fileUrl: '/music/mixkit-deep-urban-623.mp3',
+    fileUrl: 'https://pub-eb116bdbeab8486f96ecf7c4fbc1014a.r2.dev/music/mixkit-deep-urban-623.mp3',
     source: 'user_provided',
     license: 'user_provided_free_to_use',
     attributionRequired: false,
@@ -243,7 +243,7 @@ export const MUSIC_LIBRARY: readonly MusicTrack[] = [
   {
     id: 'mixkit-hip-hop-02-738',
     title: 'Hip Hop 02',
-    fileUrl: '/music/mixkit-hip-hop-02-738.mp3',
+    fileUrl: 'https://pub-eb116bdbeab8486f96ecf7c4fbc1014a.r2.dev/music/mixkit-hip-hop-02-738.mp3',
     source: 'user_provided',
     license: 'user_provided_free_to_use',
     attributionRequired: false,
@@ -260,7 +260,7 @@ export const MUSIC_LIBRARY: readonly MusicTrack[] = [
   {
     id: 'mixkit-driving-ambition-32',
     title: 'Driving Ambition',
-    fileUrl: '/music/mixkit-driving-ambition-32.mp3',
+    fileUrl: 'https://pub-eb116bdbeab8486f96ecf7c4fbc1014a.r2.dev/music/mixkit-driving-ambition-32.mp3',
     source: 'user_provided',
     license: 'user_provided_free_to_use',
     attributionRequired: false,
@@ -275,7 +275,7 @@ export const MUSIC_LIBRARY: readonly MusicTrack[] = [
   {
     id: 'mixkit-sports-highlights-51',
     title: 'Sports Highlights',
-    fileUrl: '/music/mixkit-sports-highlights-51.mp3',
+    fileUrl: 'https://pub-eb116bdbeab8486f96ecf7c4fbc1014a.r2.dev/music/mixkit-sports-highlights-51.mp3',
     source: 'user_provided',
     license: 'user_provided_free_to_use',
     attributionRequired: false,
@@ -292,7 +292,7 @@ export const MUSIC_LIBRARY: readonly MusicTrack[] = [
   {
     id: 'mixkit-a-very-happy-christmas-897',
     title: 'A Very Happy Christmas',
-    fileUrl: '/music/mixkit-a-very-happy-christmas-897.mp3',
+    fileUrl: 'https://pub-eb116bdbeab8486f96ecf7c4fbc1014a.r2.dev/music/mixkit-a-very-happy-christmas-897.mp3',
     source: 'user_provided',
     license: 'user_provided_free_to_use',
     attributionRequired: false,
@@ -318,7 +318,7 @@ export const MUSIC_LIBRARY: readonly MusicTrack[] = [
   {
     id: 'mixkit-fright-night-871',
     title: 'Fright Night',
-    fileUrl: '/music/mixkit-fright-night-871.mp3',
+    fileUrl: 'https://pub-eb116bdbeab8486f96ecf7c4fbc1014a.r2.dev/music/mixkit-fright-night-871.mp3',
     source: 'user_provided',
     license: 'user_provided_free_to_use',
     attributionRequired: false,
