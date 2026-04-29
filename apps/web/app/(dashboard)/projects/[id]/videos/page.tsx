@@ -6,6 +6,7 @@ import { findVoicePreset } from '@/lib/voice/voice-presets';
 import { Card, CardContent } from '@/components/ui/card';
 import { Stepper } from '@/components/wizard/stepper';
 import { VoicePicker } from './voice-picker';
+import { LipsyncProviderPicker } from './lipsync-provider-picker';
 import {
   GenerateAllVoicesButton,
   GenerateAllClipsButton,
@@ -134,6 +135,17 @@ export default async function VideosPage({
           </CardContent>
         </Card>
       )}
+
+      {/* LipSync provider picker — alongside voice picker. Lets the
+          user A/B Kling vs PixVerse on the same project before
+          committing to a default. Stored on productData.lipsyncProvider;
+          empty falls back to LIPSYNC_PROVIDER env. */}
+      <LipsyncProviderPicker
+        projectId={projectId}
+        currentProvider={
+          typeof data.lipsyncProvider === 'string' ? data.lipsyncProvider : null
+        }
+      />
 
       {/* Batch buttons — voices first, then clips */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

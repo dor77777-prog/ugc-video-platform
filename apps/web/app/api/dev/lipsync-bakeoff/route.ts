@@ -62,11 +62,13 @@ export async function POST(req: Request) {
     );
   }
 
-  // Default to all real providers (skip mock unless explicitly asked).
+  // Default to the real, paid providers (skip mock unless asked, skip
+  // Sync.so unless its key is set, skip ElevenLabs Omnihuman until wired).
+  // The user's primary A/B is Kling vs PixVerse — so default to those two.
   const requestedProviders = (
     body.providers && body.providers.length > 0
       ? body.providers
-      : (['kling', 'sync'] as LipSyncProviderName[])
+      : (['kling', 'pixverse'] as LipSyncProviderName[])
   )
     .map((p) => p.toLowerCase())
     .filter((p): p is LipSyncProviderName => p in ALL_LIPSYNC_PROVIDERS);

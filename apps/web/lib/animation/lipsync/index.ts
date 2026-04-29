@@ -3,21 +3,34 @@
 // the bakeoff endpoint resolves by name via getLipSyncProviderByName().
 //
 // LIPSYNC_PROVIDER env values:
-//   "kling"      → KlingLipSync (default)
+//   "kling"      → KlingLipSync (current default)
+//   "pixverse"   → PixverseLipSync (alternative; multipart upload + poll)
 //   "sync"       → Sync.so / sync-3
 //   "elevenlabs" → ElevenLabs Omnihuman (preview, throws until wired)
 //   "mock"       → passthrough (silent video unchanged)
+//
+// Per-project override: a project can carry productData.lipsyncProvider
+// to win over the env. clip-impl.ts threads the project value through
+// getLipSyncProviderByName() so different projects can A/B different
+// providers without an env restart. See clip-impl for the lookup.
 
 import { LipSyncProvider } from './types';
 import { klingLipSyncProvider } from './kling';
+import { pixverseLipSyncProvider } from './pixverse';
 import { syncLipSyncProvider } from './sync';
 import { elevenLabsLipSyncProvider } from './elevenlabs';
 import { mockLipSyncProvider } from './mock';
 
-export type LipSyncProviderName = 'kling' | 'sync' | 'elevenlabs' | 'mock';
+export type LipSyncProviderName =
+  | 'kling'
+  | 'pixverse'
+  | 'sync'
+  | 'elevenlabs'
+  | 'mock';
 
 export const ALL_LIPSYNC_PROVIDERS: Record<LipSyncProviderName, LipSyncProvider> = {
   kling: klingLipSyncProvider,
+  pixverse: pixverseLipSyncProvider,
   sync: syncLipSyncProvider,
   elevenlabs: elevenLabsLipSyncProvider,
   mock: mockLipSyncProvider,

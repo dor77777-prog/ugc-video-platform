@@ -25,6 +25,7 @@ import {
 } from '@/lib/animation/kling';
 import {
   getActiveLipSyncProvider,
+  getLipSyncProviderByName,
   LipSyncProviderError,
   LipSyncTimeoutError as LipSyncTimeoutErrorAbstract,
   LipSyncConfigError,
@@ -695,10 +696,21 @@ async function generateSceneClipImplInner(
     }
 
     if (!lipSyncSkipReason) {
-      // Provider abstraction — kling/sync/elevenlabs/mock — selected by
-      // LIPSYNC_PROVIDER env. A/B comparison runs through the same
-      // abstraction via /api/dev/lipsync-bakeoff.
-      const lipsyncProvider = getActiveLipSyncProvider();
+      // Provider abstraction — kling/pixverse/sync/elevenlabs/mock —
+      // selected via:
+      //   1. project.productData.lipsyncProvider  (per-project override)
+      //   2. LIPSYNC_PROVIDER env  (global default)
+      //   3. fall back to "kling"
+      // A/B comparison still runs through the same abstraction via
+      // /api/dev/lipsync-bakeoff (resolves by name explicitly).
+      const projectData = scene.script.project.productData as Record<string, unknown> | null;
+      const projectOverride =
+        projectData && typeof projectData.lipsyncProvider === 'string'
+          ? (projectData.lipsyncProvider as string)
+          : null;
+      const lipsyncProvider = projectOverride
+        ? getLipSyncProviderByName(projectOverride)
+        : getActiveLipSyncProvider();
       const lipsyncStartedAt = Date.now();
       const lipsyncCallId = await recordApiCallStart({
         provider: lipsyncProvider.name,
