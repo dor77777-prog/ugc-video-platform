@@ -66,13 +66,21 @@ interface LipSyncCreateResp {
 
 interface VideoResultResp {
   video_id?: number;
+  id?: number;
   status?: string | number;
-  // Status numerics seen in PixVerse: 1=queued, 2=processing, 3=success
-  // (sometimes called "completed"), 5=failed. Keep as string in our
-  // mapping below for forward-compat.
+  // Verified empirically against PixVerse production responses
+  // (Apr 2026): status === 1 means SUCCESS with the output URL
+  // populated. 5 means FAILED. The intermediate values (2, 3, 4)
+  // appear to be queue / processing states. We use the URL presence
+  // as the authoritative success signal — if status === 1 AND a
+  // url is set, we're done. Without a URL even on status === 1,
+  // we keep polling.
   url?: string;
   video_url?: string;
   err_msg?: string;
+  size?: number;
+  has_audio?: boolean;
+  credits?: number;
 }
 
 function getBaseUrl(): string {
@@ -299,24 +307,43 @@ class PixverseLipSync implements LipSyncProvider {
       return { status: 'failed', errorMessage: json.ErrMsg ?? `ErrCode=${json.ErrCode}` };
     }
     const r = json.Resp;
-    // PixVerse status mapping (observed): 1 queued, 2 processing,
-    // 3 success, 5 failed. Strings come back as "Success" / "Processing"
-    // sometimes — handle both.
+    const url = r.url ?? r.video_url;
     const statusRaw = String(r.status ?? '').toLowerCase();
-    const isSuccess = r.status === 3 || statusRaw === 'success' || statusRaw === 'completed';
-    const isFailed = r.status === 5 || statusRaw === 'failed' || statusRaw === 'error';
-    const isProcessing =
-      r.status === 2 || statusRaw === 'processing' || statusRaw === 'running';
 
-    if (isSuccess) {
-      const url = r.url ?? r.video_url;
-      if (!url) return { status: 'failed', errorMessage: 'success without video URL' };
+    // VERIFIED PixVerse status mapping (Apr 2026, against the real
+    // /openapi/v2/video/result/{id} response on the user's account):
+    //   1  → success (output URL is set)
+    //   5  → failed
+    //   2/3/4 → in progress (queued/processing). We don't rely on a
+    //   strict enum for these because PixVerse's docs don't
+    //   enumerate them and the response doesn't always include err_msg.
+    //
+    // The authoritative success signal is `URL is set` — we treat
+    // status 1 + URL as completed. Without a URL we treat status 1
+    // as still-processing (defensive — should not happen but the
+    // fallback is "wait and try again" rather than "fail and drop
+    // the actual successful output", which is what the previous
+    // mapping did for the user's task 400041701566498).
+    const isFailed = r.status === 5 || statusRaw === 'failed' || statusRaw === 'error';
+    if (isFailed) {
+      const detail = r.err_msg || `status=${r.status}`;
+      console.warn(
+        `[pixverse] result for ${providerJobId}: failed — ${detail}. ` +
+          `Full response: ${JSON.stringify(r).slice(0, 400)}`,
+      );
+      return { status: 'failed', errorMessage: r.err_msg ?? `pixverse status=${r.status}` };
+    }
+
+    const isSuccessByCode =
+      r.status === 1 || statusRaw === 'success' || statusRaw === 'completed';
+    if (isSuccessByCode && url) {
       return { status: 'completed', videoUrl: url };
     }
-    if (isFailed) {
-      return { status: 'failed', errorMessage: r.err_msg ?? 'pixverse reported failed' };
-    }
-    return { status: isProcessing ? 'processing' : 'queued' };
+
+    // Anything else → still in progress (queued or processing). The
+    // outer poll loop keeps calling until we get success-with-URL or
+    // a real failure status.
+    return { status: 'processing' };
   }
 
   async generate(input: LipSyncInput): Promise<LipSyncFinalResult> {
