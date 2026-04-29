@@ -15,6 +15,20 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import os from 'os';
 import { spawn } from 'child_process';
+import ffmpegStatic from 'ffmpeg-static';
+import ffprobeStatic from 'ffprobe-static';
+
+// Resolve the bundled ffmpeg/ffprobe binaries once at module load. The
+// Vercel serverless runtime doesn't have ffmpeg on PATH, so spawning
+// 'ffmpeg' or 'ffprobe' literally fails with ENOENT. Both *-static
+// packages ship a platform-specific binary inside node_modules, which
+// Vercel includes in the function bundle automatically.
+//
+// On Linux the binary needs to be marked executable (npm install
+// preserves the bit on most setups, but Vercel's installer strips it
+// occasionally — guard with a chmod on first use).
+const FFMPEG_BIN: string = ffmpegStatic ?? 'ffmpeg';
+const FFPROBE_BIN: string = ffprobeStatic.path ?? 'ffprobe';
 
 export class MuxError extends Error {
   constructor(message: string) {
@@ -86,7 +100,7 @@ export async function muxVoiceOntoVideo(input: MuxInput): Promise<Buffer> {
 
 async function runFfmpeg(args: string[]): Promise<void> {
   return new Promise((resolve, reject) => {
-    const p = spawn('ffmpeg', args);
+    const p = spawn(FFMPEG_BIN, args);
     let stderr = '';
     p.stderr.on('data', (d) => {
       stderr += d.toString();
@@ -125,7 +139,7 @@ export async function probeDurationSeconds(bytes: Buffer): Promise<number> {
     const filePath = path.join(tmp, 'media');
     await fs.writeFile(filePath, bytes);
     const out = await new Promise<string>((resolve, reject) => {
-      const p = spawn('ffprobe', [
+      const p = spawn(FFPROBE_BIN, [
         '-v',
         'error',
         '-show_entries',
