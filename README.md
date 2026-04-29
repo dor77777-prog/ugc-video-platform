@@ -3,7 +3,8 @@
 Hebrew-first AI platform for generating Israeli UGC product video ads from a product URL.
 
 **Brand:** מודעות וידאו שמוכרות. תכל'ס.
-**Status:** V12 (April 29 2026) — end-to-end functional, all wizard steps use real providers, no mocks in the active path.
+**Status:** V12.3 (April 30 2026) — end-to-end functional, all wizard steps use real providers, no mocks in the active path.
+**Production:** https://tachles-lac.vercel.app (Vercel web + Railway worker + Supabase Postgres + Redis Cloud + Cloudflare R2).
 **Output:** 9:16 MP4 ads, 15s or 30s, with Hebrew voice-over + RTL captions + background music.
 
 ---
@@ -348,9 +349,38 @@ npx tsx apps/web/scripts/recover-pixverse-clip.ts <projectId> <pixverseUrl> [sce
 
 ---
 
+## Production
+
+| Service | Where | Notes |
+|---------|-------|-------|
+| **Web app** | Vercel (`bom1` region, Mumbai) | Auto-deploys on push to `main`. Config: [`vercel.json`](vercel.json) |
+| **Worker** | Railway (Dockerfile) | Auto-deploys on push to `main`. Config: [`railway.toml`](railway.toml) + [`apps/worker/Dockerfile`](apps/worker/Dockerfile) |
+| **Database** | Supabase Postgres (`aws-1-ap-south-1.pooler.supabase.com`) | Pooler URL via pgBouncer, port 6543 |
+| **Queue** | Redis Cloud free tier | 30 MB, no per-day command limit |
+| **Storage** | Cloudflare R2 (bucket `ugc-video`) | Public CDN at `https://pub-eb116bdbeab8486f96ecf7c4fbc1014a.r2.dev/`. Static catalogs (avatars, music, voice samples) and runtime-generated assets (scene images, voice MP3s, clips, finals) all land here in production. Local dev still uses `apps/web/public/uploads/`. |
+
+The same `.env` shape is used in all three places (Vercel env vars, Railway
+env vars, local `.env`); the only difference is the `DATABASE_URL` /
+`REDIS_URL` / `CLOUDFLARE_R2_*` values. See `STATUS.md` § "Environment
+variables" for the full env reference.
+
+**Re-uploading static catalogs to R2** (run once whenever the catalogs change):
+```bash
+npx tsx apps/web/scripts/upload-static-assets-to-r2.ts
+# --dry to preview, --skip=avatars,music,voice-samples to skip subsets
+```
+
+**Health checks:**
+```bash
+curl https://tachles-lac.vercel.app/api/health
+# → { ok: true, checks: { database: { ok: true }, redis: { ok: true } } }
+```
+
+---
+
 ## What's still pending
 
-- **Cloud storage** — assets currently live in `apps/web/public/uploads/`. Won't survive a stateless prod deploy. Migrate to S3 / Supabase Storage before going live.
+- ~~**Cloud storage** — Migrate to S3 / Supabase Storage before going live.~~ ✅ done in V12 (Cloudflare R2 wired via [`apps/web/lib/storage/r2.ts`](apps/web/lib/storage/r2.ts), static catalogs hosted on R2 in V12.2).
 - **Stripe billing** — admin-grants only today. Plan/credit columns are ready; the checkout + webhook layer is not.
 - **Custom avatar upload** — catalog is closed (25 portraits). User-supplied portraits would need a moderation pass.
 - **Password reset / OAuth (Google/Apple) / MFA** — Supabase supports it, the UI does not yet.

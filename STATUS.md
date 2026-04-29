@@ -1,7 +1,9 @@
 # tachles · STATUS
 
-Living document. Last update: **2026-04-29** (V12 — caption presets,
-parallel scene regen, scraper hardening, prompt-only regen).
+Living document. Last update: **2026-04-30** (V12.3 — production deploy
+on Vercel + Railway with R2 cloud storage; all `process.cwd()/public/`
+disk reads routed through `readPublicAsset` so the pipeline is fully
+serverless-safe; static catalogs hosted directly on Cloudflare R2).
 
 This is the deep spec — what each subsystem actually does, where it
 lives, what's real vs mocked, and known issues. For a high-level pitch
@@ -553,6 +555,10 @@ versus the typical 30s-mode video cost.
 
 | Tag | Date | Headline |
 |-----|------|----------|
+| **V12.3** | 2026-04-30 | All disk reads via `readPublicAsset`. Patched `kling.imageToPayload`, `kling.downloadAsBuffer`, `pixverse.resolveToBytes`, `mux-audio.readUrlAsBuffer` so the entire downstream pipeline (Kling i2v / PixVerse lip-sync / ffmpeg mux) is Vercel-safe. No more `process.cwd()/public/` calls outside `LocalStorage` adapter + the helper itself. |
+| **V12.2** | 2026-04-30 | Static catalogs migrated to R2. 25 avatars + 17 music tracks + 30 voice samples uploaded to bucket `ugc-video` (132 MB). `apps/web/lib/avatars/catalog.ts` returns `https://pub-eb116bdbeab8486f96ecf7c4fbc1014a.r2.dev/avatars/<id>.png`; same pattern for music + voice samples. New uploader: `npx tsx apps/web/scripts/upload-static-assets-to-r2.ts`. |
+| **V12.1** | 2026-04-30 | `lib/storage/read-public-asset.ts` — central helper with disk-first + HTTP-fallback strategy. Replaces 5 disk-only readers (scene-images, motion-analysis, face-gate, image-qa, product-visual-analysis). Solves Vercel ENOENT after `7aac7bc` excluded `public/` from the function bundle. |
+| **Production deploy** | 2026-04-29 | URL: https://tachles-lac.vercel.app. Vercel (web, region `bom1`), Railway (worker, Dockerfile), Supabase (Postgres + Auth, ap-south-1 pooler), Redis Cloud free tier (BullMQ), Cloudflare R2 (static + generated assets). Configs: `vercel.json`, `railway.toml`, `apps/worker/Dockerfile`, `.railwayignore`. |
 | **V12** | 2026-04-29 | Caption presets — 5 styles (`classic`, `bold_yellow`, `block_card`, `gradient_pink`, `word_pop`). Picker UI on videos page. Per-word ASS events for `word_pop` consume `Scene.wordTimingsJson`. Parallel single-scene regen via Route Handler. Single-scene "🎲 פרומט חדש" — LLM-suggested visual prompt variant without firing image gen. |
 | **V11** | 2026-04-29 | Creative Intelligence pipeline. Product Dossier (32 fields) + Visual Analysis (vision) + Audience Inference. Deterministic Image Brief Builder replaces narration→prompt path. Image QA evaluator + auto-regen loop. Schema migration `v11_image_qa`. Scraper hardening: CSS-leak guard, body-content extraction (replaces meta-description-only fallback), quick auto-suggest at scrape time for category + targetAudience. |
 | **V10** | 2026-04-29 | Premium Hebrew captions. ElevenLabs `with-timestamps` → `charactersToWords` → `chunkCaptions` → ASS v4+. `Scene.wordTimingsJson` + `captionChunksJson`. Migration `v10_scene_captions`. Removed proportional 5-word chunking — scenes without alignment data are EXCLUDED from captions, not approximated. |
