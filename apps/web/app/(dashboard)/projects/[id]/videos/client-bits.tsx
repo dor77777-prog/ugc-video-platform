@@ -18,6 +18,7 @@ import { cn } from '@/lib/utils';
 import {
   generateSceneVoiceAction,
   generateSceneClipAction,
+  regenLipSyncOnlyAction,
   setSceneRequiresLipSyncAction,
   type GenerateVoiceState,
   type GenerateClipState,
@@ -367,6 +368,13 @@ export function SceneClipCard(props: SceneClipCardProps) {
     GenerateClipState,
     FormData
   >(clipAction, undefined);
+  // Lipsync-only regen — separate action so the user can re-lipsync
+  // without paying for a full Kling i2v re-run.
+  const lipsyncOnlyAction = regenLipSyncOnlyAction.bind(null, props.sceneId);
+  const [lipsyncOnlyState, lipsyncOnlyFormAction, lipsyncOnlyPending] = useActionState<
+    GenerateClipState,
+    FormData
+  >(lipsyncOnlyAction, undefined);
 
   // Live overrides: when polling beats router.refresh() during a batch,
   // we set these locally. Cleared once the prop catches up.
@@ -798,17 +806,39 @@ export function SceneClipCard(props: SceneClipCardProps) {
             </form>
           )}
           {hasClip && (
-            <form action={clipFormAction}>
-              <Button
-                type="submit"
-                size="sm"
-                variant="outline"
-                className="w-full"
-                disabled={showClipWorking}
-              >
-                {showClipWorking ? 'מנפיש מחדש…' : '↻ הנפש מחדש'}
-              </Button>
-            </form>
+            <div className="grid grid-cols-2 gap-2">
+              <form action={clipFormAction}>
+                <Button
+                  type="submit"
+                  size="sm"
+                  variant="outline"
+                  className="w-full"
+                  disabled={showClipWorking || lipsyncOnlyPending}
+                  title="מנפיש מחדש מהתחלה — Kling i2v + lipsync (~30 קרדיטים)"
+                >
+                  {showClipWorking ? 'מנפיש מחדש…' : '↻ הנפש מחדש'}
+                </Button>
+              </form>
+              {/* Lipsync-only — keeps the existing animation, swaps just
+                  the lipsync provider's pass on the same audio. Cheaper
+                  (12 credits) than a full clip regen (30). Only useful
+                  when the scene already has both clip + voice AND
+                  requires_lip_sync = true. */}
+              {hasVoice && props.requiresLipSync && (
+                <form action={lipsyncOnlyFormAction}>
+                  <Button
+                    type="submit"
+                    size="sm"
+                    variant="ghost"
+                    className="w-full"
+                    disabled={showClipWorking || lipsyncOnlyPending}
+                    title="רץ רק על שלב ה-lipsync עם הקליפ הנוכחי + האודיו הנוכחי. חוסך את שלב ה-i2v היקר."
+                  >
+                    {lipsyncOnlyPending ? '👄 מסנכרן…' : '👄 רק lipsync'}
+                  </Button>
+                </form>
+              )}
+            </div>
           )}
           {clipState?.error && (
             <div className="text-[11px] text-destructive bg-destructive/10 border border-destructive/20 rounded-md px-2 py-1.5">
@@ -819,6 +849,12 @@ export function SceneClipCard(props: SceneClipCardProps) {
                 </strong>
               )}
               {clipState.error}
+            </div>
+          )}
+          {lipsyncOnlyState?.error && (
+            <div className="text-[11px] text-destructive bg-destructive/10 border border-destructive/20 rounded-md px-2 py-1.5">
+              <strong>Lipsync: </strong>
+              {lipsyncOnlyState.error}
             </div>
           )}
         </div>

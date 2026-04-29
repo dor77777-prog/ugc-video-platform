@@ -37,7 +37,12 @@ import {
 } from '@/lib/animation/types';
 import { deriveSceneRouting } from '@/lib/animation/scene-routing';
 import { videoModeFromProductData } from '@/lib/video-mode';
-import { creditsForClip, getPlanConfig, FIRST_REGEN_FREE } from '@/lib/plans';
+import {
+  creditsForClip,
+  getPlanConfig,
+  FIRST_REGEN_FREE,
+  PER_OPERATION_CREDITS,
+} from '@/lib/plans';
 import { toPublicUrl, PublicUrlError } from '@/lib/animation/public-url';
 import {
   analyzeSceneForMotion,
@@ -47,7 +52,12 @@ import { getActiveTalkingSceneProvider } from '@/lib/animation/talking-scene';
 import { muxVoiceOntoVideo, readUrlAsBuffer, MuxError } from '@/lib/scenes/mux-audio';
 import { getStorage } from '@/lib/storage';
 import { recordApiCall, recordApiCallStart, recordApiCallComplete } from '@/lib/usage/log';
-import { priceKling, klingPricingKeyForModel, priceOpenAiText } from '@/lib/usage/pricing';
+import {
+  priceKling,
+  klingPricingKeyForModel,
+  priceOpenAiText,
+  priceLipSync,
+} from '@/lib/usage/pricing';
 import { buildCreditMutationOps } from '@/lib/usage/credits';
 import { checkRateLimit, RateLimitedError } from '@/lib/usage/rate-limit';
 import { checkSpendCap, SpendCapExceededError } from '@/lib/usage/spend-cap';
@@ -734,7 +744,10 @@ async function generateSceneClipImplInner(
         await recordApiCallComplete(lipsyncCallId, {
           success: true,
           model: lsResult.modelUsed,
-          costUsd: priceKling('lipsync_5s'), // approximation — Sync etc. priced separately
+          // Route to the right provider's cost function. Previously
+          // hardcoded to priceKling, which under-reported PixVerse +
+          // Sync.so calls in /admin/costs.
+          costUsd: priceLipSync(lsResult.providerName, finalDuration),
           units: 1,
           durationMs: Date.now() - lipsyncStartedAt,
         });
@@ -922,4 +935,233 @@ function classifyClipError(err: unknown, stage: 'motion' | 'lipsync'): GenerateC
         : `סנכרון שפתיים נכשל: ${errMsg}`,
     failedStage: stage,
   };
+}
+
+// ── Lipsync-only regeneration ──────────────────────────────────────────────
+// Run the lipsync provider on an existing scene's clip + voice WITHOUT
+// re-running Kling i2v. Saves $0.79 (the i2v call) per regen when the
+// user just wants to try a different lipsync provider on a clip whose
+// visuals are already fine.
+//
+// Preconditions:
+//   - scene.clipUrl exists (scene already has a video to lipsync into)
+//   - scene.voiceUrl exists (need an audio source)
+//   - scene routing says requiresLipSync (or user explicitly opted in)
+//   - PUBLIC_BASE_URL is configured (lipsync providers fetch URLs)
+//   - user has enough credits (12 for lipsync_only)
+export async function regenLipSyncOnlyImpl(
+  sceneId: string,
+  userId: string,
+): Promise<GenerateClipResult> {
+  const scene = await prisma.scene.findUnique({
+    where: { id: sceneId },
+    include: {
+      script: {
+        include: { project: { select: { id: true, productData: true, userId: true } } },
+      },
+    },
+  });
+  if (!scene) return { success: false, error: 'הסצנה לא נמצאה' };
+  if (scene.script.project.userId !== userId) {
+    return { success: false, error: 'אין הרשאה' };
+  }
+  if (!scene.clipUrl) {
+    return {
+      success: false,
+      error: 'אין קליפ קיים לסצנה. צור קודם הנפשה רגילה ואז תוכל להריץ lipsync לבד.',
+      needsImage: true, // best signal we have for "need to do prior step"
+    };
+  }
+  if (!scene.voiceUrl) {
+    return {
+      success: false,
+      error: 'אין voice-over לסצנה. צור voice-over קודם.',
+      needsVoice: true,
+    };
+  }
+
+  const COST_PER_LIPSYNC_ONLY = PER_OPERATION_CREDITS.lipsync_only;
+  const dbUser = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { creditsBalance: true, plan: true },
+  });
+  if (!dbUser) return { success: false, error: 'משתמש לא נמצא' };
+  const planConfig = getPlanConfig(dbUser.plan);
+  if (planConfig.slug === 'free_trial') {
+    return {
+      success: false,
+      error: 'יצירת lipsync אינה זמינה בתקופת הניסיון. שדרג ל-Creator.',
+      needsCredits: true,
+    };
+  }
+  if (planConfig.maxLipSyncScenesPerVideo === 0) {
+    return {
+      success: false,
+      error: 'התוכנית הנוכחית לא תומכת ב-lipsync.',
+      needsCredits: true,
+    };
+  }
+  if (dbUser.creditsBalance < COST_PER_LIPSYNC_ONLY) {
+    return {
+      success: false,
+      error: `אין מספיק קרדיטים — צריך ${COST_PER_LIPSYNC_ONLY}, יש לך ${dbUser.creditsBalance}.`,
+      needsCredits: true,
+    };
+  }
+
+  // Pre-flight: rate-limit + spend cap (same as full clip path).
+  try {
+    await checkRateLimit(userId, 'lipsync');
+    await checkSpendCap(userId);
+  } catch (err) {
+    if (err instanceof RateLimitedError) return { success: false, error: err.message, rateLimited: true };
+    if (err instanceof SpendCapExceededError) return { success: false, error: err.message, spendCapExceeded: true };
+    throw err;
+  }
+
+  // In-flight guard piggybacks on clipInFlightAt — same column the
+  // full-clip path uses. Concurrent lipsync-only + clip-regen on the
+  // same scene would race; the guard serializes them.
+  const IN_FLIGHT_TTL_MS = 15 * 60 * 1000;
+  const sceneAny = scene as unknown as { clipInFlightAt?: Date | null };
+  if (
+    sceneAny.clipInFlightAt &&
+    Date.now() - sceneAny.clipInFlightAt.getTime() < IN_FLIGHT_TTL_MS
+  ) {
+    return {
+      success: false,
+      error: 'יש פעולה אחרת רצה על הקליפ הזה. רענן ונסה שוב.',
+      rateLimited: true,
+    };
+  }
+
+  await prisma.scene.update({
+    where: { id: sceneId },
+    data: { clipInFlightAt: new Date() },
+  });
+
+  try {
+    const projectId = scene.script.project.id;
+
+    // Resolve public URLs (lipsync providers fetch over the internet).
+    let videoPublicUrl: string;
+    let audioPublicUrl: string;
+    try {
+      videoPublicUrl = toPublicUrl(scene.clipUrl);
+      audioPublicUrl = toPublicUrl(scene.voiceUrl);
+    } catch (err) {
+      if (err instanceof PublicUrlError) {
+        return {
+          success: false,
+          error: `${err.message}. הפעל את cloudflared tunnel והגדר PUBLIC_BASE_URL.`,
+          configError: true,
+        };
+      }
+      throw err;
+    }
+
+    // Pick the provider — same precedence as the full-clip path.
+    const projectData = scene.script.project.productData as Record<string, unknown> | null;
+    const projectOverride =
+      projectData && typeof projectData.lipsyncProvider === 'string'
+        ? (projectData.lipsyncProvider as string)
+        : null;
+    const lipsyncProvider = projectOverride
+      ? getLipSyncProviderByName(projectOverride)
+      : getActiveLipSyncProvider();
+
+    const startedAt = Date.now();
+    const callId = await recordApiCallStart({
+      provider: lipsyncProvider.name,
+      operation: 'lipsync',
+      model: process.env.KLING_LIPSYNC_MODEL ?? 'lipsync-v1',
+      units: 1,
+      userId,
+      projectId,
+    });
+
+    let lsResult;
+    try {
+      lsResult = await lipsyncProvider.generate({
+        videoUrl: videoPublicUrl,
+        audioUrl: audioPublicUrl,
+        durationSeconds: scene.clipDurationSeconds ?? scene.durationSeconds,
+        sceneId,
+        // Best-effort routing hint — we don't recompute scene routing
+        // here, the provider can degrade gracefully.
+        faceVisibility: 'clear_front_facing' as never,
+      });
+      await recordApiCallComplete(callId, {
+        success: true,
+        model: lsResult.modelUsed,
+        costUsd: priceLipSync(lsResult.providerName, scene.clipDurationSeconds ?? 5),
+        units: 1,
+        durationMs: Date.now() - startedAt,
+      });
+    } catch (err) {
+      const errMsg = (err as Error).message;
+      await recordApiCallComplete(callId, {
+        success: false,
+        errorMessage: errMsg,
+        durationMs: Date.now() - startedAt,
+      });
+      throw err;
+    }
+
+    // Persist the new clip bytes back as scene.clipUrl + charge credits.
+    const storage = await getStorage();
+    const filename = `${scene.id}-${Date.now()}.mp4`;
+    const { url } = await storage.putBytes({
+      folder: `clips/${projectId}`,
+      filename,
+      data: lsResult.videoBytes,
+      contentType: 'video/mp4',
+    });
+
+    await prisma.$transaction([
+      prisma.scene.update({
+        where: { id: sceneId },
+        data: {
+          clipUrl: url,
+          clipProvider: lipsyncProvider.name,
+          clipGeneratedAt: new Date(),
+          clipDurationSeconds: lsResult.durationSeconds,
+          clipGenerationCount: { increment: 1 },
+        },
+      }),
+      ...buildCreditMutationOps(prisma, {
+        userId,
+        amount: -COST_PER_LIPSYNC_ONLY,
+        reason: 'spent:lipsync_only',
+        ref: sceneId,
+        metadata: {
+          provider: lipsyncProvider.name,
+          videoUrl: videoPublicUrl,
+          audioUrl: audioPublicUrl,
+        },
+      }),
+    ]);
+
+    return {
+      success: true,
+      clipUrl: url,
+      durationSeconds: lsResult.durationSeconds,
+    };
+  } catch (err) {
+    const errMsg = (err as Error).message;
+    if (err instanceof LipSyncTimeoutErrorAbstract) {
+      return { success: false, error: `Lipsync timeout: ${errMsg}`, timedOut: true, failedStage: 'lipsync' };
+    }
+    if (err instanceof LipSyncConfigError) {
+      return { success: false, error: errMsg, configError: true, failedStage: 'lipsync' };
+    }
+    if (err instanceof LipSyncProviderError) {
+      return { success: false, error: `Lipsync provider error: ${errMsg}`, failedStage: 'lipsync' };
+    }
+    return { success: false, error: `Lipsync-only failed: ${errMsg}`, failedStage: 'lipsync' };
+  } finally {
+    await prisma.scene
+      .update({ where: { id: sceneId }, data: { clipInFlightAt: null } })
+      .catch(() => {/* best effort */});
+  }
 }

@@ -151,6 +151,7 @@ export type Operation =
   | 'voice'
   | 'clip_broll'
   | 'clip_lipsync'
+  | 'lipsync_only'
   | 'final_render_15s'
   | 'final_render_30s';
 
@@ -160,6 +161,14 @@ export const PER_OPERATION_CREDITS: Record<Operation, number> = {
   voice: 1,
   clip_broll: 18,
   clip_lipsync: 30,
+  // Lipsync-only: skip the i2v step. Reuse an existing scene clip
+  // (already animated) + the existing voice MP3 → call provider
+  // lipsync API → save result back as the scene clip. Cost basis ≈
+  // $0.55 (Kling) or $0.30 (PixVerse), so we charge 12 credits =
+  // $1.20 list — same shape as final_render_30s, similar margin.
+  // Saves the user $0.79 vs a full clip regen when they just want a
+  // different lipsync provider on a clip whose visuals are fine.
+  lipsync_only: 12,
   final_render_15s: 8,
   final_render_30s: 12,
 };
@@ -178,6 +187,9 @@ export const FIRST_REGEN_FREE: Record<Operation, boolean> = {
   voice: true,
   clip_broll: false,
   clip_lipsync: false,
+  // lipsync_only is itself the "regen of just the lipsync part" — never
+  // free, always paid (it IS the cheap regen).
+  lipsync_only: false,
   final_render_15s: false,
   final_render_30s: false,
 };

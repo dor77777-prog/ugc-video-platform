@@ -3,6 +3,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { InFlightCallsSection } from './in-flight';
+import { PROVIDER_CATALOG } from '@/lib/usage/pricing';
 
 export const dynamic = 'force-dynamic';
 
@@ -226,6 +227,69 @@ export default async function AdminUsagePage() {
           </CardContent>
         </Card>
       )}
+
+      {/* Provider catalog — every paid third-party API the pipeline can
+          touch + roughly what it costs per call. Pulled from
+          PROVIDER_CATALOG in lib/usage/pricing.ts so adding a new
+          integration is a one-place change. */}
+      <Card>
+        <CardContent className="p-5 space-y-3">
+          <div className="space-y-1">
+            <h2 className="text-lg font-bold">Provider integrations</h2>
+            <p className="text-xs text-muted-foreground">
+              כל ה-API החיצוניים שעלולים לחייב את החשבון שלנו. עלות לקריאה מוערכת —
+              הסיכום בעמוד הזה מבוסס על ApiCall.costUsd שנכתב בזמן אמת ע"י כל
+              integration. ספק "לא פעיל" קיים בקוד אבל לא רץ ב-flow הראשי.
+            </p>
+          </div>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>ספק</TableHead>
+                <TableHead>סטטוס</TableHead>
+                <TableHead>תפקיד</TableHead>
+                <TableHead>עלות לקריאה (USD)</TableHead>
+                <TableHead>operation slugs ב-DB</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {PROVIDER_CATALOG.map((p) => (
+                <TableRow key={p.provider}>
+                  <TableCell>
+                    <div className="font-semibold">{p.displayName}</div>
+                    <div className="text-[11px] text-muted-foreground font-mono">
+                      {p.provider}
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    {p.active ? (
+                      <Badge variant="default">פעיל</Badge>
+                    ) : (
+                      <Badge variant="muted">לא פעיל</Badge>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-xs">{p.purposeHe}</TableCell>
+                  <TableCell className="font-mono text-xs">
+                    {p.costPerCallUsd}
+                  </TableCell>
+                  <TableCell className="font-mono text-[10px] text-muted-foreground">
+                    {p.operations.join(', ')}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+          <div className="text-[11px] text-muted-foreground border-t border-border pt-2">
+            💡 הסיכומים בעמוד מקבצים לפי <code>ApiCall.provider</code>. כשמוסיפים
+            integration חדש: (א) עדכן את <code>PROVIDER_CATALOG</code> ב-
+            <code>lib/usage/pricing.ts</code>, (ב) בקוד ה-impl ודא שהקריאה
+            עוברת דרך <code>recordApiCallStart/Complete</code> עם השדה{' '}
+            <code>provider</code> מוגדר נכון, (ג) כתוב פונקציית{' '}
+            <code>price&lt;Provider&gt;()</code> או הוסף ל-<code>priceLipSync</code>{' '}
+            כדי שה-costUsd ייכתב.
+          </div>
+        </CardContent>
+      </Card>
 
       {/* In-flight calls — live view of currently-running provider calls.
           Auto-refreshes via the page's force-dynamic + the sub-component's

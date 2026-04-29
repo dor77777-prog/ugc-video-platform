@@ -146,6 +146,132 @@ export function priceCreatomate(): number {
   return 0.05;
 }
 
+// ─── PixVerse LipSync ─────────────────────────────────────────────────────
+//
+// PixVerse charges per generation in their internal "credits" unit; the
+// LipSync API is documented at ~1 credit per call on their Standard
+// plan (≈ $0.30 / call, observed Apr 2026 from the user's pricing page).
+// Higher-tier plans drop the per-credit cost. We use a flat $0.30 per
+// LipSync call as a conservative estimate so /admin/costs doesn't
+// under-report — when the user shares their actual pricing tier we can
+// drop a multiplier in here.
+const PIXVERSE_LIPSYNC_USD_PER_CALL = 0.3;
+export function pricePixverseLipSync(): number {
+  return PIXVERSE_LIPSYNC_USD_PER_CALL;
+}
+
+// Sync.so charges $0.10 per second of OUTPUT video for sync-3.
+// 5s lipsync = $0.50; 10s = $1.00.
+const SYNCSO_USD_PER_OUTPUT_SECOND = 0.1;
+export function priceSyncSo(durationSeconds: number): number {
+  return Math.max(1, durationSeconds) * SYNCSO_USD_PER_OUTPUT_SECOND;
+}
+
+// Provider-aware lipsync cost router. Used by clip-impl after the
+// lipsync call returns — keeps /admin/costs honest about which provider
+// actually ran (the previous code hardcoded priceKling regardless of
+// the active provider, so PixVerse + Sync.so calls under-reported).
+export function priceLipSync(
+  providerName: string,
+  durationSeconds = 5,
+): number {
+  const slug = providerName.toLowerCase();
+  if (slug === 'kling') return priceKling('lipsync_5s', durationSeconds);
+  if (slug === 'pixverse') return pricePixverseLipSync();
+  if (slug === 'sync') return priceSyncSo(durationSeconds);
+  // mock + elevenlabs (not wired) → no cost.
+  return 0;
+}
+
+// ─── Provider Catalog ─────────────────────────────────────────────────────
+//
+// Single source of truth for "which third-party APIs may bill us, and
+// roughly how much per call". Surfaced in /admin/costs as a reference
+// card so the operator can see at a glance every paid integration in
+// the pipeline.
+export interface ProviderInfo {
+  /** Slug used as the value of ApiCall.provider in the DB. */
+  provider: string;
+  /** Human-friendly name. */
+  displayName: string;
+  /** What the integration does in our pipeline. */
+  purpose: string;
+  /** Hebrew description shown in the admin card. */
+  purposeHe: string;
+  /** Approximate cost per call (USD), before our markup. */
+  costPerCallUsd: string;
+  /** Whether the provider is actively used in the production flow. */
+  active: boolean;
+  /** Operations under this provider in our ApiCall log. */
+  operations: string[];
+}
+
+export const PROVIDER_CATALOG: ProviderInfo[] = [
+  {
+    provider: 'openai',
+    displayName: 'OpenAI',
+    purpose: 'Script generation (gpt-5.4-mini), motion vision analysis (gpt-4o-mini), scene image generation (gpt-image-2)',
+    purposeHe: 'תסריטים, תמונות סצנה (gpt-image-2), ניתוח תנועה (gpt-4o-mini vision)',
+    costPerCallUsd: '$0.005-$0.04 (per call), $0.04/image',
+    active: true,
+    operations: ['script_gen', 'motion_analysis', 'image_gen'],
+  },
+  {
+    provider: 'elevenlabs',
+    displayName: 'ElevenLabs',
+    purpose: 'Hebrew voice-over via Multilingual v2',
+    purposeHe: 'קריינות עברית (Multilingual v2)',
+    costPerCallUsd: '$0.01-$0.02 / scene voice',
+    active: true,
+    operations: ['tts'],
+  },
+  {
+    provider: 'kling',
+    displayName: 'Kling AI',
+    purpose: 'Image-to-video (kling-v3-omni) + LipSync v1',
+    purposeHe: 'הנפשת סצנות (i2v) + LipSync v1',
+    costPerCallUsd: '$0.79 / clip, +$0.55 / lipsync',
+    active: true,
+    operations: ['i2v', 'lipsync', 'kling-avatar', 'kling-advanced-lipsync'],
+  },
+  {
+    provider: 'pixverse',
+    displayName: 'PixVerse',
+    purpose: 'Alternative LipSync provider (multipart upload + poll)',
+    purposeHe: 'LipSync חלופי — להשוואת איכות מול Kling',
+    costPerCallUsd: '~$0.30 / lipsync',
+    active: false,
+    operations: ['lipsync'],
+  },
+  {
+    provider: 'sync',
+    displayName: 'Sync.so (sync-3)',
+    purpose: 'Alternative LipSync provider, per-second pricing',
+    purposeHe: 'LipSync חלופי — חיוב לפי שנייה',
+    costPerCallUsd: '~$0.10 / sec ($0.50 / 5s)',
+    active: false,
+    operations: ['lipsync'],
+  },
+  {
+    provider: 'ffmpeg',
+    displayName: 'ffmpeg (local)',
+    purpose: 'Voice mux + final composition (concat-filter)',
+    purposeHe: 'מיסוך קול + הרכבה סופית',
+    costPerCallUsd: '$0 (local CPU)',
+    active: true,
+    operations: ['mux', 'composition'],
+  },
+  {
+    provider: 'creatomate',
+    displayName: 'Creatomate',
+    purpose: 'Cloud video composition (currently unused; ffmpeg local replaced it)',
+    purposeHe: 'הרכבת וידאו בענן (הוחלף ע"י ffmpeg מקומי)',
+    costPerCallUsd: '$0.05 / render',
+    active: false,
+    operations: ['composition'],
+  },
+];
+
 function stripVersionSuffix(model: string): string {
   // "gpt-5.4-mini-2026-03-17" → "gpt-5.4-mini"
   return model.replace(/-\d{4}-\d{2}-\d{2}$/, '');

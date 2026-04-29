@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { prisma } from '@/lib/db';
 import { getOrCreateAppUser } from '@/lib/auth/sync-user';
 import { generateSceneVoiceImpl } from '@/lib/scenes/voice-impl';
-import { generateSceneClipImpl } from '@/lib/scenes/clip-impl';
+import { generateSceneClipImpl, regenLipSyncOnlyImpl } from '@/lib/scenes/clip-impl';
 import { deriveSceneRouting } from '@/lib/animation/scene-routing';
 
 // Server actions used by the SINGLE-scene buttons on a SceneClipCard
@@ -122,6 +122,37 @@ export async function generateSceneClipAction(
     .then((s) => s?.script.projectId);
 
   const result = await generateSceneClipImpl(sceneId, dbUser.id);
+  if (projectId) revalidatePath(`/projects/${projectId}/videos`);
+
+  if (!result.success) {
+    return {
+      error: result.error,
+      needsCredits: result.needsCredits,
+      needsImage: result.needsImage,
+      needsVoice: result.needsVoice,
+      configError: result.configError,
+      timedOut: result.timedOut,
+      failedStage: result.failedStage,
+    };
+  }
+  return undefined;
+}
+
+// Lipsync-only regen — keep the existing scene clip's visuals, just
+// run the lipsync provider (Kling/PixVerse/etc.) on the current
+// clipUrl + voiceUrl. Cheaper than a full clip regen (skips $0.79
+// of Kling i2v). Surfaced on the scene card next to "↻ Regen clip".
+export async function regenLipSyncOnlyAction(
+  sceneId: string,
+  _prev: GenerateClipState,
+  _formData: FormData,
+): Promise<GenerateClipState> {
+  const { dbUser } = await getOrCreateAppUser();
+  const projectId = await prisma.scene
+    .findUnique({ where: { id: sceneId }, select: { script: { select: { projectId: true } } } })
+    .then((s) => s?.script.projectId);
+
+  const result = await regenLipSyncOnlyImpl(sceneId, dbUser.id);
   if (projectId) revalidatePath(`/projects/${projectId}/videos`);
 
   if (!result.success) {
