@@ -490,9 +490,14 @@ export default async function AdminUsagePage() {
                   </div>
                 </>
               ) : (
-                <div className="text-sm text-destructive">
-                  {providerBalances.elevenlabs.error}
-                </div>
+                // V12.6 — fallback when API key lacks user_read scope.
+                // Show our own spend from ApiCall table instead of red error.
+                <ProviderFallbackCard
+                  providerSlug="elevenlabs"
+                  byProviderRow={byProvider.find((p) => p.provider === 'elevenlabs')}
+                  errorMsg={providerBalances.elevenlabs.error}
+                  fixHint="Edit the ElevenLabs API key → grant user_read scope (or regenerate with all scopes)."
+                />
               )}
             </div>
 
@@ -538,9 +543,13 @@ export default async function AdminUsagePage() {
                   </div>
                 </>
               ) : (
-                <div className="text-sm text-destructive whitespace-pre-wrap">
-                  {providerBalances.openai.error}
-                </div>
+                // V12.6 — fallback when key lacks api.usage.read scope.
+                <ProviderFallbackCard
+                  providerSlug="openai"
+                  byProviderRow={byProvider.find((p) => p.provider === 'openai')}
+                  errorMsg={providerBalances.openai.error}
+                  fixHint="Edit the OpenAI service-account key → grant api.usage.read scope at platform.openai.com → Organization → Roles."
+                />
               )}
             </div>
           </div>
@@ -1187,6 +1196,59 @@ export default async function AdminUsagePage() {
           </CardContent>
         </Card>
       </div>
+    </div>
+  );
+}
+
+// V12.6 — when a provider's balance API rejects us (missing scopes,
+// auth errors), still render a useful card with our LOCAL spend from
+// the ApiCall table. Better than a red error block.
+function ProviderFallbackCard({
+  providerSlug,
+  byProviderRow,
+  errorMsg,
+  fixHint,
+}: {
+  providerSlug: string;
+  byProviderRow: { _sum: { costUsd: number | null }; _count: { _all: number } } | undefined;
+  errorMsg: string;
+  fixHint: string;
+}) {
+  const localSpend30d = byProviderRow?._sum.costUsd ?? 0;
+  const localCalls30d = byProviderRow?._count._all ?? 0;
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-2 text-center">
+        <div>
+          <div className="text-2xl font-mono font-bold">
+            {fmtUSD(localSpend30d)}
+          </div>
+          <div className="text-[10px] text-muted-foreground uppercase tracking-wider">
+            30 ימים — נצבר אצלנו
+          </div>
+        </div>
+        <div>
+          <div className="text-2xl font-mono font-bold">
+            {localCalls30d.toLocaleString()}
+          </div>
+          <div className="text-[10px] text-muted-foreground uppercase tracking-wider">
+            קריאות
+          </div>
+        </div>
+      </div>
+      <details className="text-[11px] text-muted-foreground border border-amber-500/30 bg-amber-500/5 rounded p-2">
+        <summary className="cursor-pointer font-semibold text-amber-700 dark:text-amber-400">
+          ⚠ אין לנו גישה ל-{providerSlug}/balance — מוצג spend מקומי בלבד
+        </summary>
+        <div className="mt-2 space-y-1">
+          <div>
+            <span className="font-semibold">תיקון:</span> {fixHint}
+          </div>
+          <div className="font-mono text-[10px] text-destructive whitespace-pre-wrap break-all opacity-80">
+            {errorMsg}
+          </div>
+        </div>
+      </details>
     </div>
   );
 }
