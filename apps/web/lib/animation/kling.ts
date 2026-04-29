@@ -37,7 +37,6 @@ import {
   AspectRatio,
   FinalVideoResult,
   ImageToVideoInput,
-  LipSyncInput,
   StatusResult,
   SubmitResult,
   VideoGenerationProvider,
@@ -293,66 +292,15 @@ class KlingProvider implements VideoGenerationProvider {
     return { providerJobId: res.data.task_id, status: 'queued' };
   }
 
-  async submitLipSync(input: LipSyncInput): Promise<SubmitResult> {
-    const endpoint = process.env.KLING_LIPSYNC_ENDPOINT ?? DEFAULT_LIPSYNC_ENDPOINT;
-    const model = process.env.KLING_LIPSYNC_MODEL ?? DEFAULT_LIPSYNC_MODEL;
-
-    // Body is provider-specific. We pass URLs (not base64) — Kling fetches
-    // them server-side. Caller is responsible for ensuring the URLs are
-    // publicly reachable from Kling's network (see lib/animation/public-url).
-    const body = {
-      input: {
-        mode: 'audio2video',
-        video_url: input.videoUrl,
-        audio_type: 'url',
-        audio_url: input.audioUrl,
-      },
-      model_name: model,
-    };
-
-    const res = await klingFetch<KlingCreateResponse>(
-      endpoint,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      },
-      'lipsync',
-    );
-    if (res.code !== 0 || !res.data?.task_id) {
-      throw new VideoProviderApiError(
-        `Kling lipsync submit failed: ${res.message ?? 'unknown'} (code=${res.code})`,
-        'lipsync',
-      );
-    }
-    return { providerJobId: res.data.task_id, status: 'queued' };
-  }
-
   async getStatus(providerJobId: string): Promise<StatusResult> {
-    // Kling exposes status under both i2v and lipsync paths; we don't know
-    // which kind the task was without bookkeeping. Try i2v first, fall
-    // through to lipsync if the i2v lookup says "task not found". (In
-    // practice, callers know which kind they submitted and route here
-    // through the convenience methods, so this fallback rarely fires.)
     const i2vEndpoint =
       process.env.KLING_IMAGE_TO_VIDEO_ENDPOINT ?? DEFAULT_I2V_ENDPOINT;
-    try {
-      const res = await klingFetch<KlingStatusResponse>(
-        `${i2vEndpoint}/${encodeURIComponent(providerJobId)}`,
-        { method: 'GET' },
-        'i2v',
-      );
-      return parseKlingStatus(res);
-    } catch {
-      const lipsyncEndpoint =
-        process.env.KLING_LIPSYNC_ENDPOINT ?? DEFAULT_LIPSYNC_ENDPOINT;
-      const res = await klingFetch<KlingStatusResponse>(
-        `${lipsyncEndpoint}/${encodeURIComponent(providerJobId)}`,
-        { method: 'GET' },
-        'lipsync',
-      );
-      return parseKlingStatus(res);
-    }
+    const res = await klingFetch<KlingStatusResponse>(
+      `${i2vEndpoint}/${encodeURIComponent(providerJobId)}`,
+      { method: 'GET' },
+      'i2v',
+    );
+    return parseKlingStatus(res);
   }
 
   async generateImageToVideo(input: ImageToVideoInput): Promise<FinalVideoResult> {
@@ -360,20 +308,6 @@ class KlingProvider implements VideoGenerationProvider {
     return pollAndDownload(this, submit.providerJobId, {
       durationSeconds: input.durationSeconds,
       modelUsed: process.env.KLING_IMAGE_TO_VIDEO_MODEL ?? DEFAULT_I2V_MODEL,
-      // For poll routing in fresh status calls, prefer i2v endpoint.
-      preferEndpoint: 'i2v',
-    });
-  }
-
-  async generateLipSync(input: LipSyncInput): Promise<FinalVideoResult> {
-    if (process.env.KLING_LIPSYNC_MOCK === '1') {
-      return mockLipSync(input);
-    }
-    const submit = await this.submitLipSync(input);
-    return pollAndDownload(this, submit.providerJobId, {
-      durationSeconds: input.durationSeconds,
-      modelUsed: process.env.KLING_LIPSYNC_MODEL ?? DEFAULT_LIPSYNC_MODEL,
-      preferEndpoint: 'lipsync',
     });
   }
 }
@@ -388,11 +322,9 @@ async function pollAndDownload(
   ctx: {
     durationSeconds: number;
     modelUsed: string;
-    preferEndpoint: 'i2v' | 'lipsync';
   },
 ): Promise<FinalVideoResult> {
   const startedAt = Date.now();
-  // We use the Kling getStatus directly (which has the i2v/lipsync fallback).
   while (true) {
     if (Date.now() - startedAt > POLL_TIMEOUT_MS) {
       throw new VideoProviderTimeoutError(
@@ -412,28 +344,12 @@ async function pollAndDownload(
     }
     if (status.status === 'failed') {
       throw new VideoProviderApiError(
-        `Kling job ${providerJobId} failed: ${status.errorMessage ?? 'unknown'}`,
-        ctx.preferEndpoint,
+        `Kling i2v job ${providerJobId} failed: ${status.errorMessage ?? 'unknown'}`,
+        'i2v',
       );
     }
     await sleep(POLL_INTERVAL_MS);
   }
-}
-
-/* ---------- Mock LipSync ---------- */
-
-// Returns the silent input video unchanged. Lets us exercise the
-// pipeline shape (caller saves it as the "lipsynced" clip) without
-// burning Kling units while the lipsync endpoint is being stabilized.
-async function mockLipSync(input: LipSyncInput): Promise<FinalVideoResult> {
-  const videoBytes = await downloadAsBuffer(input.videoUrl);
-  return {
-    providerJobId: `mock-lipsync-${Date.now()}`,
-    videoBytes,
-    videoUrl: input.videoUrl,
-    durationSeconds: input.durationSeconds,
-    modelUsed: 'mock-lip-sync',
-  };
 }
 
 /* ---------- Misc helpers ---------- */

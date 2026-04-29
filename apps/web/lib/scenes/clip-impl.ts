@@ -24,8 +24,7 @@ import {
   buildKlingMotionPrompt,
 } from '@/lib/animation/kling';
 import {
-  getActiveLipSyncProvider,
-  getLipSyncProviderByName,
+  getLipSyncProvider,
   LipSyncProviderError,
   LipSyncTimeoutError as LipSyncTimeoutErrorAbstract,
   LipSyncConfigError,
@@ -48,7 +47,6 @@ import {
   analyzeSceneForMotion,
   type MotionAnalysis,
 } from '@/lib/animation/motion-analysis';
-import { getActiveTalkingSceneProvider } from '@/lib/animation/talking-scene';
 import { muxVoiceOntoVideo, readUrlAsBuffer, MuxError } from '@/lib/scenes/mux-audio';
 import { getStorage } from '@/lib/storage';
 import { recordApiCall, recordApiCallStart, recordApiCallComplete } from '@/lib/usage/log';
@@ -329,156 +327,12 @@ async function generateSceneClipImplInner(
 
   const projectId = scene.script.project.id;
 
-  // ── Talking-scene fast path (Kling AI Avatar v2 / advanced-lipsync) ────
-  // For scenes routed as talking_head/selfie_talking/mirror_selfie_talking,
-  // we can hand the image + audio DIRECTLY to a provider that does both
-  // motion + lip sync in one call (Kling Avatar v2 etc.). This avoids
-  // the i2v→lipsync chain that produces "patch on a frozen face"
-  // artifacts and runs in roughly half the wall-clock time.
-  //
-  // Selection: KLING_TALKING_SCENE_PROVIDER env. When it equals
-  // "lipsync_v1" (or is unset and routing is non-talking) we fall
-  // through to the legacy i2v + optional lipsync flow below.
-  const talkingProviderName = (process.env.KLING_TALKING_SCENE_PROVIDER ?? 'ai_avatar_v2_pro').toLowerCase();
-  const useDirectTalking =
-    routing.requiresLipSync &&
-    !!scene.voiceUrl &&
-    talkingProviderName !== 'lipsync_v1';
-
-  if (useDirectTalking) {
-    let imagePublicUrl: string;
-    let audioPublicUrl: string;
-    try {
-      imagePublicUrl = toPublicUrl(scene.imageUrl!);
-      audioPublicUrl = toPublicUrl(scene.voiceUrl!);
-    } catch (err) {
-      if (err instanceof PublicUrlError) {
-        // Fall through to the legacy i2v path — that one still works
-        // with local URLs because Kling i2v reads bytes inline.
-        console.warn(
-          `[clip] talking-scene fast path needs PUBLIC_BASE_URL — falling back to i2v: ${err.message}`,
-        );
-      } else {
-        throw err;
-      }
-    }
-
-    if (typeof imagePublicUrl! === 'string' && typeof audioPublicUrl! === 'string') {
-      const provider = getActiveTalkingSceneProvider();
-      const startedAt = Date.now();
-      const callId = await recordApiCallStart({
-        provider: 'kling',
-        operation: provider.name, // e.g. "kling-avatar-v2-pro"
-        model: provider.name,
-        units: 1,
-        userId,
-        projectId,
-      });
-      try {
-        const result = await provider.generate({
-          imageUrl: imagePublicUrl!,
-          audioUrl: audioPublicUrl!,
-          durationSeconds: pickClipDuration(
-            scene.voiceDurationSeconds,
-            scene.durationSeconds,
-            true,
-          ),
-          sceneId,
-          aspectRatio: '9:16',
-        });
-        await recordApiCallComplete(callId, {
-          success: true,
-          model: result.modelUsed,
-          // No solid pricing yet for Avatar v2 — log a placeholder of
-          // i2v_v3_omni (similar tier). Refine when we have real
-          // numbers in /admin/costs.
-          costUsd: priceKling('i2v_v3_omni_5s'),
-          units: 1,
-          durationMs: Date.now() - startedAt,
-        });
-
-        // Persist the final clip and bookkeeping. Avatar v2 returns
-        // video WITH audio embedded — no ffmpeg mux needed.
-        const storage = await getStorage();
-        const filename = `${scene.id}-${Date.now()}.mp4`;
-        const { url } = await storage.putBytes({
-          folder: `clips/${projectId}`,
-          filename,
-          data: result.videoBytes,
-          contentType: 'video/mp4',
-        });
-
-        const previousCount = scene.clipGenerationCount ?? 0;
-        // V6 policy: clips are NOT first-regen-free (Kling cost too high).
-        // The flag is read from FIRST_REGEN_FREE so flipping policy is a
-        // one-line change. Provider-failure refunds still apply elsewhere.
-        const clipOpKey = needsLipSync ? 'clip_lipsync' : 'clip_broll';
-        const isFirstRegen = previousCount === 1 && FIRST_REGEN_FREE[clipOpKey];
-        const charge = isFirstRegen ? 0 : creditCost;
-
-        await prisma.$transaction([
-          prisma.scene.update({
-            where: { id: sceneId },
-            data: {
-              clipUrl: url,
-              clipProvider: provider.name,
-              clipGeneratedAt: new Date(),
-              clipDurationSeconds: result.durationSeconds,
-              clipGenerationCount: { increment: 1 },
-            },
-          }),
-          ...buildCreditMutationOps(prisma, {
-            userId,
-            amount: -charge,
-            reason: isFirstRegen ? 'first_regen_free:scene_clip' : 'spent:scene_clip',
-            ref: sceneId,
-            metadata: {
-              previousCount,
-              routing,
-              talkingProvider: provider.name,
-              modelUsed: result.modelUsed,
-            },
-          }),
-          prisma.asset.create({
-            data: {
-              projectId,
-              type: 'avatar_video',
-              provider: provider.name,
-              url,
-              durationSeconds: result.durationSeconds,
-              metadata: {
-                sceneId: scene.id,
-                sceneOrder: scene.sceneOrder,
-                routing,
-                stage: 'direct_talking_scene',
-                modelUsed: result.modelUsed,
-                providerJobId: result.providerJobId,
-              },
-            },
-          }),
-        ]);
-
-        return {
-          success: true,
-          clipUrl: url,
-          durationSeconds: result.durationSeconds,
-          freeRegen: isFirstRegen,
-        };
-      } catch (err) {
-        const errMsg = (err as Error).message;
-        await recordApiCallComplete(callId, {
-          success: false,
-          errorMessage: errMsg,
-          durationMs: Date.now() - startedAt,
-        });
-        // Don't crash — fall through to the legacy i2v path so the
-        // user still gets *something*.
-        console.warn(
-          `[clip] talking-scene provider "${provider.name}" failed; falling back to i2v: ${errMsg}`,
-        );
-      }
-    }
-  }
+  // V7 (2026-04-29) — there is no longer a "talking-scene fast path".
+  // Every clip goes: Kling i2v → (optional PixVerse lipsync if face
+  // gate passes). The fast-path providers (Kling Avatar v2 / advanced
+  // lipsync / lipsync_v1) were removed along with the Sync.so + Kling
+  // LipSync v1 + ElevenLabs Omnihuman alternatives. PixVerse is the
+  // sole lipsync route. See lib/animation/lipsync/pixverse.ts.
 
   // ── Stage 0 — vision-grounded motion analysis (with cache) ─────────────
   // Look at the actual rendered scene image and ask gpt-4o-mini what
@@ -664,10 +518,42 @@ async function generateSceneClipImplInner(
     | null = null;
 
   if (needsLipSync && scene.voiceUrl) {
+    // V7 face-detection gate. Before paying PixVerse for a lipsync,
+    // confirm via gpt-4o-mini that the still has a clear front-facing
+    // face with a visible mouth. If the gate rejects, we keep the
+    // Kling clip + mux audio downstream — no PixVerse call, no
+    // PixVerse credits burned.
+    let gateResult: import('@/lib/animation/face-gate').FaceGateResult | null = null;
+    try {
+      const { runFaceGate } = await import('@/lib/animation/face-gate');
+      gateResult = await runFaceGate({ imageUrl: scene.imageUrl! });
+      console.log(
+        `[clip] scene=${sceneId} face-gate: ` +
+          `shouldLipSync=${gateResult.shouldLipSync} ` +
+          `fullFace=${gateResult.fullFaceDetected} ` +
+          `mouth=${gateResult.mouthVisible} ` +
+          `visibility=${gateResult.faceVisibility} ` +
+          `confidence=${gateResult.faceDetectionConfidence.toFixed(2)} — ` +
+          `${gateResult.reason}`,
+      );
+    } catch (err) {
+      // Gate failure is non-fatal — be conservative and SKIP lipsync.
+      // Better to ship a non-lipsynced clip than burn PixVerse credits
+      // on an unverified face.
+      console.warn(
+        `[clip] scene=${sceneId} face-gate failed:`,
+        (err as Error).message,
+      );
+    }
+
+    if (!gateResult || !gateResult.shouldLipSync) {
+      lipSyncSkipReason = 'unsuitable_base_video';
+    }
+  }
+
+  if (needsLipSync && scene.voiceUrl && !lipSyncSkipReason) {
     console.log(
-      `[clip] scene=${sceneId} order=${scene.sceneOrder} — entering lipsync ` +
-        `stage (provider=${process.env.LIPSYNC_PROVIDER ?? 'kling'} model=` +
-        `${process.env.KLING_LIPSYNC_MODEL ?? 'kling-lip-sync-v1'})`,
+      `[clip] scene=${sceneId} order=${scene.sceneOrder} — entering lipsync stage (pixverse)`,
     );
     // Save the silent clip first so we can hand a public URL to Kling.
     const silentStorage = await getStorage();
@@ -691,9 +577,9 @@ async function generateSceneClipImplInner(
       if (err instanceof PublicUrlError) {
         lipSyncSkipReason = 'public_url_unavailable';
         await recordApiCall({
-          provider: 'kling',
+          provider: 'pixverse',
           operation: 'lipsync',
-          model: process.env.KLING_LIPSYNC_MODEL ?? 'kling-lip-sync-v1',
+          model: 'pixverse-lip-sync',
           costUsd: 0,
           success: false,
           errorMessage: 'skipped:public_url_unavailable',
@@ -706,26 +592,14 @@ async function generateSceneClipImplInner(
     }
 
     if (!lipSyncSkipReason) {
-      // Provider abstraction — kling/pixverse/sync/elevenlabs/mock —
-      // selected via:
-      //   1. project.productData.lipsyncProvider  (per-project override)
-      //   2. LIPSYNC_PROVIDER env  (global default)
-      //   3. fall back to "kling"
-      // A/B comparison still runs through the same abstraction via
-      // /api/dev/lipsync-bakeoff (resolves by name explicitly).
-      const projectData = scene.script.project.productData as Record<string, unknown> | null;
-      const projectOverride =
-        projectData && typeof projectData.lipsyncProvider === 'string'
-          ? (projectData.lipsyncProvider as string)
-          : null;
-      const lipsyncProvider = projectOverride
-        ? getLipSyncProviderByName(projectOverride)
-        : getActiveLipSyncProvider();
+      // V7: PixVerse is the sole lipsync provider. No selection logic,
+      // no env switch, no per-project override.
+      const lipsyncProvider = getLipSyncProvider();
       const lipsyncStartedAt = Date.now();
       const lipsyncCallId = await recordApiCallStart({
         provider: lipsyncProvider.name,
         operation: 'lipsync',
-        model: process.env.KLING_LIPSYNC_MODEL ?? 'kling-lip-sync-v1',
+        model: 'pixverse-lip-sync',
         units: 1,
         userId,
         projectId,
@@ -880,8 +754,8 @@ async function generateSceneClipImplInner(
           stageB:
             lipSyncTaskId != null
               ? {
-                  provider: 'kling',
-                  model: process.env.KLING_LIPSYNC_MODEL ?? 'kling-lip-sync-v1',
+                  provider: 'pixverse',
+                  model: 'pixverse-lip-sync',
                   taskId: lipSyncTaskId,
                 }
               : null,
@@ -1043,52 +917,19 @@ export async function regenLipSyncOnlyImpl(
   try {
     const projectId = scene.script.project.id;
 
-    // Pick the provider FIRST — different providers need URLs in
-    // different shapes:
-    //   - Kling / Sync.so: fetch the URL server-side → need a real
-    //     public HTTPS URL (toPublicUrl + cloudflared tunnel).
-    //   - PixVerse: uploads bytes via multipart → can resolve local
-    //     /uploads paths from disk directly. Skip toPublicUrl so the
-    //     provider doesn't depend on the tunnel being up.
-    const projectData = scene.script.project.productData as Record<string, unknown> | null;
-    const projectOverride =
-      projectData && typeof projectData.lipsyncProvider === 'string'
-        ? (projectData.lipsyncProvider as string)
-        : null;
-    const lipsyncProvider = projectOverride
-      ? getLipSyncProviderByName(projectOverride)
-      : getActiveLipSyncProvider();
-    const providerNeedsPublicUrls =
-      lipsyncProvider.name === 'kling' || lipsyncProvider.name === 'sync';
-
-    let videoPublicUrl: string;
-    let audioPublicUrl: string;
-    if (providerNeedsPublicUrls) {
-      try {
-        videoPublicUrl = toPublicUrl(scene.clipUrl);
-        audioPublicUrl = toPublicUrl(scene.voiceUrl);
-      } catch (err) {
-        if (err instanceof PublicUrlError) {
-          return {
-            success: false,
-            error: `${err.message}. הפעל את cloudflared tunnel והגדר PUBLIC_BASE_URL.`,
-            configError: true,
-          };
-        }
-        throw err;
-      }
-    } else {
-      // PixVerse / mock: pass local paths directly. The provider's
-      // resolveToBytes handles disk I/O.
-      videoPublicUrl = scene.clipUrl;
-      audioPublicUrl = scene.voiceUrl;
-    }
+    // V7: PixVerse is the sole lipsync route. PixVerse uploads bytes
+    // via multipart, so we pass local /uploads paths and skip the
+    // toPublicUrl conversion entirely — the provider doesn't depend
+    // on the cloudflared tunnel being up.
+    const lipsyncProvider = getLipSyncProvider();
+    const videoPublicUrl = scene.clipUrl;
+    const audioPublicUrl = scene.voiceUrl;
 
     const startedAt = Date.now();
     const callId = await recordApiCallStart({
       provider: lipsyncProvider.name,
       operation: 'lipsync',
-      model: process.env.KLING_LIPSYNC_MODEL ?? 'lipsync-v1',
+      model: 'pixverse-lip-sync',
       units: 1,
       userId,
       projectId,

@@ -160,27 +160,11 @@ export function pricePixverseLipSync(): number {
   return PIXVERSE_LIPSYNC_USD_PER_CALL;
 }
 
-// Sync.so charges $0.10 per second of OUTPUT video for sync-3.
-// 5s lipsync = $0.50; 10s = $1.00.
-const SYNCSO_USD_PER_OUTPUT_SECOND = 0.1;
-export function priceSyncSo(durationSeconds: number): number {
-  return Math.max(1, durationSeconds) * SYNCSO_USD_PER_OUTPUT_SECOND;
-}
-
-// Provider-aware lipsync cost router. Used by clip-impl after the
-// lipsync call returns — keeps /admin/costs honest about which provider
-// actually ran (the previous code hardcoded priceKling regardless of
-// the active provider, so PixVerse + Sync.so calls under-reported).
-export function priceLipSync(
-  providerName: string,
-  durationSeconds = 5,
-): number {
-  const slug = providerName.toLowerCase();
-  if (slug === 'kling') return priceKling('lipsync_5s', durationSeconds);
-  if (slug === 'pixverse') return pricePixverseLipSync();
-  if (slug === 'sync') return priceSyncSo(durationSeconds);
-  // mock + elevenlabs (not wired) → no cost.
-  return 0;
+// V7: PixVerse is the sole lipsync provider. priceLipSync used to
+// route by provider name (kling / pixverse / sync); now it always
+// returns the PixVerse rate.
+export function priceLipSync(_providerName?: string, _durationSeconds = 5): number {
+  return pricePixverseLipSync();
 }
 
 // ─── Provider Catalog ─────────────────────────────────────────────────────
@@ -228,28 +212,19 @@ export const PROVIDER_CATALOG: ProviderInfo[] = [
   {
     provider: 'kling',
     displayName: 'Kling AI',
-    purpose: 'Image-to-video (kling-v3-omni) + LipSync v1',
-    purposeHe: 'הנפשת סצנות (i2v) + LipSync v1',
-    costPerCallUsd: '$0.79 / clip, +$0.55 / lipsync',
+    purpose: 'Image-to-video (kling-v3-omni). Animation only — lipsync is PixVerse.',
+    purposeHe: 'הנפשת סצנות (i2v). אין יותר Kling LipSync — PixVerse ירש את התפקיד.',
+    costPerCallUsd: '$0.79 / clip',
     active: true,
-    operations: ['i2v', 'lipsync', 'kling-avatar', 'kling-advanced-lipsync'],
+    operations: ['i2v'],
   },
   {
     provider: 'pixverse',
     displayName: 'PixVerse',
-    purpose: 'Alternative LipSync provider (multipart upload + poll)',
-    purposeHe: 'LipSync חלופי — להשוואת איכות מול Kling',
+    purpose: 'The sole LipSync provider — multipart upload + poll',
+    purposeHe: 'ספק ה-LipSync היחיד — multipart upload + polling',
     costPerCallUsd: '~$0.30 / lipsync',
-    active: false,
-    operations: ['lipsync'],
-  },
-  {
-    provider: 'sync',
-    displayName: 'Sync.so (sync-3)',
-    purpose: 'Alternative LipSync provider, per-second pricing',
-    purposeHe: 'LipSync חלופי — חיוב לפי שנייה',
-    costPerCallUsd: '~$0.10 / sec ($0.50 / 5s)',
-    active: false,
+    active: true,
     operations: ['lipsync'],
   },
   {

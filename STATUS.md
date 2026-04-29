@@ -1,11 +1,12 @@
 # tachles · STATUS
 
-מסמך חי — מה מומש, מה בעבודה, מה חסר. **עדכון אחרון: 2026-04-29** (V6 — script streaming + avatar-gender lock + Israeli realism boilerplate + 12-dim quality_score + 5 hooks + 30 voices + duration mode 15s/30s + product-first metadata).
+מסמך חי — מה מומש, מה בעבודה, מה חסר. **עדכון אחרון: 2026-04-29** (V7 — PixVerse הוא ספק LipSync היחיד; face-gate אוטומטי; Kling/Sync/ElevenLabs/Mock LipSync ו-TalkingSceneProvider variants הוסרו).
 
 ## 🆕 מה חדש מ-V4 ואילך (סיכום מצטבר)
 
 | ציון | תאריך | מה זה |
 |------|-------|--------|
+| **V7** | 2026-04-29 | **PixVerse-only LipSync**. הוסרו: Kling LipSync v1, Sync.so, ElevenLabs Omnihuman, Mock provider, KlingAvatar v2 / advanced-lipsync / lipsync_v1 (כל ה-TalkingSceneProvider variants), `LIPSYNC_PROVIDER` / `KLING_LIPSYNC_*` / `KLING_TALKING_SCENE_PROVIDER` envs, ה-LipsyncProviderPicker UI, ושני ה-bakeoff endpoints. **Face-gate חדש** (`lib/animation/face-gate.ts`): gpt-4o-mini עם structured output מחליט אוטומטית אם סצנה ראויה ל-LipSync (full clear face + visible mouth) — אין יותר בחירת ספק ידנית. **Fallback policy**: אם PixVerse נכשל → סצנה משתמשת ב-Kling i2v output + audio נפרד. אין fallback לספק אחר. |
 | **V6** | 2026-04-29 | **Script streaming**: 6 calls מקבילים בנפרד, כל תסריט נשמר ל-DB ברגע שהוא מוכן, ה-UI מתעדכן לייב דרך `router.refresh()` כל 2.5s. **Avatar gender lock**: כל ה-spoken_text + on_screen_caption בלשון התואמת (זכר/נקבה) למגדר האווטאר. **30 קולות** ב-VoicePicker. |
 | **V5** | 2026-04-29 | **Israeli realism**: per-scene `environment_type`+`environment_style`+`israeli_environment_required`+`local_realism_notes`+`why_this_scene_exists`. Image-prompt boilerplate שדוחף את gpt-image-2 ל-outlets/switches ישראליים, מידות דירה, trissim, טקסט עברי/נייטרלי. **Creative_strategy** הורחב ב-5 שדות (`big_idea`, `specific_situation`, `product_role`, `proof_moment`, `why_this_is_different_from_other_scripts`). **Quality_score** 12 צירים. **5 hook_options** מ-archetype-ים שונים. |
 | **V4** | 2026-04-28 | **Duration mode (15s/30s)** end-to-end: helper `lib/video-mode.ts`, system-prompt branches, lipsync cap מותאם (1 vs 2). **Product-first scene metadata**: `primarySubject`, `mustShowProduct`, `productVisibilityPriority`, `cameraFocus`, `showFace`, `secondarySubject` ב-Scene + structured-output נדרש. Image-prompt builder עובר ל-product-led opener כש-primary_subject != avatar. |

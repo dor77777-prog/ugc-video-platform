@@ -3,10 +3,29 @@
 Hebrew-first AI platform for generating UGC video ads from product URLs.
 Brand tagline: **מודעות וידאו שמוכרות. תכל'ס.**
 
-## Current state (April 2026 — V6)
+## Current state (April 2026 — V7)
 
 End-to-end functional. Every wizard step uses real providers (no mocks in the main path).
 See [STATUS.md](./STATUS.md) for the full implemented / mocked / missing breakdown.
+
+### What V7 added (Apr 29)
+- **PixVerse is the sole LipSync provider.** Removed Kling LipSync v1,
+  Sync.so, ElevenLabs Omnihuman, Mock, and the four TalkingScene
+  variants (Avatar v2 Pro / Standard / Advanced LipSync / lipsync_v1).
+  No more `LIPSYNC_PROVIDER` env, no more `KLING_TALKING_SCENE_PROVIDER`,
+  no more LipSync provider-picker in the UI.
+- **Face-detection gate** before PixVerse upload —
+  [`lib/animation/face-gate.ts`](apps/web/lib/animation/face-gate.ts)
+  uses gpt-4o-mini with strict structured output to decide whether a
+  scene's still has a clear front-facing face + visible mouth. Only
+  scenes the gate approves are sent to PixVerse; everything else stays
+  as the silent Kling clip + ffmpeg-muxed audio. Saves PixVerse credits
+  on product/hands-only scenes that would never benefit from lipsync.
+- **Schema additions on Scene**: `fullFaceDetected`, `mouthVisible`,
+  `faceDetectionConfidence`, `faceGateImageUrl`, `faceGateReason`,
+  `lipSyncStatus`, `lipSyncErrorMessage`, `pixverseVideoMediaId`,
+  `pixverseAudioMediaId`, `pixverseVideoId`, `audioHandling`. Migration
+  `v7_pixverse_face_gate`.
 
 ### What V6 added (Apr 29)
 - **Script streaming** — 6 framework calls fire in parallel, each script persists +

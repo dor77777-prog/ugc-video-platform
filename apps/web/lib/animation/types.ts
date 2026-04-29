@@ -82,15 +82,15 @@ export interface FinalVideoResult {
 export interface VideoGenerationProvider {
   /** Submit an image-to-video job. */
   submitImageToVideo(input: ImageToVideoInput): Promise<SubmitResult>;
-  /** Submit a lip-sync job (video + audio → lip-synced video). */
-  submitLipSync(input: LipSyncInput): Promise<SubmitResult>;
   /** Poll status of a previously submitted job. */
   getStatus(providerJobId: string): Promise<StatusResult>;
   /** Convenience: submit + poll + download bytes for image-to-video. */
   generateImageToVideo(input: ImageToVideoInput): Promise<FinalVideoResult>;
-  /** Convenience: submit + poll + download bytes for lip-sync. */
-  generateLipSync(input: LipSyncInput): Promise<FinalVideoResult>;
 }
+
+// Note: lip-sync is no longer part of the VideoGenerationProvider
+// contract. PixVerse is the sole lip-sync route — see
+// lib/animation/lipsync/pixverse.ts. Kling does animation only.
 
 /* ---------- Common error classes ---------- */
 

@@ -337,6 +337,32 @@ model Scene {
   motionAnalysisImageUrl  String?
   motionAnalysisAt        DateTime?
 
+  // V7 face-detection gate (gpt-4o-mini vision). Run BEFORE PixVerse
+  // upload so we don't pay for lip-sync on frames that aren't
+  // suitable. Persisted for admin forensics ("why did this scene NOT
+  // get lipsynced?") + cache: if scene.imageUrl matches
+  // faceGateImageUrl, the cached decision is reused on clip regen.
+  fullFaceDetected           Boolean?
+  mouthVisible               Boolean?
+  faceDetectionConfidence    Float?
+  faceGateImageUrl           String?
+  faceGateReason             String?
+  // PixVerse handles lipsync. These IDs link a scene to its PixVerse
+  // task for retrieval / debugging. lipSyncStatus is one of:
+  //   'pending' | 'queued' | 'processing' | 'completed' |
+  //   'failed' | 'skipped_no_face' | 'failed_fallback_used'
+  lipSyncStatus              String?
+  lipSyncErrorMessage        String?
+  pixverseVideoMediaId       String?
+  pixverseAudioMediaId       String?
+  pixverseVideoId            String?
+  // 'separate_audio' = scene audio is a separate stream (the Kling
+  // clip is silent + voice MP3 muxed at scene-clip persist).
+  // 'baked_into_video' = audio is already inside the clip (PixVerse
+  // returned a clip with the synced voice baked in). Affects whether
+  // the final composition mux re-overlays the MP3 — see the worker.
+  audioHandling              String?
+
   @@unique([scriptId, sceneOrder])
   @@index([scriptId])
 }
