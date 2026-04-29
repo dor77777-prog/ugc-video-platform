@@ -30,6 +30,15 @@ const nextConfig = {
       '../../node_modules/ffmpeg-static/package.json',
     ],
   },
+  // public/ contains 159MB of static assets (avatar PNGs, music tracks,
+  // voice samples) that Vercel serves directly from its edge — they
+  // never need to be inside any function's bundle. The tracer was pulling
+  // public/ in for the clip route because mux-audio.ts has a dev-only
+  // branch that reads from public/uploads/ via process.cwd(). In prod
+  // every URL comes from R2, so the branch is dead — strip it.
+  outputFileTracingExcludes: {
+    '*': ['apps/web/public/**', './public/**'],
+  },
 };
 
 export default nextConfig;
