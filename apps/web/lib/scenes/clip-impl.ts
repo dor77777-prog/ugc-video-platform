@@ -1043,24 +1043,13 @@ export async function regenLipSyncOnlyImpl(
   try {
     const projectId = scene.script.project.id;
 
-    // Resolve public URLs (lipsync providers fetch over the internet).
-    let videoPublicUrl: string;
-    let audioPublicUrl: string;
-    try {
-      videoPublicUrl = toPublicUrl(scene.clipUrl);
-      audioPublicUrl = toPublicUrl(scene.voiceUrl);
-    } catch (err) {
-      if (err instanceof PublicUrlError) {
-        return {
-          success: false,
-          error: `${err.message}. הפעל את cloudflared tunnel והגדר PUBLIC_BASE_URL.`,
-          configError: true,
-        };
-      }
-      throw err;
-    }
-
-    // Pick the provider — same precedence as the full-clip path.
+    // Pick the provider FIRST — different providers need URLs in
+    // different shapes:
+    //   - Kling / Sync.so: fetch the URL server-side → need a real
+    //     public HTTPS URL (toPublicUrl + cloudflared tunnel).
+    //   - PixVerse: uploads bytes via multipart → can resolve local
+    //     /uploads paths from disk directly. Skip toPublicUrl so the
+    //     provider doesn't depend on the tunnel being up.
     const projectData = scene.script.project.productData as Record<string, unknown> | null;
     const projectOverride =
       projectData && typeof projectData.lipsyncProvider === 'string'
@@ -1069,6 +1058,31 @@ export async function regenLipSyncOnlyImpl(
     const lipsyncProvider = projectOverride
       ? getLipSyncProviderByName(projectOverride)
       : getActiveLipSyncProvider();
+    const providerNeedsPublicUrls =
+      lipsyncProvider.name === 'kling' || lipsyncProvider.name === 'sync';
+
+    let videoPublicUrl: string;
+    let audioPublicUrl: string;
+    if (providerNeedsPublicUrls) {
+      try {
+        videoPublicUrl = toPublicUrl(scene.clipUrl);
+        audioPublicUrl = toPublicUrl(scene.voiceUrl);
+      } catch (err) {
+        if (err instanceof PublicUrlError) {
+          return {
+            success: false,
+            error: `${err.message}. הפעל את cloudflared tunnel והגדר PUBLIC_BASE_URL.`,
+            configError: true,
+          };
+        }
+        throw err;
+      }
+    } else {
+      // PixVerse / mock: pass local paths directly. The provider's
+      // resolveToBytes handles disk I/O.
+      videoPublicUrl = scene.clipUrl;
+      audioPublicUrl = scene.voiceUrl;
+    }
 
     const startedAt = Date.now();
     const callId = await recordApiCallStart({

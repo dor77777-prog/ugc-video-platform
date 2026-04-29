@@ -103,26 +103,63 @@ function newTraceId(): string {
   return crypto.randomUUID();
 }
 
-// Resolve a public URL or local /uploads path to bytes + a sane filename.
+// Resolve a URL to bytes + filename. Handles three input shapes:
+//   1. "/uploads/..."           → local fs read
+//   2. "https://<PUBLIC_BASE_URL>/uploads/..." → strip prefix, local fs read
+//      (avoids a network round-trip back through our own cloudflared
+//      tunnel, which is fragile in dev when the tunnel drops)
+//   3. any other "https://..."  → fetch over network
+//
+// PixVerse uses multipart upload (the provider doesn't fetch from URLs
+// itself), so for any URL that ultimately points back at our own server
+// we read directly from disk. That's how we recover from "fetch failed"
+// during a tunnel hiccup — the file is right there on disk.
 async function resolveToBytes(url: string): Promise<{ bytes: Buffer; filename: string }> {
-  if (url.startsWith('/')) {
-    const fs = await import('fs/promises');
-    const path = await import('path');
-    const filePath = path.join(process.cwd(), 'public', url.replace(/^\/+/, ''));
-    const bytes = await fs.readFile(filePath);
-    return { bytes, filename: path.basename(filePath) };
+  const fs = await import('fs/promises');
+  const path = await import('path');
+
+  // Shape 2: same-host public URL → treat as local /uploads path.
+  const publicBase = (process.env.PUBLIC_BASE_URL ?? '').replace(/\/+$/, '');
+  let effective = url;
+  if (publicBase && url.startsWith(publicBase + '/')) {
+    effective = url.slice(publicBase.length); // → "/uploads/..."
   }
-  const res = await fetch(url);
+
+  if (effective.startsWith('/')) {
+    const filePath = path.join(process.cwd(), 'public', effective.replace(/^\/+/, ''));
+    try {
+      const bytes = await fs.readFile(filePath);
+      return { bytes, filename: path.basename(filePath) };
+    } catch (err) {
+      throw new LipSyncProviderError(
+        `Failed to read ${filePath}: ${(err as Error).message}`,
+        'pixverse',
+      );
+    }
+  }
+
+  // Shape 3: external URL → fetch.
+  let res: Response;
+  try {
+    res = await fetch(effective);
+  } catch (err) {
+    // Network-level failure (DNS, tunnel down, etc.). Surface a
+    // clearer message than "fetch failed" so the user can act.
+    throw new LipSyncProviderError(
+      `Network fetch of ${effective} failed: ${(err as Error).message}. ` +
+        `If the URL points to your cloudflared tunnel, check that it's still running.`,
+      'pixverse',
+    );
+  }
   if (!res.ok) {
     throw new LipSyncProviderError(
-      `Failed to fetch ${url}: HTTP ${res.status}`,
+      `Failed to fetch ${effective}: HTTP ${res.status}`,
       'pixverse',
       res.status,
     );
   }
   const bytes = Buffer.from(await res.arrayBuffer());
-  // Best-effort filename from URL path.
-  const parsed = new URL(url);
+  const parsed = new URL(effective);
   const filename = parsed.pathname.split('/').filter(Boolean).pop() || 'media';
   return { bytes, filename };
 }
