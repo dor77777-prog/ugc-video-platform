@@ -37,13 +37,18 @@ export function Sidebar() {
       </nav>
 
       <div className="p-4 border-t border-border">
-        <div className="rounded-lg bg-gradient-to-br from-primary to-primary/70 text-primary-foreground p-4 space-y-2">
-          <div className="text-sm font-semibold">שדרוג לפלאן Pro</div>
-          <div className="text-xs opacity-90">סרטונים ללא הגבלה, אווטארים פרימיום, ללא לוגו.</div>
-          <button className="w-full mt-2 bg-accent text-accent-foreground text-sm font-semibold py-2 rounded-md hover:opacity-90 transition-opacity">
-            שדרוג
-          </button>
-        </div>
+        <Link
+          href="/pricing"
+          className="block rounded-lg bg-gradient-to-br from-primary to-primary/70 text-primary-foreground p-4 space-y-2 hover:opacity-95 transition-opacity"
+        >
+          <div className="text-sm font-semibold">שדרג את התוכנית</div>
+          <div className="text-xs opacity-90">
+            יותר קרדיטים, יותר lipsync, יצוא MP4 מלא.
+          </div>
+          <div className="w-full mt-2 bg-accent text-accent-foreground text-sm font-semibold py-2 rounded-md text-center">
+            ראה תוכניות →
+          </div>
+        </Link>
       </div>
     </aside>
   );

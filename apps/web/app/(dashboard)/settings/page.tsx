@@ -1,8 +1,12 @@
+import Link from 'next/link';
 import { getOrCreateAppUser } from '@/lib/auth/sync-user';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { PLAN_CONFIGS, type PlanSlug } from '@/lib/plans';
 
 export default async function SettingsPage() {
   const { authUser, dbUser } = await getOrCreateAppUser();
+  const planConfig = PLAN_CONFIGS[dbUser.plan as PlanSlug] ?? PLAN_CONFIGS.free_trial;
 
   return (
     <div className="p-6 md:p-10 max-w-3xl space-y-6">
@@ -17,12 +21,22 @@ export default async function SettingsPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           <Field label="אימייל" value={authUser.email!} />
-          <Field label="פלאן" value={dbUser.plan} />
+          <Field
+            label="פלאן"
+            value={`${planConfig.displayName}${planConfig.monthlyPriceUsd > 0 ? ` ($${planConfig.monthlyPriceUsd}/חודש)` : ''}`}
+          />
           <Field label="קרדיטים" value={String(dbUser.creditsBalance)} />
           <Field
             label="תאריך הצטרפות"
             value={dbUser.createdAt.toLocaleDateString('he-IL')}
           />
+          <div className="pt-3">
+            <Link href="/pricing">
+              <Button variant="default" className="w-full">
+                {dbUser.plan === 'free_trial' ? 'שדרג לתוכנית בתשלום' : 'החלף תוכנית / שדרוג'}
+              </Button>
+            </Link>
+          </div>
         </CardContent>
       </Card>
 
