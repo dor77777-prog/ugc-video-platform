@@ -1,3 +1,8 @@
+// Script generation can take up to 90s (Product Intelligence + 6 parallel
+// OpenAI calls). Without this the default 60s Vercel timeout kills the
+// Server Action and leaves the client button stuck in pending forever.
+export const maxDuration = 120;
+
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ScriptAngle } from '@prisma/client';

@@ -1,10 +1,5 @@
 'use server';
 
-// Script generation can take up to 90s: Product Intelligence (OpenAI) +
-// 6 parallel framework calls. Without this, Vercel's default 60s function
-// timeout kills the request and leaves the client stuck in pending forever.
-export const maxDuration = 120;
-
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { ProjectStatus, ScriptAngle, SceneType } from '@prisma/client';
