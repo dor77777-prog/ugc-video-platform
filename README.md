@@ -3,7 +3,7 @@
 Hebrew-first AI platform for generating Israeli UGC product video ads from a product URL.
 
 **Brand:** מודעות וידאו שמוכרות. תכל'ס.
-**Status:** V12.7 (April 30 2026) — end-to-end functional, all wizard steps use real providers, no mocks in the active path. Live provider balance dashboard at `/admin/costs` shows real data for all 4 paid providers (Kling, PixVerse, ElevenLabs, OpenAI) — V12.6 adds graceful per-provider fallback to local spend aggregates, V12.7 fixes the OpenAI parser and adds a dedicated admin-scope key (`OPENAI_ADMIN_API_KEY`).
+**Status:** V13 PR1 (April 30 2026) — end-to-end functional, all wizard steps use real providers, no mocks in the active path. V13 PR1 removes the post-generation Image QA auto-regeneration loop from the active path: quality is now driven upstream (Product Intelligence → Image Brief → better prompt) instead of by regenerating-until-a-vision-model-approves. PR2 (Scene Plan) and PR3 (Animation Plan + Kling rewrite) follow.
 **Production:** https://tachles-lac.vercel.app (Vercel web + Railway worker + Supabase Postgres + Redis Cloud + Cloudflare R2).
 **Output:** 9:16 MP4 ads, 15s or 30s, with Hebrew voice-over + RTL captions + background music.
 
@@ -169,7 +169,7 @@ curl http://localhost:3000/api/health
 | 1. Product scrape + intelligence | `lib/scraper/` + `lib/product-intelligence/` | OpenAI gpt-5.4-mini (dossier + audience), gpt-4o-mini (visual analysis on hero image), quick auto-suggest for category + audience | ~$0.10 once per project | 0 |
 | 2. Avatar | static catalog `public/avatars/` (25 portraits) | — | $0 | 0 |
 | 3. Scripts | `lib/llm/scripts.ts` + `packages/prompts/` | OpenAI gpt-5.4-mini, 6 frameworks in parallel, V5 creative strategy + 12-axis quality score + selective regen | ~$0.05 / batch | 2 |
-| 4. Scene images | `lib/scenes/generate-impl.ts` + `lib/image-briefs/` + (optional) `lib/image-qa/` | gpt-image-2 — V11 deterministic image brief replaces the old narration-driven prompt; optional QA + auto-regen loop (gpt-4o-mini vision) when `IMAGE_QA_ENABLED=true` | $0.06 / image · $0.005 / QA pass | 2 (first regen free) |
+| 4. Scene images | `lib/scenes/generate-impl.ts` + `lib/image-briefs/` | gpt-image-2 — V11 deterministic image brief replaces the old narration-driven prompt. (V13 PR1: post-generation QA + auto-regen loop removed — quality is driven upstream, not by retry-until-pass.) | $0.06 / image | 2 (first regen free) |
 | 5. Voice | `lib/scenes/voice-impl.ts` + `lib/voice/elevenlabs.ts` | ElevenLabs `eleven_v3` (only model with Hebrew). The `with-timestamps` endpoint variant returns per-character alignment → V10 chunker → phrase-level captions | ~$0.02 / scene | 1 (first regen free) |
 | 5b. Clip | `lib/scenes/clip-impl.ts` + `lib/animation/` | Kling Omni v3 image-to-video → optional PixVerse LipSync (gated by gpt-4o-mini face-gate) → ffmpeg mux of voice MP3 onto the silent clip when lip-sync is skipped | $0.79 (Kling) + $0.071 (PixVerse, only when face-gate passes) | 15 (Kling) + 2 (PixVerse, only when run) |
 | 6. Final render | `apps/worker/src/processors/render-processor.ts` + `providers/composition/ffmpeg.ts` | Local **ffmpeg** — concat all scene clips, mix music, burn ASS captions. Background music auto-selected from 17-track local library; caption preset (one of 5 styles) selected by user before render | $0 (local compute) | 8 (15s) / 12 (30s) |
@@ -261,17 +261,15 @@ contract from dossier + visual analysis + scene metadata: `mustShow`,
 `israeliContextInstruction`, `negativeConstraints`, plus a final English
 prompt that **replaces** the narration-driven path.
 
-**Image QA** (`gpt-4o-mini` vision, optional via `IMAGE_QA_ENABLED=true`) —
-9 checks (`productUseAccuracy`, `visualProofStrength`, `israeliRealism`,
-`mustShowSatisfied`, `mustAvoidViolated`, …) + score 0-1 + corrective
-actions. Pass threshold = 0.8 + no critical mustAvoid violation. Failures
-trigger an auto-regen loop (`IMAGE_QA_MAX_RETRIES=2`); after exhaustion the
-scene is flagged `needsManualReview=true` and the last attempt is shipped.
-
-**Default is OFF** — the QA loop is gated by `IMAGE_QA_ENABLED` because in
-its current form it's strict enough that ~3-4 retries fire per scene,
-roughly 3× the per-video image cost. Turn it on when you want maximum
-quality and accept the cost.
+**Image QA — REMOVED IN V13 PR1.** Earlier versions (V11) ran a
+`gpt-4o-mini` vision evaluator on each generated frame and auto-regenerated
+on failure via a corrective brief. In practice the corrective brief
+couldn't fix what QA flagged — most scenes exhausted the 2 retries with
+score 0.00 and ended up `needsManualReview=true`, costing 3× the per-scene
+image budget for a marginally-better result. PR1 deletes the loop entirely:
+quality is now driven by the upstream Image Brief and (in PR2) the Scene
+Plan, not by regenerating-until-a-vision-model-approves. The manual
+"regenerate scene" button covers the residual cases.
 
 ---
 
@@ -392,7 +390,6 @@ curl https://tachles-lac.vercel.app/api/health
 - **Rate limiting at the edge** — current limits are app-layer (`lib/usage/rate-limit.ts`); no IP-level WAF in front yet.
 - **Structured logging** — `console.log` everywhere; no Pino + Sentry yet.
 - **`/uploads/` cleanup policy** — directory grows unbounded. The Kling-sweep maintenance job handles orphaned task IDs but not disk garbage.
-- **Image QA tuning** — `IMAGE_QA_ENABLED` is OFF by default because the corrective brief isn't strong enough yet to fix what QA flags; results in 3 retries → wasted spend. Re-enable after tightening the corrective-brief prompt.
 
 For the deep per-feature implementation status (what's real, what's
 mocked, what's a known issue), see [STATUS.md](./STATUS.md).
