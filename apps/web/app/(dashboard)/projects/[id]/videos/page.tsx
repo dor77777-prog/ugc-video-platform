@@ -13,6 +13,7 @@ import {
   RenderFinalButton,
   CaptionPresetPicker,
 } from './client-bits';
+import { MusicPicker } from './music-picker';
 import { DEFAULT_CAPTION_PRESET_ID, type CaptionPresetId } from '@ugc-video/shared';
 import { deriveSceneRouting } from '@/lib/animation/scene-routing';
 
@@ -191,20 +192,36 @@ export default async function VideosPage({
         })}
       </div>
 
-      {/* Footer — caption-style picker + final render */}
+      {/* Footer — caption-style + music pickers + final render */}
       {(() => {
         const productData =
           (project.productData as Record<string, unknown> | null) ?? {};
         const captionsEnabled = productData.captions === true;
+        const musicEnabled = productData.backgroundMusic === true;
         const initialPreset =
           (productData.captionsPreset as CaptionPresetId | undefined) ??
           DEFAULT_CAPTION_PRESET_ID;
+        const initialMusicId =
+          typeof productData.selectedMusicId === 'string'
+            ? (productData.selectedMusicId as string)
+            : null;
+        const initialMusicOffset =
+          typeof productData.musicStartOffsetSec === 'number'
+            ? (productData.musicStartOffsetSec as number)
+            : 0;
         return (
           <div className="space-y-6 pt-4 border-t border-border">
             {captionsEnabled && (
               <CaptionPresetPicker
                 projectId={projectId}
                 initialPresetId={initialPreset}
+              />
+            )}
+            {musicEnabled && (
+              <MusicPicker
+                projectId={projectId}
+                initialSelectedTrackId={initialMusicId}
+                initialStartOffsetSec={initialMusicOffset}
               />
             )}
             <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">

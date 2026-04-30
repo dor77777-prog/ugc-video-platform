@@ -61,6 +61,11 @@ export interface FfmpegCompositionInput extends CompositionInput {
   musicFadeOutDurationMs?: number;
   /** Length of an optional opening fade-in in milliseconds. Default 300. */
   musicFadeInDurationMs?: number;
+  /** V14 PR9 — start the music from this offset (in seconds) into the
+   * track instead of from the beginning. Used by the user-driven
+   * MusicPicker to pick which part of the track plays. Default 0.
+   * Hard-clamped to [0, 600] downstream. */
+  musicStartOffsetSec?: number;
   /** When false (default), captions are NOT burned in. The ASS file is
    * still built (cheap) but the ffmpeg pass skips the subtitles filter. */
   enableCaptions?: boolean;
@@ -156,6 +161,10 @@ export const ffmpegCompositionProvider: CompositionProvider & {
       const fadeInSec = Math.max(0, (input.musicFadeInDurationMs ?? 300) / 1000);
       const fadeOutSec = Math.max(0, (input.musicFadeOutDurationMs ?? 2000) / 1000);
       const fadeOutStartSec = Math.max(0, totalDurationSec - fadeOutSec);
+      const musicStartOffsetSec = Math.max(
+        0,
+        Math.min(600, input.musicStartOffsetSec ?? 0),
+      );
 
       console.log(
         `[ffmpeg-compose] N=${N} totalDurationSec=${totalDurationSec.toFixed(2)} ` +
@@ -248,13 +257,28 @@ export const ffmpegCompositionProvider: CompositionProvider & {
           // timestamps so amix sees a fresh timeline, force the same
           // sample rate / channel layout as the main audio, then
           // gain + fade.
-          const musicFilters: string[] = [
+          //
+          // V14 PR9 — when musicStartOffsetSec > 0 we trim the head of
+          // the looped track BEFORE the duration trim. The looped
+          // input is effectively "infinite" so we don't risk running
+          // out of audio: we seek <offset>s into the loop, then take
+          // the next <totalDurationSec> seconds. The loop wraps
+          // continuously inside that window if the underlying track
+          // is shorter than (offset + totalDurationSec).
+          const musicFilters: string[] = [];
+          if (musicStartOffsetSec > 0) {
+            musicFilters.push(
+              `atrim=start=${musicStartOffsetSec.toFixed(3)}`,
+              'asetpts=N/SR/TB',
+            );
+          }
+          musicFilters.push(
             `atrim=duration=${totalDurationSec.toFixed(3)}`,
             'asetpts=N/SR/TB',
             'aresample=44100',
             'aformat=channel_layouts=stereo',
             `volume=${musicVolume.toFixed(4)}`,
-          ];
+          );
           if (fadeInSec > 0) {
             musicFilters.push(`afade=t=in:st=0:d=${fadeInSec.toFixed(3)}`);
           }

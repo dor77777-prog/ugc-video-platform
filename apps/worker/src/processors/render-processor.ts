@@ -9,6 +9,7 @@ import { ffmpegCompositionProvider } from '../providers/composition/ffmpeg';
 import {
   selectMusicTrack,
   resolveMusicVolume,
+  findTrackById,
   type MusicProfile,
   buildAssFromChunks,
   type CaptionChunk,
@@ -91,20 +92,46 @@ export async function processRenderJob(job: Job<RenderJobPayload>) {
     const durationMode: '15s' | '30s' =
       renderJob.script.estimatedDurationSeconds <= 22 ? '15s' : '30s';
 
-    const musicSelection = selectMusicTrack({
-      productCategory,
-      scriptFramework: renderJob.script.framework ?? null,
-      emotionalTrigger,
-      musicProfile,
-      durationMode,
-      userEnabledMusic,
-    });
+    // V14 PR9 — user-overridden music selection. When the user picks a
+    // track explicitly via /projects/[id]/videos MusicPicker, the
+    // selection lives on productData.selectedMusicId + .musicStartOffsetSec.
+    // The override skips selectMusicTrack() entirely so the user's pick
+    // wins regardless of script musicProfile / category / emotional arc.
+    const userPickedTrackId =
+      typeof productData?.selectedMusicId === 'string'
+        ? (productData.selectedMusicId as string)
+        : null;
+    const userPickedOffsetSec =
+      typeof productData?.musicStartOffsetSec === 'number'
+        ? Math.max(0, productData.musicStartOffsetSec as number)
+        : 0;
+
+    const musicSelection = userPickedTrackId
+      ? (() => {
+          const track = findTrackById(userPickedTrackId);
+          if (!track) return null;
+          return {
+            track,
+            score: 1,
+            reason: 'user_override',
+          } as ReturnType<typeof selectMusicTrack>;
+        })()
+      : selectMusicTrack({
+          productCategory,
+          scriptFramework: renderJob.script.framework ?? null,
+          emotionalTrigger,
+          musicProfile,
+          durationMode,
+          userEnabledMusic,
+        });
     const musicVolume = userEnabledMusic ? resolveMusicVolume(musicProfile) : 0.08;
     const musicUrl: string | null = musicSelection?.track.fileUrl ?? null;
+    const musicStartOffsetSec = userPickedTrackId ? userPickedOffsetSec : 0;
     if (musicSelection) {
       console.log(
         `[render] music selected: ${musicSelection.track.id} ` +
-          `(score=${musicSelection.score}, ${musicSelection.reason})`,
+          `(score=${musicSelection.score}, ${musicSelection.reason}, ` +
+          `offset=${musicStartOffsetSec.toFixed(2)}s)`,
       );
     } else if (userEnabledMusic) {
       console.log('[render] music enabled but no track matched — rendering voice-only');
@@ -275,6 +302,7 @@ export async function processRenderJob(job: Job<RenderJobPayload>) {
       aspectRatio: '9:16',
       musicUrl,
       musicVolume,
+      musicStartOffsetSec,
       musicFadeOutDurationMs: 2000,
       musicFadeInDurationMs: 300,
       enableCaptions,
