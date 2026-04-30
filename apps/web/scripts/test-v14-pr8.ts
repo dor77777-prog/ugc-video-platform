@@ -7,20 +7,20 @@
 // surrounding paragraph direction (LTR by default in ASS) when no
 // explicit isolate is set.
 //
-// Fix: wrap each Hebrew-containing caption in U+202B RLE ... U+2069
+// Fix: wrap each Hebrew-containing caption in U+202B LRO ... U+2069
 // PDF before emitting to the Dialogue line. Pure-LTR captions are
 // untouched.
 //
 // This test asserts:
-//   1. wrapHebrewBidi wraps Hebrew text in RLE...PDF
+//   1. wrapHebrewBidi wraps Hebrew text in LRO...PDF
 //   2. wrapHebrewBidi NO-OPS pure ASCII / English text
 //   3. wrapHebrewBidi handles mixed-script (Hebrew + English) by
 //      wrapping the whole thing
-//   4. sanitizeAssText does NOT strip RLE/PDF (the chars survive a
+//   4. sanitizeAssText does NOT strip LRO/PDF (the chars survive a
 //      round trip through the sanitizer)
-//   5. buildAssFromChunks emits Hebrew Dialogue lines with RLE/PDF
+//   5. buildAssFromChunks emits Hebrew Dialogue lines with LRO/PDF
 //   6. buildAssFromChunks emits English-only Dialogue lines WITHOUT
-//      RLE/PDF (no-op for LTR)
+//      LRO/PDF (no-op for LTR)
 
 import {
   buildAssFromChunks,
@@ -29,7 +29,7 @@ import {
 } from '@ugc-video/shared';
 import type { CaptionChunk } from '@ugc-video/shared';
 
-const RLE = '‫';
+const LRO = '‭';
 const PDF = '‬';
 
 let failures = 0;
@@ -49,16 +49,19 @@ function assert(cond: boolean, name: string, detail = '') {
 {
   const wrapped = wrapHebrewBidi('שלום לכולם.');
   assert(
-    wrapped.startsWith(RLE),
-    '[V14 PR8.1] wrapHebrewBidi prepends U+202B RLE to Hebrew text',
+    wrapped.startsWith(LRO),
+    '[V14 PR8.1] wrapHebrewBidi prepends U+202B LRO to Hebrew text',
   );
   assert(
     wrapped.endsWith(PDF),
     '[V14 PR8.1] wrapHebrewBidi appends U+202C PDF to Hebrew text',
   );
+  // V14 PR8.2 — chars are reversed before LRO wrapping. The original
+  // string is NOT in the output verbatim; the reverse IS.
+  const reversed = [...'שלום לכולם.'].reverse().join('');
   assert(
-    wrapped.includes('שלום לכולם.'),
-    '[V14 PR8.1] inner Hebrew text preserved verbatim (including the trailing period)',
+    wrapped.includes(reversed),
+    '[V14 PR8.1] wrapped output contains the char-reversed form (manual visual-order strategy)',
   );
 }
 
@@ -78,22 +81,25 @@ function assert(cond: boolean, name: string, detail = '') {
 {
   const wrapped = wrapHebrewBidi('Hello אחותי, how are you?');
   assert(
-    wrapped.startsWith(RLE) && wrapped.endsWith(PDF),
-    '[V14 PR8.3] mixed Hebrew+English text gets the RLE/PDF wrapping',
+    wrapped.startsWith(LRO) && wrapped.endsWith(PDF),
+    '[V14 PR8.3] mixed Hebrew+English text gets the LRO/PDF wrapping',
   );
 }
 
-// ── 4. sanitizeAssText preserves RLE / PDF ─────────────────────────────
+// ── 4. sanitizeAssText preserves LRO / PDF ─────────────────────────────
 {
   const wrapped = wrapHebrewBidi('תקשיבי שנייה.');
   const sanitized = sanitizeAssText(wrapped);
   assert(
-    sanitized.startsWith(RLE) && sanitized.endsWith(PDF),
+    sanitized.startsWith(LRO) && sanitized.endsWith(PDF),
     '[V14 PR8.4] sanitizeAssText does NOT strip U+2067/U+2069',
   );
+  // V14 PR8.2 — chars are reversed before LRO wrapping; check for the
+  // reversed form in the sanitized output.
+  const reversed = [...'תקשיבי שנייה.'].reverse().join('');
   assert(
-    sanitized.includes('תקשיבי שנייה.'),
-    '[V14 PR8.4] inner Hebrew text + period survive sanitization',
+    sanitized.includes(reversed),
+    '[V14 PR8.4] reversed Hebrew text + period survive sanitization',
   );
 }
 
@@ -110,18 +116,21 @@ function assert(cond: boolean, name: string, detail = '') {
     } as unknown as CaptionChunk,
   ];
   const ass = buildAssFromChunks(chunks);
-  // Dialogue lines should contain the RLE bytes wrapping the Hebrew.
+  // Dialogue lines should contain the LRO bytes wrapping the Hebrew.
   assert(
-    ass.includes(RLE) && ass.includes(PDF),
-    '[V14 PR8.5] buildAssFromChunks emits RLE/PDF for Hebrew chunks',
+    ass.includes(LRO) && ass.includes(PDF),
+    '[V14 PR8.5] buildAssFromChunks emits LRO/PDF for Hebrew chunks',
   );
+  // V14 PR8.2 — char-reversed Hebrew lands in the Dialogue line
+  // (NOT the verbatim original).
+  const reversed = [...'שלום לכולם.'].reverse().join('');
   assert(
-    /Dialogue:.*שלום לכולם\./.test(ass),
-    '[V14 PR8.5] Hebrew text + period preserved in the Dialogue line',
+    new RegExp(`Dialogue:.*${reversed.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}`).test(ass),
+    '[V14 PR8.5] reversed Hebrew text appears in the Dialogue line',
   );
 }
 
-// ── 6. Pure-English chunks emit no RLE/PDF (no-op for LTR) ─────────────
+// ── 6. Pure-English chunks emit no LRO/PDF (no-op for LTR) ─────────────
 {
   const chunks: CaptionChunk[] = [
     {
@@ -135,8 +144,8 @@ function assert(cond: boolean, name: string, detail = '') {
   ];
   const ass = buildAssFromChunks(chunks);
   assert(
-    !ass.includes(RLE) && !ass.includes(PDF),
-    '[V14 PR8.6] pure-LTR caption produces NO RLE/PDF in the ASS file',
+    !ass.includes(LRO) && !ass.includes(PDF),
+    '[V14 PR8.6] pure-LTR caption produces NO LRO/PDF in the ASS file',
   );
   assert(
     /Dialogue:.*Hello world\./.test(ass),

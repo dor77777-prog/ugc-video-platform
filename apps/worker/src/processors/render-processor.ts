@@ -106,16 +106,27 @@ export async function processRenderJob(job: Job<RenderJobPayload>) {
         ? Math.max(0, productData.musicStartOffsetSec as number)
         : 0;
 
-    const musicSelection = userPickedTrackId
-      ? (() => {
-          const track = findTrackById(userPickedTrackId);
-          if (!track) return null;
-          return {
-            track,
-            score: 1,
-            reason: 'user_override',
-          } as ReturnType<typeof selectMusicTrack>;
-        })()
+    // V14 hotfix: stale selectedMusicId (e.g. user picked one of the
+    // 4 deleted Mixkit tracks before the catalog cleanup) must NOT
+    // silence the render. If findTrackById returns null we fall
+    // through to the legacy selectMusicTrack auto-selector instead
+    // of returning null. The render gets bg music from the auto
+    // path; the user can re-pick via the picker on next visit.
+    const userPickedTrack = userPickedTrackId
+      ? findTrackById(userPickedTrackId)
+      : null;
+    if (userPickedTrackId && !userPickedTrack) {
+      console.warn(
+        `[render] selectedMusicId="${userPickedTrackId}" not in catalog ` +
+          `(probably stale after a track was deleted) — falling back to auto-select`,
+      );
+    }
+    const musicSelection = userPickedTrack
+      ? ({
+          track: userPickedTrack,
+          score: 1,
+          reason: 'user_override',
+        } as ReturnType<typeof selectMusicTrack>)
       : selectMusicTrack({
           productCategory,
           scriptFramework: renderJob.script.framework ?? null,
@@ -126,7 +137,11 @@ export async function processRenderJob(job: Job<RenderJobPayload>) {
         });
     const musicVolume = userEnabledMusic ? resolveMusicVolume(musicProfile) : 0.08;
     const musicUrl: string | null = musicSelection?.track.fileUrl ?? null;
-    const musicStartOffsetSec = userPickedTrackId ? userPickedOffsetSec : 0;
+    // The user's offset is only meaningful when their track resolves —
+    // a stale pick that fell back to auto-select uses offset=0 (auto
+    // tracks haven't been previewed; the user couldn't have chosen
+    // a meaningful offset for them).
+    const musicStartOffsetSec = userPickedTrack ? userPickedOffsetSec : 0;
     if (musicSelection) {
       console.log(
         `[render] music selected: ${musicSelection.track.id} ` +
