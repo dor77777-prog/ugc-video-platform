@@ -105,24 +105,29 @@ export const ffmpegCompositionProvider: CompositionProvider & {
           : buildAssFile(scenes); // legacy fallback (rarely used post-V10)
       await fs.writeFile(assPath, captionsAssContent, 'utf8');
 
-      // 3. Run a SINGLE ffmpeg pass that concatenates + re-encodes +
-      //    optionally burns captions and mixes music.
+      // 3. Three-stage low-memory pipeline (replaces the old single-pass
+      //    concat-FILTER, which OOM-killed on Railway with N parallel
+      //    decoders + libass + amix in memory at once):
       //
-      // Why not the previous two-pass concat-demuxer + re-encode?
-      // The concat demuxer with `-c copy` requires every input clip to
-      // have byte-identical codec parameters (SAR, framerate, GOP,
-      // profile, audio sample rate, pixel format). When even ONE clip
-      // differs — e.g. mux-audio's tpad reset the timebase, or AAC
-      // picked a different profile — the demuxer produces a corrupted
-      // boundary that plays back as "freeze on the bad frame, then
-      // half-second loop for the rest of the video". The second pass
-      // then re-encodes the corruption verbatim.
+      //      3a. Per-clip normalize  (one decoder + one encoder per call,
+      //          run in series)  → identical libx264/main + aac codec
+      //          params on every clip.
+      //      3b. concat-demuxer + `-c copy`  (no re-encode, near-zero RAM).
+      //          Safe here because step 3a guarantees byte-identical
+      //          codec params — the historical concat-demuxer corruption
+      //          (different SAR / GOP / AAC profile across inputs) cannot
+      //          happen post-normalize.
+      //      3c. Optional overlay pass for captions and/or music.
+      //          Captions force a video re-encode (libass overlays raw
+      //          frames). Music forces an audio re-encode (amix).
+      //          Whichever isn't needed is stream-copied. When neither
+      //          is enabled we skip 3c entirely and copy the concat
+      //          output to `final.mp4`.
       //
-      // The concat FILTER (not demuxer) decodes every input first and
-      // operates on raw frames, so codec/SAR/framerate mismatches are
-      // resolved by the per-stream normalization filters below
-      // (fps=30, setsar=1, format=yuv420p, aresample=44100). One pass,
-      // one re-encode, no corrupted boundaries.
+      //    Peak memory: max(per-clip normalize, overlay pass) ≈
+      //    one decoder + one encoder + libass + amix. The previous
+      //    concat-FILTER held N decoders + libass + amix simultaneously,
+      //    which is what Railway's cgroup OOM-killer was hitting.
       const finalLocal = path.join(tmpRoot, 'final.mp4');
 
       // Resolve a local music path if the URL is /uploads/... or /music/...
@@ -145,113 +150,158 @@ export const ffmpegCompositionProvider: CompositionProvider & {
         ? `ass=${assPath.replace(/:/g, '\\:').replace(/'/g, "'\\''")}`
         : null;
 
-      // Build the filter graph dynamically.
-      //   - One -i per scene clip + optional music input at the end.
-      //   - Per-input normalization (vN: fps + setsar + yuv420p; aN:
-      //     aresample + stereo) so concat sees uniform streams.
-      //   - concat=n=N:v=1:a=1[vcat][acat] does the actual stitching.
-      //   - Optional captions filter on [vcat] → [vout].
-      //   - Optional music mix on [acat] + music input → [aout].
       const N = localPaths.length;
-      const filterParts: string[] = [];
-      const concatPairs: string[] = [];
-      for (let i = 0; i < N; i++) {
-        // 9:16 UGC clips from Kling are 720×1280 / 30fps / yuv420p, but
-        // we don't trust that — explicit normalization is cheap (~1ms
-        // per frame on libx264 at preset=fast) and the safety net is
-        // worth it.
-        filterParts.push(`[${i}:v]fps=30,setsar=1,format=yuv420p[v${i}]`);
-        filterParts.push(`[${i}:a]aresample=44100,aformat=channel_layouts=stereo[a${i}]`);
-        concatPairs.push(`[v${i}][a${i}]`);
-      }
-      filterParts.push(`${concatPairs.join('')}concat=n=${N}:v=1:a=1[vcat][acat]`);
-
-      let videoOut = '[vcat]';
-      let audioOut = '[acat]';
-
-      if (escAss) {
-        filterParts.push(`${videoOut}${escAss}[vout]`);
-        videoOut = '[vout]';
-      }
-
-      // ── Music mix ──────────────────────────────────────────────────────
-      // Pipeline (when music is enabled):
-      //   1. -stream_loop -1 on the music input → ffmpeg replays the
-      //      track infinitely, so a 60s loopable bed covers a 90s ad
-      //      without abrupt cuts.
-      //   2. atrim/asetpts trim the (already-looped) stream to EXACTLY
-      //      the final-video duration so music never plays past the
-      //      visual end. We compute totalDuration from the per-scene
-      //      durations the worker passes us.
-      //   3. volume= applies the low-volume gain (default 0.08).
-      //   4. afade=in:0:0.3 + afade=out:(end-2):2 give the user-required
-      //      gentle fade-in and the mandatory 2s closing fade-out.
-      //   5. amix mixes the processed music under the concatenated voice
-      //      track. duration=first locks the output length to [acat]
-      //      (= total scene duration) so the music never extends the
-      //      final video by a silent tail.
       const totalDurationSec = scenes.reduce((sum, s) => sum + s.durationSeconds, 0);
       const musicVolume = clampMusicVolume(input.musicVolume);
       const fadeInSec = Math.max(0, (input.musicFadeInDurationMs ?? 300) / 1000);
       const fadeOutSec = Math.max(0, (input.musicFadeOutDurationMs ?? 2000) / 1000);
       const fadeOutStartSec = Math.max(0, totalDurationSec - fadeOutSec);
 
-      if (musicLocalPath) {
-        // Music input lives at index N (after all the scene clips).
-        const musicFilters: string[] = [
-          // Trim to the final-video duration. atrim wants seconds; we
-          // pass enough precision to never cut a frame short.
-          `atrim=duration=${totalDurationSec.toFixed(3)}`,
-          // After atrim the timestamps need to be reset or amix gets
-          // confused about the input timeline.
-          'asetpts=N/SR/TB',
-          // Resample + force stereo so it matches [acat] for amix.
-          'aresample=44100',
-          'aformat=channel_layouts=stereo',
-          // Volume gain — the low default keeps Hebrew voice dominant.
-          `volume=${musicVolume.toFixed(4)}`,
-        ];
-        if (fadeInSec > 0) {
-          musicFilters.push(`afade=t=in:st=0:d=${fadeInSec.toFixed(3)}`);
-        }
-        if (fadeOutSec > 0 && fadeOutStartSec > 0) {
-          musicFilters.push(
-            `afade=t=out:st=${fadeOutStartSec.toFixed(3)}:d=${fadeOutSec.toFixed(3)}`,
-          );
-        }
-        filterParts.push(`[${N}:a]${musicFilters.join(',')}[bg]`);
-        filterParts.push(
-          `${audioOut}[bg]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[aout]`,
-        );
-        audioOut = '[aout]';
-      }
-
-      const args: string[] = ['-y'];
-      for (const p of localPaths) {
-        args.push('-i', p);
-      }
-      if (musicLocalPath) {
-        // Looping + a generous probesize keep ffmpeg from giving up
-        // when a short ~1MB MP3 has to span a 30s render.
-        args.push('-stream_loop', '-1', '-i', musicLocalPath);
-      }
-      args.push('-filter_complex', filterParts.join(';'));
-      args.push('-map', videoOut, '-map', audioOut);
-      args.push(
-        '-c:v', 'libx264',
-        '-preset', 'fast',
-        '-crf', '20',
-        '-c:a', 'aac',
-        '-b:a', '192k',
-        '-movflags', '+faststart',
+      console.log(
+        `[ffmpeg-compose] N=${N} totalDurationSec=${totalDurationSec.toFixed(2)} ` +
+          `captions=${captionsEnabled} music=${!!musicLocalPath} ` +
+          `pipeline=normalize→concat-demuxer${captionsEnabled || musicLocalPath ? '→overlay' : ''} ` +
+          `tmpRoot=${tmpRoot}`,
       );
-      // -shortest is only needed when music is mixed in (music loops
-      // forever; we want to cut at the voice track end). Without music
-      // the concat filter already controls the duration via [acat].
-      if (musicLocalPath) args.push('-shortest');
-      args.push(finalLocal);
 
-      await runFfmpeg(args);
+      // 3a. Per-clip normalize. Each clip is re-encoded with identical
+      //     codec params so the concat-demuxer in 3b can stream-copy
+      //     them. Running these sequentially keeps peak memory at one
+      //     decoder + one encoder at a time.
+      //
+      //     Codec lock-in: libx264 main / level 3.1 / yuv420p, aac
+      //     44.1kHz stereo 192k, fps=30 cfr. Mismatches across inputs
+      //     (Kling lipsync vs ffmpeg-mux b-roll) get fully resolved here.
+      const normalizedPaths: string[] = [];
+      for (let i = 0; i < N; i++) {
+        const norm = path.join(tmpRoot, `norm-${String(i).padStart(2, '0')}.mp4`);
+        await runFfmpeg(
+          [
+            '-y',
+            '-i', localPaths[i]!,
+            '-vf', 'fps=30,setsar=1,format=yuv420p',
+            '-af', 'aresample=44100,aformat=channel_layouts=stereo',
+            '-r', '30',
+            '-vsync', 'cfr',
+            '-c:v', 'libx264',
+            '-preset', 'fast',
+            '-crf', '20',
+            '-profile:v', 'main',
+            '-level', '3.1',
+            '-pix_fmt', 'yuv420p',
+            '-c:a', 'aac',
+            '-b:a', '192k',
+            '-ar', '44100',
+            '-ac', '2',
+            '-threads', '2',
+            '-movflags', '+faststart',
+            norm,
+          ],
+          `ffmpeg-norm-${i}`,
+        );
+        normalizedPaths.push(norm);
+      }
+
+      // 3b. concat-demuxer + `-c copy`. Stream-copy only — RAM stays flat.
+      const listPath = path.join(tmpRoot, 'concat.txt');
+      const listBody = normalizedPaths
+        .map((p) => `file '${p.replace(/'/g, "'\\''")}'`)
+        .join('\n');
+      await fs.writeFile(listPath, listBody, 'utf8');
+      const concatPath = path.join(tmpRoot, 'concat.mp4');
+      await runFfmpeg(
+        [
+          '-y',
+          '-f', 'concat',
+          '-safe', '0',
+          '-i', listPath,
+          '-c', 'copy',
+          '-movflags', '+faststart',
+          concatPath,
+        ],
+        'ffmpeg-concat',
+      );
+
+      // 3c. Overlay pass — only when captions or music are needed.
+      //     Single decoder + single encoder + libass + amix. Whichever
+      //     of audio/video doesn't need a re-encode is stream-copied.
+      const needsOverlay = captionsEnabled || !!musicLocalPath;
+      if (needsOverlay) {
+        const args: string[] = ['-y', '-i', concatPath];
+        if (musicLocalPath) {
+          // -stream_loop -1 makes ffmpeg replay the music infinitely so
+          // a 60s loopable bed covers any ad length without abrupt cuts.
+          args.push('-stream_loop', '-1', '-i', musicLocalPath);
+        }
+
+        const filterParts: string[] = [];
+        let videoMap = '0:v';
+        let audioMap = '0:a';
+
+        if (escAss) {
+          filterParts.push(`[0:v]${escAss}[vout]`);
+          videoMap = '[vout]';
+        }
+
+        if (musicLocalPath) {
+          // Trim the looped music to the final video length, drop the
+          // timestamps so amix sees a fresh timeline, force the same
+          // sample rate / channel layout as the main audio, then
+          // gain + fade.
+          const musicFilters: string[] = [
+            `atrim=duration=${totalDurationSec.toFixed(3)}`,
+            'asetpts=N/SR/TB',
+            'aresample=44100',
+            'aformat=channel_layouts=stereo',
+            `volume=${musicVolume.toFixed(4)}`,
+          ];
+          if (fadeInSec > 0) {
+            musicFilters.push(`afade=t=in:st=0:d=${fadeInSec.toFixed(3)}`);
+          }
+          if (fadeOutSec > 0 && fadeOutStartSec > 0) {
+            musicFilters.push(
+              `afade=t=out:st=${fadeOutStartSec.toFixed(3)}:d=${fadeOutSec.toFixed(3)}`,
+            );
+          }
+          filterParts.push(`[1:a]${musicFilters.join(',')}[bg]`);
+          // duration=first locks output to the voice track length so
+          // music never extends the final by a silent tail.
+          filterParts.push(
+            `[0:a][bg]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[aout]`,
+          );
+          audioMap = '[aout]';
+        }
+
+        if (filterParts.length > 0) {
+          args.push('-filter_complex', filterParts.join(';'));
+        }
+        args.push('-map', videoMap, '-map', audioMap);
+
+        if (escAss) {
+          args.push(
+            '-c:v', 'libx264',
+            '-preset', 'fast',
+            '-crf', '20',
+            '-pix_fmt', 'yuv420p',
+            '-threads', '2',
+          );
+        } else {
+          args.push('-c:v', 'copy');
+        }
+        if (musicLocalPath) {
+          args.push('-c:a', 'aac', '-b:a', '192k', '-shortest');
+        } else {
+          args.push('-c:a', 'copy');
+        }
+
+        args.push('-movflags', '+faststart');
+        args.push(finalLocal);
+
+        await runFfmpeg(args, 'ffmpeg-overlay');
+      } else {
+        // No captions, no music — concat output IS the final.
+        await fs.copyFile(concatPath, finalLocal);
+      }
 
       // 5. Persist the final MP4 — R2 in production, local disk in dev.
       const finalName = `${Date.now()}.mp4`;
@@ -318,18 +368,73 @@ function clampMusicVolume(v: number | undefined): number {
   return v;
 }
 
-function runFfmpeg(args: string[]): Promise<void> {
+function runFfmpeg(args: string[], label = 'ffmpeg'): Promise<void> {
   return new Promise((resolve, reject) => {
+    const totalMb = Math.round(os.totalmem() / 1024 / 1024);
+    const freeMbBefore = Math.round(os.freemem() / 1024 / 1024);
+    const startedAt = Date.now();
+    console.log(
+      `[${label}] spawning ffmpeg argc=${args.length} ` +
+        `mem.total=${totalMb}MB mem.free.before=${freeMbBefore}MB ` +
+        `args.tail=${args.slice(-12).join(' ')}`,
+    );
+
     const proc = spawn('ffmpeg', args, { stdio: ['ignore', 'pipe', 'pipe'] });
     let stderr = '';
+    let lastProgressLine = '';
+    let stderrBuf = '';
     proc.stderr.on('data', (d: Buffer) => {
-      stderr += d.toString();
+      const chunk = d.toString();
+      stderr += chunk;
+      stderrBuf += chunk;
+      // Stream complete lines so the LAST line before a SIGKILL still
+      // makes it into the worker logs (without the line buffer above we
+      // only see whatever happened to land in the final ~1KB tail).
+      let nl;
+      while ((nl = stderrBuf.indexOf('\n')) !== -1) {
+        const line = stderrBuf.slice(0, nl).trimEnd();
+        stderrBuf = stderrBuf.slice(nl + 1);
+        if (!line) continue;
+        if (line.startsWith('frame=')) {
+          lastProgressLine = line; // overwrite — these come ~1/sec
+        } else {
+          console.log(`[${label}] ${line}`);
+        }
+      }
     });
-    proc.on('close', (code: number | null) => {
-      if (code === 0) resolve();
-      else reject(new Error(`ffmpeg exited ${code}: ${stderr.slice(-1000)}`));
+    proc.on('close', (code: number | null, signal: NodeJS.Signals | null) => {
+      const elapsedMs = Date.now() - startedAt;
+      const freeMbAfter = Math.round(os.freemem() / 1024 / 1024);
+      const tail = stderr.slice(-1500).replace(/\s+/g, ' ').trim();
+      console.log(
+        `[${label}] ffmpeg exit code=${code} signal=${signal ?? 'none'} ` +
+          `elapsedMs=${elapsedMs} mem.free.after=${freeMbAfter}MB ` +
+          `lastProgress="${lastProgressLine}"`,
+      );
+      if (code === 0) {
+        resolve();
+        return;
+      }
+      // signal=SIGKILL with no error text in stderr is the canonical
+      // OOM-kill fingerprint on Railway / Docker — the kernel sends
+      // SIGKILL to the cgroup oom victim and ffmpeg never gets to print.
+      const oomLikely =
+        signal === 'SIGKILL' && code === null &&
+        (freeMbAfter < 80 || /killed/i.test(tail) === false);
+      const hint = oomLikely
+        ? ' (likely OOM-kill — increase Railway memory or lower libx264 memory pressure)'
+        : '';
+      reject(
+        new Error(
+          `ffmpeg exited code=${code} signal=${signal ?? 'none'}${hint} ` +
+            `lastProgress="${lastProgressLine}" stderrTail=${tail}`,
+        ),
+      );
     });
-    proc.on('error', reject);
+    proc.on('error', (err) => {
+      console.error(`[${label}] ffmpeg spawn error:`, err);
+      reject(err);
+    });
   });
 }
 

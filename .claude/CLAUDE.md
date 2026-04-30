@@ -92,7 +92,7 @@ ugc-video-platform/
 │           ├── processors/
 │           │   ├── render-processor.ts   V6+ render flow (composition-only)
 │           │   └── kling-sweep.ts        hourly stuck-task sweep
-│           └── providers/composition/ffmpeg.ts   concat-filter composition + R2 upload of final MP4
+│           └── providers/composition/ffmpeg.ts   3-stage low-mem pipeline (per-clip normalize → concat-demuxer → optional overlay) + R2 upload of final MP4
 │
 ├── packages/
 │   ├── shared/src/
@@ -135,8 +135,10 @@ URL → scrape (cheerio + Shopify + OG + microdata)
         • Motion analysis (gpt-4o-mini vision, cached per imageUrl)
         • Face gate (gpt-4o-mini vision) → PixVerse LipSync if mouth visible
         • Otherwise: ffmpeg mux (silent clip + voice MP3)
-    → Final render [BullMQ → ffmpeg]
-        • concat-filter (not concat-demuxer)
+    → Final render [BullMQ → ffmpeg, 3-stage low-mem pipeline]
+        • 3a. Per-clip normalize in series (libx264 main/3.1, aac 44.1k, fps=30 cfr) — one decoder+encoder at a time
+        • 3b. concat-demuxer + `-c copy` (safe because 3a locked codec params byte-identical)
+        • 3c. Optional overlay pass — captions re-encode video, music re-encodes audio, anything not needed is stream-copied
         • Music (17-track Mixkit library, mood-aware scoring)
         • Captions (ASS v4+ burn-in via libass, 5 presets)
         → /uploads/finals/<ts>.mp4
@@ -228,6 +230,7 @@ Web + worker share the same .env at repo root.
 - **Hebrew TTS text** — use `scene.textHebrewTts` (cleaned) not `textHebrew` (raw display) when calling ElevenLabs.
 - **ASS captions** — built from `captionChunksJson` (scene-relative ms) offset to global timeline in render-processor. Never fall back to proportional estimation.
 - **Music** — honor `productData.backgroundMusic` toggle; use `musicProfile` from `script.rawJson` for scoring.
+- **Flow toggles for captions + music** — `apps/web/app/(dashboard)/projects/[id]/layout.tsx` renders a persistent `<ProjectFlowToggles>` bar on every project subpage (overview, scripts, avatar, scenes, videos, finish). Flipping a toggle calls `setProjectFlowToggle()` from `flow-toggle-actions.ts`, which writes `productData.captions` / `productData.backgroundMusic` and `revalidatePath`s the project layout. The client also `router.refresh()`es so the videos page's `<CaptionPresetPicker>` (gated on `productData.captions === true`) appears or disappears immediately. Initial values come from the new-project wizard at `/projects/new`; the flow bar is the only way to change them after project creation.
 - **Prisma** — always `await prisma.$disconnect()` in worker scripts. Use `onDelete: Cascade` for child rows. **Every query is logged** with its duration via `lib/db.ts`; queries >500ms get a `[SLOW QUERY]` tag for grep'ability.
 - **Storage** — never hardcode `/public/uploads/...` paths. Always go through `getStorage()` from `lib/storage/index.ts` so dev (local FS) and prod (R2) both work.
 - **Reading public assets in API routes** — `public/` is excluded from the Vercel function bundle (`next.config.mjs` `outputFileTracingExcludes`). NEVER do `fs.readFile(path.join(process.cwd(), 'public', ...))` directly. Always go through `readPublicAsset()` / `readPublicAssetAsDataUrl()` from `lib/storage/read-public-asset.ts` — it tries disk first (dev), falls back to HTTP fetch via `PUBLIC_BASE_URL` (Vercel CDN), and passes absolute http(s) URLs through. V12.1–V12.3 fixed 9 helpers that violated this; do not regress.
@@ -247,7 +250,7 @@ Web + worker share the same .env at repo root.
 ## What NOT to do
 
 - Do not add mock providers or fake data to the active render/voice/clip path.
-- Do not use `concat-demuxer` in ffmpeg — use `concat-filter` (already in ffmpeg.ts).
+- Do not switch the ffmpeg compose back to single-pass `concat-filter`. The original concat-demuxer corruption was caused by **mixed input codec params** (different SAR, AAC profile, etc.). The current 3-stage pipeline solves both problems: stage 3a re-encodes every input to byte-identical libx264 main/3.1 + aac 44.1k 192k stereo + fps=30 cfr, so 3b's concat-demuxer with `-c copy` cannot hit the corruption. Reverting to a 6-input `concat-filter` reproduces the Railway OOM-kill we hit at frame ~75 (N parallel decoders + libass + amix all in RAM). Verified: 2026-04-30, ffmpeg.ts.
 - Do not use proportional caption timing — always use real word timings from ElevenLabs.
 - Do not skip the in-flight timestamp pattern when adding new generation actions.
 - Do not add new Prisma enums for things that might evolve — use `String` columns (see `framework`, `sceneGoal`, `sceneGenerationType`).
