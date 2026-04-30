@@ -1,7 +1,7 @@
 # tachles — Claude Project Context
 
 Hebrew-first AI platform for Israeli UGC product video ads.
-**Current version:** V12.7 (2026-04-30)
+**Current version:** V13 PR1 (2026-04-30)
 **Production:** https://tachles-lac.vercel.app
 **Output:** 9:16 MP4 ads, 15s or 30s, Hebrew voice-over + RTL captions + background music.
 
@@ -45,6 +45,7 @@ Hebrew-first AI platform for Israeli UGC product video ads.
 - V12.5 — Live provider balance dashboard. `lib/providers/balance.ts` queries Kling `/account/costs`, PixVerse `/openapi/v2/account/balance`, ElevenLabs `/v1/user/subscription`, and OpenAI `/v1/organization/costs` in parallel; surfaced at the top of `/admin/costs` with 60s revalidation. Soft-fails per-provider — an outage on one doesn't break the page.
 - V12.6 — Graceful per-provider fallback. When a balance fetcher fails (HTTP 401/403/network), the card falls back to local `ApiCall` aggregates (30d spend + call count) instead of just showing the error. `ProviderFallbackCard` keeps the error visible in a `<details>` block with a fix hint.
 - V12.7 — OpenAI parser fix + admin key. `fetchOpenAIBalance` was crashing because `/v1/organization/costs` sometimes returns `amount.value` as a string and `+` was concatenating. Coerced with `Number(...)`. New env var `OPENAI_ADMIN_API_KEY` (sk-admin-…) is preferred over `OPENAI_API_KEY` for Administration API reads — regular keys (sk-svcacct, sk-…) are scoped to model invocation only.
+- V13 PR1 — Image QA auto-regen loop removed from active path. Deleted `apps/web/lib/image-qa/`, the QA branch in `lib/scenes/generate-impl.ts`, `buildCorrectiveBrief` in `image-brief-builder.ts`, and the `IMAGE_QA_ENABLED` / `IMAGE_QA_MAX_RETRIES` / `OPENAI_IMAGE_QA_MODEL` env vars. Single-pass image gen now: brief builder → gpt-image-2 → persist. Quality strategy moved to upstream creative planning. DB columns `Scene.imageQaJson` / `imageRegenAttempts` / `needsManualReview` remain nullable for historical data; PR1 stops writing them. Vision calls KEPT: Product Visual Analysis, Motion Analysis, Face Gate (all upstream/routing, not post-generation). PR2 will introduce the deterministic Scene Plan.
 
 ---
 
@@ -63,7 +64,6 @@ ugc-video-platform/
 │   │   │   ├── animation/      face-gate · kling · lipsync (PixVerse) · motion-analysis · scene-routing
 │   │   │   ├── auth/           Supabase + sync-user + admin promotion
 │   │   │   ├── image-briefs/   deterministic brief builder + corrective-brief
-│   │   │   ├── image-qa/       gpt-4o-mini vision QA + auto-regen feedback
 │   │   │   ├── llm/            scripts.ts (6-batch) · scene-images.ts (gpt-image-2)
 │   │   │   ├── plans.ts        PLAN_CONFIGS + PER_OPERATION_CREDITS
 │   │   │   ├── pricing/        provider-costs.ts (central USD + credit constants)
@@ -117,7 +117,7 @@ URL → scrape (cheerio + Shopify + OG + microdata)
         • Selective regen if overall < 8
     → Scene images [gpt-image-2 medium 1024×1792]
         • Image Brief Builder (deterministic, no LLM)
-        • Optional QA loop (gpt-4o-mini vision, IMAGE_QA_ENABLED, max 2 retries)
+        • Single-pass — V13 PR1 removed the post-gen QA + auto-regen loop
     → Voice [ElevenLabs eleven_v3 with-timestamps]
         • charactersToWords (Hebrew/niqqud aware)
         • chunkCaptions (2–5 words, ≤2 lines, 650–2200ms)
@@ -205,7 +205,7 @@ Web + worker share the same .env at repo root.
 
 **Required in production (R2 storage):** `CLOUDFLARE_R2_ACCOUNT_ID` · `CLOUDFLARE_R2_ACCESS_KEY_ID` · `CLOUDFLARE_R2_SECRET_ACCESS_KEY` · `CLOUDFLARE_R2_BUCKET_NAME` · `CLOUDFLARE_R2_PUBLIC_URL` — when `CLOUDFLARE_R2_BUCKET_NAME` is set, `lib/storage/index.ts` switches from local disk to R2 automatically.
 
-**Optional:** `ADMIN_EMAILS` (comma-separated) · `IMAGE_QA_ENABLED=true` · `WORKER_CONCURRENCY` · `OPENAI_SCRIPT_MODEL` (default `gpt-5.4-mini`) · `OPENAI_FACE_GATE_MODEL` (default `gpt-4o-mini`)
+**Optional:** `ADMIN_EMAILS` (comma-separated) · `WORKER_CONCURRENCY` · `OPENAI_SCRIPT_MODEL` (default `gpt-5.4-mini`) · `OPENAI_FACE_GATE_MODEL` (default `gpt-4o-mini`)
 
 ---
 

@@ -1,13 +1,20 @@
 # tachles · STATUS
 
-Living document. Last update: **2026-04-30** (V12.7 — OpenAI balance
-fetcher hardened: explicit `Number()` coercion in the daily-spend
-reduce loop fixes a `total30.toFixed is not a function` crash when
-`/v1/organization/costs` returns `amount.value` as a string. Now all 4
-provider cards in `/admin/costs` show real data using the new
-`OPENAI_ADMIN_API_KEY` env var — admin-scoped key dedicated to
-Administration API reads, separate from `OPENAI_API_KEY` used for
-model invocation).
+Living document. Last update: **2026-04-30** (V13 PR1 — Image QA
+auto-regeneration removed from the active path. The post-generation
+vision-model second-guess + corrective-brief retry loop has been
+deleted in full: `lib/image-qa/`, `buildCorrectiveBrief`, the QA
+branch in `generate-impl.ts`, and the `IMAGE_QA_ENABLED` /
+`IMAGE_QA_MAX_RETRIES` / `OPENAI_IMAGE_QA_MODEL` env vars. The
+quality strategy is now upstream-only — Product Intelligence → Scene
+Plan → Image Brief → better prompt + better animation prompt — not
+"generate then re-generate until a vision model approves". DB columns
+`Scene.imageQaJson` / `imageRegenAttempts` / `needsManualReview`
+remain nullable for historical data; PR1 stops writing them. Vision
+calls we KEEP: Product Visual Analysis (planning), Motion Analysis
+(planning), Face Gate (lipsync routing). PR2 will introduce the
+deterministic Scene Plan + strengthen the Image Brief; PR3 the
+Animation Plan + Kling prompt rewrite.).
 
 This is the deep spec — what each subsystem actually does, where it
 lives, what's real vs mocked, and known issues. For a high-level pitch
@@ -52,9 +59,9 @@ URL paste
             ← dossier + visual analysis + scene metadata
         → finalImagePrompt (REPLACES narration-driven prompt)
         gpt-image-2 medium 1024×1792 + 3-layer safety pipeline
-        Optional Image QA loop (gpt-4o-mini vision, IMAGE_QA_ENABLED)
-            failure → corrective brief → regen, up to 2 retries
-        → Scene.imageUrl, imageBriefJson, imageQaJson, imageRegenAttempts, needsManualReview
+        → Scene.imageUrl, imageBriefJson
+        (V13 PR1: post-generation Image QA loop removed — quality is
+         driven by the upstream brief, not by retry-until-pass.)
 
   └─ Step 5: Voice
         ElevenLabs eleven_v3 with-timestamps endpoint
@@ -96,7 +103,6 @@ ugc-video-platform/
 │   │   │   ├── captions/           re-exports from @ugc-video/shared
 │   │   │   ├── categories/         15 product categories with guidance text
 │   │   │   ├── image-briefs/       deterministic image-brief builder + corrective-brief generator
-│   │   │   ├── image-qa/           gpt-4o-mini vision QA + auto-regen feedback
 │   │   │   ├── llm/                scripts.ts (6-batch generator), scene-images.ts (gpt-image-2 wrapper)
 │   │   │   ├── music/              re-exports from @ugc-video/shared
 │   │   │   ├── plans.ts            PLAN_CONFIGS + PER_OPERATION_CREDITS + effective-value math
@@ -254,14 +260,13 @@ plastic in JSON for evolving creative metadata.
 - Pulls `mustAvoid` from `dossier.mustAvoidVisuals` ∪ `dossier.visualFailureModes` ∪ `visualAnalysis.mustAvoidForDemo` ∪ `visualAnalysis.likelyModelMistakes` ∪ universal Israeli-realism guards (foreign outlets / suburban / random English signage / stock-photo polish).
 - Produces a `finalImagePrompt` structured as: SCENE INTENT → CAMERA → COMPOSITION → REALISM → ENVIRONMENT → ISRAELI CONTEXT → PRODUCT ACCURACY → MUST SHOW → MUST NOT SHOW.
 - Replaces the legacy narration-driven path. The script's `visual_prompt_english` is folded in as a hint, not the primary source.
-- `buildCorrectiveBrief` — for the auto-regen loop. Extends `mustShow` with QA's `correctiveActions[]`, extends `mustAvoid` with `previously failed: <reason>` entries, appends two paragraphs to the prompt.
+- `buildCorrectiveBrief` was removed in **V13 PR1** alongside the QA loop — it only existed to feed the auto-regeneration retry path.
 
-### 🟡 Image QA ([`lib/image-qa/image-qa-evaluator.ts`](apps/web/lib/image-qa/image-qa-evaluator.ts))
-- `gpt-4o-mini` vision call — sees the generated image + brief summary + visual-analysis ground truth.
-- 9 boolean checks: `sceneTypeMatch` · `productUseAccuracy` · `visualProofStrength` · `environmentMatch` · `israeliRealism` · `mustShowSatisfied` · `mustAvoidViolated` · `productVisibility` · `narrationAlignment`.
-- Score 0–1 + `failureReasons[]` + `correctiveActions[]`.
-- Pass = `passed && score ≥ 0.8 && !hasCriticalViolation && !mustAvoidViolated`. We override the model's self-`passed` because it's lenient at edge cases.
-- **Status: gated OFF by default** (`IMAGE_QA_ENABLED=false` in `.env`). When ON, the auto-regen loop fires up to `IMAGE_QA_MAX_RETRIES=2` corrective passes per scene; in current testing the corrective brief isn't strong enough to fix what QA flags, so most scenes exhaust retries and end up `needsManualReview=true` while spending 3× the per-scene budget. Re-enable after the corrective brief is tuned.
+### ❌ Image QA — REMOVED IN V13 PR1
+- The post-generation `gpt-4o-mini` vision evaluator + corrective-brief auto-regen loop has been deleted from the active path. `lib/image-qa/` is gone; `generate-impl.ts` is now a single-pass image gen with no QA branch and no `IMAGE_QA_*` env reads.
+- Why removed (not just gated): in current testing the corrective brief reliably failed to fix what QA flagged — most scenes exhausted 2 retries with score 0.00 and ended up `needsManualReview=true` while spending 3× the per-scene image budget. A vision model second-guessing an image model is the wrong loop; the fix is upstream creative planning, not regenerate-until-pass.
+- Replaced by: better upstream brief (V11 + the PR2 Scene Plan), per-stage logs (PR4), the existing manual "regenerate scene" button, and the wizard error-surface UX (PR5).
+- Historical DB columns `Scene.imageQaJson` / `imageRegenAttempts` / `needsManualReview` remain nullable so old projects' QA reports don't get nuked. PR1 stops writing them; later PRs may repurpose `imageRegenAttempts` for manual user regens and `needsManualReview` for hard-failure flagging.
 
 ### ✅ Captions (V10 + V12)
 - **Source of truth** — ElevenLabs `with-timestamps` endpoint variant. Returns `audio_base64` + `alignment.characters[]` + per-character ms timings. `eleven_v3` is the only Hebrew-supporting model; we hard-pin it because Next.js dev caches `process.env` at boot and a stale `.env` would silently fall back to `multilingual_v2` (gibberish on Hebrew).
@@ -421,11 +426,10 @@ ADMIN_EMAILS                      comma-separated emails always promoted to admi
 OPENAI_API_KEY                    required
 OPENAI_SCRIPT_MODEL               default gpt-5.4-mini   (also used for dossier + audience + quick-suggest)
 OPENAI_IMAGE_MODEL                default gpt-image-2
-OPENAI_FACE_GATE_MODEL            default gpt-4o-mini    (also used for motion analysis + image QA + product visual analysis)
+OPENAI_FACE_GATE_MODEL            default gpt-4o-mini    (also used for motion analysis + product visual analysis)
 OPENAI_DOSSIER_MODEL              optional override; falls back to SCRIPT_MODEL
 OPENAI_AUDIENCE_MODEL             optional override
 OPENAI_PRODUCT_VISION_MODEL       optional override; default gpt-4o-mini
-OPENAI_IMAGE_QA_MODEL             optional override; default gpt-4o-mini
 OPENAI_QUICK_SUGGEST_MODEL        optional override; falls back to SCRIPT_MODEL
 OPENAI_MOTION_VISION_MODEL        optional override; default gpt-4o-mini
 ```
@@ -464,8 +468,6 @@ NEXT_PUBLIC_APP_URL               default http://localhost:3000
 PUBLIC_BASE_URL                   public URL Kling/PixVerse use to fetch silent clips + voice MP3s. In dev: a cloudflared/ngrok tunnel.
 WORKER_CONCURRENCY                default 2 — BullMQ render concurrency
 CAPTIONS_MODE                     phrase | off | word_highlight  (only "phrase" is wired today)
-IMAGE_QA_ENABLED                  default false — V11 auto-regen loop master switch
-IMAGE_QA_MAX_RETRIES              default 2 — retries per scene before marking needsManualReview
 ```
 
 ### Pricing overrides (all optional — fall back to defaults in [`lib/pricing/provider-costs.ts`](apps/web/lib/pricing/provider-costs.ts))
@@ -526,7 +528,7 @@ versus the typical 30s-mode video cost.
 
 1. **PixVerse `status` field is unreliable** — observed two production incidents where the field flipped through transient values (1 / 3 / 5) during finalization. The poller now ignores it and trusts completion data: `url && path && outputWidth > 0 && outputHeight > 0`. See [`lib/animation/lipsync/pixverse.ts`](apps/web/lib/animation/lipsync/pixverse.ts).
 2. **Kling i2v poll budget is 15 minutes** (bumped from 8 in April 2026). Peak-load v3-omni runs were taking 9-10 min, causing false timeouts that wasted the $0.79 spend.
-3. **Image QA loop is OFF by default** (`IMAGE_QA_ENABLED=false`). The QA correctly identifies real problems, but the corrective brief currently can't fix them in the 2 retries — most scenes exhaust retries with score 0.00 and end up `needsManualReview=true`. We pay 3× per-scene budget for a marginally-better result. Re-enable after tuning the corrective brief (likely needs: stronger "must do X" affirmative instructions, escalating quality:medium → quality:high on retry attempt 2).
+3. **Image QA auto-regeneration was removed in V13 PR1** (was previously gated OFF via `IMAGE_QA_ENABLED=false`). The vision-model evaluator was burning $0.18 + 60s per scene to regenerate-until-pass while the corrective brief couldn't reliably fix what it flagged. Quality is now driven upstream — Product Intelligence → Scene Plan → Image Brief — and the manual "regenerate scene" button covers the residual cases. See `❌ Image QA — REMOVED IN V13 PR1` above.
 4. **Single-scene Server Actions are serialized per-route** in Next.js 15. The wizard's per-scene "regenerate" buttons all use Route Handlers via `fetch()` to bypass this — multiple scenes can regenerate concurrently.
 5. **Captions are skipped on scenes that have no `captionChunksJson`** (older voice generations pre-V10). They are NEVER approximated proportionally — that's the bug we removed.
 6. **`apps/web/public/uploads/` has no garbage collection**. Disk grows unbounded. A cleanup job for old `clips_*/` and `finals/*.mp4` is on the to-do list.
@@ -548,7 +550,6 @@ versus the typical 30s-mode video cost.
 | ⏳ | Edge rate limiting | App-layer limits exist; no IP-level WAF / Cloudflare rules. |
 | ⏳ | Structured logging + Sentry | Currently `console.log` everywhere. |
 | ⏳ | `/uploads/` cleanup job | Maintenance queue handles Kling stuck tasks; a separate disk-GC sweeper is missing. |
-| ⏳ | Image QA corrective-brief tuning | See known-issue #3. |
 | ⏳ | Word-highlight caption mode | `CAPTIONS_MODE=word_highlight` is reserved but not wired (would extend `word_pop` with an active-word color override on the full phrase). |
 | ⏳ | Tests | The repo has no test runner today. The chunker / brief builder / music selector are pure modules and are vitest-ready. |
 | ⏳ | Admin debug panels for V11 artifacts | DB columns exist (`Scene.imageBriefJson`, `imageQaJson`, `Project.productData.intelligence`); a dedicated admin viewer would help diagnose creative drift. |
@@ -559,6 +560,7 @@ versus the typical 30s-mode video cost.
 
 | Tag | Date | Headline |
 |-----|------|----------|
+| **V13 PR1** | 2026-04-30 | **Image QA auto-regeneration removed from active path.** Deleted `apps/web/lib/image-qa/` (the gpt-4o-mini vision evaluator), the QA branch in `lib/scenes/generate-impl.ts`, `buildCorrectiveBrief` in `lib/image-briefs/image-brief-builder.ts`, and the `IMAGE_QA_ENABLED` / `IMAGE_QA_MAX_RETRIES` / `OPENAI_IMAGE_QA_MODEL` env vars from `.env.example`. Image generation is now a single-pass call: brief builder → gpt-image-2 → persist. Historical DB columns `Scene.imageQaJson` / `imageRegenAttempts` / `needsManualReview` remain nullable; PR1 stops writing them. Vision calls we KEEP: Product Visual Analysis, Motion Analysis, Face Gate (all upstream/routing, not post-generation second-guess). Verification: `apps/web/scripts/test-v13-pr1.ts` runs 22 assertions. Net diff: -489 / +94. PR2 (Scene Plan), PR3 (Animation Plan + Kling rewrite) follow. |
 | **V12.7** | 2026-04-30 | **OpenAI balance parser fix + admin-scope key.** `fetchOpenAIBalance` was crashing with `total30.toFixed is not a function` because `/v1/organization/costs` sometimes returns `amount.value` as a string and `+` was concatenating, not adding. Coerce with `Number(r.amount?.value ?? 0)`. New env var `OPENAI_ADMIN_API_KEY` (sk-admin-…) — dedicated admin-scope key for Administration API reads, preferred over `OPENAI_API_KEY` (which is restricted to model invocation). All 4 cards on `/admin/costs` now show live data: Kling, PixVerse, ElevenLabs, OpenAI ($11.07 / 30d, $4.40 / 24h on smoke test). |
 | **V12.6** | 2026-04-30 | **Graceful per-provider fallback** on `/admin/costs`. When a balance fetcher fails (HTTP 401 / 403 / network), the card no longer just shows the error — it falls back to local `ApiCall` aggregates (30d spend + call count) so the page stays useful. New helper `ProviderFallbackCard` keeps the error visible in a `<details>` block with a fix hint (e.g. "add user_read scope to ElevenLabs key"). |
 | **V12.5** | 2026-04-30 | **Live provider balance dashboard** in `/admin/costs`. New `lib/providers/balance.ts` fetches live capacity from all 4 paid providers in parallel, soft-fails per-provider, caches 60s. Cards show: Kling (remaining units / clips / USD value, per-pack table with expiry), PixVerse (credit_monthly + credit_package / scenes / USD), ElevenLabs (tier + chars + reset date / scenes / USD), OpenAI (24h / 7d / 30d spend cuts via `/v1/organization/costs`). |

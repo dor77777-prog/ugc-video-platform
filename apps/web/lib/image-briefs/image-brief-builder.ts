@@ -333,36 +333,3 @@ function dedupeKeepOrder(xs: string[]): string[] {
   return out;
 }
 
-// Build a "corrective" image brief for the auto-regen path. Takes the
-// previous brief + the QA failure reasons + corrective actions and
-// tightens the constraints so the model can't make the same mistake.
-export function buildCorrectiveBrief(args: {
-  prev: ImageBrief;
-  failureReasons: string[];
-  correctiveActions: string[];
-}): ImageBrief {
-  const tightenedMustShow = dedupeKeepOrder([
-    ...args.prev.mustShow,
-    ...args.correctiveActions,
-  ]);
-  const tightenedMustAvoid = dedupeKeepOrder([
-    ...args.prev.mustAvoid,
-    // Phrase the failure reasons as forbidden visuals.
-    ...args.failureReasons.map((r) => `previously failed: ${r}`),
-  ]);
-  const reasonsBlock = args.failureReasons.length
-    ? `\nPREVIOUS ATTEMPT FAILED QA — DO NOT REPEAT: ${args.failureReasons.join('; ')}.`
-    : '';
-  const correctiveBlock = args.correctiveActions.length
-    ? `\nMUST FIX: ${args.correctiveActions.join('; ')}.`
-    : '';
-  const finalImagePrompt =
-    args.prev.finalImagePrompt + reasonsBlock + correctiveBlock;
-  return {
-    ...args.prev,
-    mustShow: tightenedMustShow,
-    mustAvoid: tightenedMustAvoid,
-    negativeConstraints: tightenedMustAvoid,
-    finalImagePrompt,
-  };
-}
