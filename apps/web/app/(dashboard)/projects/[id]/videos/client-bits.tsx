@@ -1270,18 +1270,34 @@ export function RenderFinalButton({
       setJobId(data.jobId);
       router.refresh();
 
-      // Poll the job status. When it completes, redirect the user to
-      // /library — they'll see the new MP4 ready to play. If something
-      // fails, surface the error and let them retry without leaving
-      // the videos page.
-      const pollStartedAt = Date.now();
-      const POLL_TIMEOUT_MS = 10 * 60 * 1000;
-      const pollInterval = window.setInterval(async () => {
-        if (!isPageVisible()) return;
+      // V14.4 — Server-Sent Events stream replaces the 3s polling loop.
+      // EventSource auto-reconnects on close, so the long render (~3-15
+      // min) stays current with sub-2s latency without us managing the
+      // interval ourselves. Each connection caps at 55s (Vercel Hobby
+      // function ceiling); when it closes the browser opens a new one.
+      const startedAt = Date.now();
+      const MAX_TOTAL_MS = 10 * 60 * 1000;
+      const finalJobId = data.jobId;
+      const es = new EventSource(`/api/render/${finalJobId}/events`);
+      const cleanup = () => {
         try {
-          const sres = await fetch(`/api/render/${data.jobId}/status`, { cache: 'no-store' });
-          if (!sres.ok) return;
-          const s = (await sres.json()) as {
+          es.close();
+        } catch {
+          /* ignore */
+        }
+        clearTimeout(timeoutId);
+      };
+      const timeoutId = setTimeout(() => {
+        cleanup();
+        setError('הרינדור לוקח יותר מ-10 דק׳ — בדוק ב-/admin/queue או /library');
+        setPending(false);
+        setStatusText('');
+      }, MAX_TOTAL_MS);
+
+      es.onmessage = (ev) => {
+        if (Date.now() - startedAt >= MAX_TOTAL_MS) return;
+        try {
+          const s = JSON.parse(ev.data) as {
             status?: string;
             progressPercent?: number;
             errorMessage?: string;
@@ -1289,25 +1305,36 @@ export function RenderFinalButton({
           };
           setStatusText(progressLabel(s.status, s.progressPercent));
           if (s.status === 'completed' && s.finalVideoUrl) {
-            window.clearInterval(pollInterval);
-            // Redirect to library (with hash-anchor on this jobId) so
-            // the user lands on the new finished video immediately.
-            router.push(`/library#job-${data.jobId}`);
+            cleanup();
+            router.push(`/library#job-${finalJobId}`);
           } else if (s.status === 'failed' || s.status === 'cancelled') {
-            window.clearInterval(pollInterval);
+            cleanup();
             setError(s.errorMessage ?? 'ההרכבה הסופית נכשלה');
-            setPending(false);
-            setStatusText('');
-          } else if (Date.now() - pollStartedAt > POLL_TIMEOUT_MS) {
-            window.clearInterval(pollInterval);
-            setError('הרינדור לוקח יותר מ-10 דק׳ — בדוק ב-/admin/queue או /library');
             setPending(false);
             setStatusText('');
           }
         } catch {
-          /* keep polling — transient network blips are fine */
+          /* malformed event — ignore */
         }
-      }, 3000);
+      };
+      es.addEventListener('error', (ev) => {
+        // Treat error event from the server stream as terminal failure.
+        try {
+          const data = (ev as MessageEvent).data;
+          if (typeof data === 'string') {
+            const s = JSON.parse(data) as { errorMessage?: string };
+            setError(s.errorMessage ?? 'הרינדור נכשל');
+          }
+        } catch {
+          /* generic transport error — EventSource will auto-reconnect */
+        }
+      });
+      es.onerror = () => {
+        // Transport-level error (network blip, function cold-start).
+        // EventSource auto-reconnects; nothing to do here. If the
+        // server actively closed the connection (terminal status),
+        // we already cleaned up above.
+      };
     } catch (err) {
       setError(`שגיאה: ${(err as Error).message}`);
       setPending(false);
