@@ -16,6 +16,7 @@ import { existsSync, statSync } from 'fs';
 import path from 'path';
 import os from 'os';
 import { spawn } from 'child_process';
+import { gunzipSync } from 'zlib';
 import ffmpegStatic from 'ffmpeg-static';
 import { parseBuffer as parseMediaBuffer } from 'music-metadata';
 
@@ -71,15 +72,15 @@ function tryLocalPaths(): string | null {
 }
 
 // CDN URL for ffmpeg-static's prebuilt binaries. Mirrors the package's
-// own postinstall download targets — same checksums, same versions.
+// own postinstall download targets — same release tag (b6.1.1, taken
+// from node_modules/ffmpeg-static/package.json's binary-release-tag),
+// same checksums, .gz-compressed for the wire (~46MB raw → ~20MB gz).
+const FFMPEG_RELEASE_TAG = 'b6.1.1';
 function downloadUrlForRuntime(): string | null {
   const arch = process.arch; // 'arm64' | 'x64' | …
   const platform = process.platform; // 'linux' | 'darwin' | …
-  if (platform === 'linux' && arch === 'arm64') {
-    return 'https://github.com/eugeneware/ffmpeg-static/releases/download/b6.0/linux-arm64';
-  }
-  if (platform === 'linux' && arch === 'x64') {
-    return 'https://github.com/eugeneware/ffmpeg-static/releases/download/b6.0/linux-x64';
+  if (platform === 'linux' && (arch === 'arm64' || arch === 'x64')) {
+    return `https://github.com/eugeneware/ffmpeg-static/releases/download/${FFMPEG_RELEASE_TAG}/ffmpeg-linux-${arch}.gz`;
   }
   // Other archs (darwin/win) aren't expected on Vercel; bail and let
   // the bundled path or PATH ffmpeg take over.
@@ -99,7 +100,17 @@ async function downloadFfmpegToTmp(): Promise<string> {
   if (!res.ok) {
     throw new MuxError(`ffmpeg CDN download failed: HTTP ${res.status} ${url}`);
   }
-  const bytes = Buffer.from(await res.arrayBuffer());
+  // GitHub release assets are gzipped (~20MB) — gunzip in-process
+  // before writing the binary to /tmp so spawn() sees a real ELF.
+  const gzipped = Buffer.from(await res.arrayBuffer());
+  let bytes: Buffer;
+  try {
+    bytes = gunzipSync(gzipped);
+  } catch (err) {
+    throw new MuxError(
+      `ffmpeg CDN download decompress failed: ${(err as Error).message}`,
+    );
+  }
   await fs.writeFile(TMP_FFMPEG, bytes);
   await fs.chmod(TMP_FFMPEG, 0o755);
   return TMP_FFMPEG;

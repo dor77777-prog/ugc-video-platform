@@ -779,6 +779,7 @@ async function generateSceneClipImplInner(
   // so scene.clipUrl is always self-contained ("press play" works in the
   // scene tile without per-scene client-side mux).
   let audioMuxed = false;
+  let muxErrorMessage: string | null = null;
   if (lipSyncSkipReason && scene.voiceUrl) {
     try {
       const voiceBytes = await readUrlAsBuffer(scene.voiceUrl);
@@ -788,10 +789,8 @@ async function generateSceneClipImplInner(
       });
       audioMuxed = true;
     } catch (err) {
-      // Mux failure isn't catastrophic — we still save the silent clip.
-      // The (deprecated) per-scene composer mux still picks it up if
-      // someone wants to recover, and the user can regen.
       const errMsg = err instanceof MuxError ? err.message : (err as Error).message;
+      muxErrorMessage = errMsg;
       await recordApiCall({
         provider: 'ffmpeg',
         operation: 'mux',
@@ -803,6 +802,41 @@ async function generateSceneClipImplInner(
         projectId,
       });
     }
+  }
+
+  // V13 — refund the user when a non-lipsync scene's mux fails. The
+  // Kling i2v call burnt provider credits regardless, but charging
+  // the user for a silent clip they can't actually use is wrong. We:
+  //   1. SKIP persisting clipUrl (silent clip is unusable for the
+  //      end product — composer can't mux it after the fact reliably).
+  //   2. Mark scene.status = 'failed' + lastErrorCode so the wizard
+  //      surfaces the right Hebrew error via PR5's map.
+  //   3. Return a clear error to the caller. NO credit charge runs
+  //      below because we early-return before the charge transaction.
+  if (
+    lipSyncSkipReason &&
+    scene.voiceUrl &&
+    !audioMuxed &&
+    muxErrorMessage
+  ) {
+    klingLog.error('mux failed — refusing to ship a silent clip', {
+      errMsg: muxErrorMessage,
+    });
+    await prisma.scene
+      .update({
+        where: { id: sceneId },
+        data: {
+          status: 'failed',
+          lastErrorCode: 'render.ffmpeg_failed',
+          lastErrorMessage: muxErrorMessage,
+        },
+      })
+      .catch(() => {/* best effort */});
+    return {
+      success: false,
+      error: `מיקס הקול לקליפ נכשל: ${muxErrorMessage}. הסצנה לא תיווצר עד שזה יסתדר — לא חויבת קרדיטים על הקריאה הזו.`,
+      failedStage: 'motion',
+    };
   }
 
   // ── Persist the final clip ─────────────────────────────────────────────
