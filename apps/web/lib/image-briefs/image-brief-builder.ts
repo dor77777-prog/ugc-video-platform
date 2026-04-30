@@ -121,6 +121,12 @@ export interface BuildImageBriefInput {
   /** V14 PR2 — outfit description locked at project level (PR3+ work).
    *  When provided, the consistency anchor quotes it verbatim. */
   outfitDescriptionLocked?: string | null;
+  /** V14 hotfix #2 — apartment register description locked at project
+   *  level. Output of describeLockedEnvironmentRegister(register) from
+   *  lib/avatars/environment-register.ts. Quoted verbatim by the
+   *  consistency anchor so every scene of the same ad reads the same
+   *  apartment register (no modern/older flip between frames). */
+  environmentRegisterLocked?: string | null;
   /** V14 PR4 — when true, this scene is the ad's scroll-stopper. The brief
    *  builder appends scroll-stopper levers (tight framing, saturated color
    *  contrast, surprising angle) as a ruleBlock. The caller is responsible
@@ -355,6 +361,7 @@ export function buildImageBrief(input: BuildImageBriefInput): ImageBrief {
     cameraDirection: input.cameraDirection ?? null,
     totalScenes: input.totalScenes,
     outfitDescriptionLocked: input.outfitDescriptionLocked ?? null,
+    environmentRegisterLocked: input.environmentRegisterLocked ?? null,
     productName: dossier?.productName ?? null,
     productForm,
     productHeightCm: null, // V14 PR2: dossier doesn't carry height yet — PR3+ may add

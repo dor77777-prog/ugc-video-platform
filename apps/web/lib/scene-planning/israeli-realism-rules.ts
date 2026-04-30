@@ -98,16 +98,33 @@ const CATEGORY_ORDER: readonly IsraeliCueCategory[] = [
 
 export const CUES: Record<string, IsraeliCue> = {
   // sockets_switches ─────────────────────────────────────────────────────────
-  // Authoritative reference: a real Israeli SI 32 / Type H socket has THREE
+  // Strategy after V14 hotfix #2: gpt-image-2 cannot reliably render the
+  // Israeli SI 32 / Type H pattern even when the prompt describes it
+  // correctly — it auto-fills US / UK / EU shapes that look "close enough"
+  // to the model but read as foreign to an Israeli viewer. Solution:
+  // default to keeping sockets OUT of frame entirely. The default cue
+  // `socket.minimize_visibility` instructs the model to crop sockets out
+  // or hide them behind props. The detailed `socket.type_h` description is
+  // kept available for opt-in scenes that genuinely need a visible socket
+  // (e.g. plugging a device in), but it is no longer the env-type default.
+
+  // DEFAULT for kitchen / bathroom / bedroom / living_room / family_home /
+  // kids_room / office / neutral_indoor — fail closed by hiding the cue.
+  'socket.minimize_visibility': {
+    id: 'socket.minimize_visibility',
+    category: 'sockets_switches',
+    positive:
+      'Do NOT show any electrical wall sockets or power outlets in this frame. If the camera angle would naturally include a socket (e.g. behind the kitchen counter, beside the bed, on the bathroom wall), keep it out of frame by tighter cropping, by placing props in front of it (a kettle, a plant, a towel), or by framing the shot to exclude that wall area. Sockets must NOT be visible.',
+    negative:
+      'NOT a visible wall socket of any standard (US Type B / UK Type G / EU Schuko / Israeli Type H) — the cleanest path is to keep the socket out of frame entirely.',
+  },
+
+  // OPT-IN — only fires when a scene specifically needs a socket visible
+  // (e.g. plugging a device, charging shot, electrical-product demo).
+  // Authoritative spec: real Israeli SI 32 / Type H sockets have THREE
   // ROUND holes (not rectangular slots) arranged in a triangular pattern —
-  // two holes on the upper-left and upper-right, one hole centered below
-  // them. The faceplate is white-or-ivory plastic, square/rectangular with
-  // rounded corners, slightly raised from the wall. Modern Israeli outlets
-  // are SI 32 round-pin (post-2007 revision) — the holes are round, not the
-  // older rectangular pattern. The user reported gpt-image-2 was generating
-  // UK / US shapes when the cue said "rectangular slots"; replaced with the
-  // correct round-hole + triangular-pattern phrasing — verified against real
-  // photos.
+  // two on the upper-left and upper-right, one centered below. Verified
+  // against actual Israeli wall fixtures.
   'socket.type_h': {
     id: 'socket.type_h',
     category: 'sockets_switches',
@@ -124,6 +141,19 @@ export const CUES: Record<string, IsraeliCue> = {
     negative:
       'NOT three separate single sockets aligned (must read as one wide three-gang faceplate), NOT US duplex outlets (two parallel slot pairs), NOT UK three-rectangular-pin row.',
   },
+  // DEFAULT for env-type interior cues — same fail-closed strategy as
+  // sockets. The model can't reliably nail the Israeli wall-switch look
+  // either, so the default is to keep switches out of the focal area.
+  'switch.minimize_visibility': {
+    id: 'switch.minimize_visibility',
+    category: 'sockets_switches',
+    positive:
+      'Do NOT show any wall-mounted light switches in the focal area of this frame. If a switch would naturally appear at the chosen camera angle, frame the shot so it is either out of frame, partially obscured by props, or far enough into the soft-focus background that no detail is readable.',
+    negative:
+      'NOT a sharply rendered foreign-style light switch (US toggle / UK dolly / black hotel rocker) — keep switches out of focal sharpness.',
+  },
+
+  // OPT-IN — opt in only for scenes that specifically need a switch visible.
   'switch.israeli_rocker': {
     id: 'switch.israeli_rocker',
     category: 'sockets_switches',
@@ -554,26 +584,31 @@ export const UNIVERSAL_NEGATIVES: readonly string[] = [
 // cue IDs. Scene presets (when set) override these.
 
 const CUES_BY_ENV_TYPE: Record<string, readonly string[]> = {
+  // V14 hotfix #2 — the indoor env types default to the *minimize* cues
+  // (hide sockets + switches from frame) instead of the descriptive cues
+  // (try to render Type H correctly). Reasoning: gpt-image-2 still drifts
+  // to UK/US shapes despite the round-hole + triangular-pattern wording.
+  // Better to keep them out of frame than to render them wrong.
   kitchen: [
-    'socket.type_h',
-    'switch.israeli_rocker',
+    'socket.minimize_visibility',
+    'switch.minimize_visibility',
     'brand.tnuva_dairy',
     'climate.warm_daylight_indoor',
   ],
   bathroom: [
-    'socket.type_h',
-    'switch.israeli_rocker',
+    'socket.minimize_visibility',
+    'switch.minimize_visibility',
     'climate.warm_daylight_indoor',
   ],
   bedroom: [
-    'socket.type_h',
-    'switch.israeli_rocker',
+    'socket.minimize_visibility',
+    'switch.minimize_visibility',
     'arch.trissim',
     'climate.warm_daylight_indoor',
   ],
   living_room: [
-    'socket.type_h',
-    'switch.israeli_rocker',
+    'socket.minimize_visibility',
+    'switch.minimize_visibility',
     'arch.mirpeset',
     'arch.trissim',
     'climate.warm_daylight_indoor',
@@ -584,7 +619,7 @@ const CUES_BY_ENV_TYPE: Record<string, readonly string[]> = {
     'climate.warm_outdoor_sun',
     'street.hebrew_signage',
   ],
-  office: ['socket.type_h', 'switch.israeli_rocker'],
+  office: ['socket.minimize_visibility', 'switch.minimize_visibility'],
   car: ['street.yellow_plates', 'street.kikar_layout'],
   street: [
     'street.hebrew_signage',
@@ -595,15 +630,19 @@ const CUES_BY_ENV_TYPE: Record<string, readonly string[]> = {
   ],
   store: ['street.hebrew_signage', 'brand.shufersal_purple'],
   family_home: [
-    'socket.type_h',
-    'switch.israeli_rocker',
+    'socket.minimize_visibility',
+    'switch.minimize_visibility',
     'arch.trissim',
     'climate.warm_daylight_indoor',
   ],
-  kids_room: ['socket.type_h', 'switch.israeli_rocker', 'arch.trissim'],
+  kids_room: [
+    'socket.minimize_visibility',
+    'switch.minimize_visibility',
+    'arch.trissim',
+  ],
   neutral_indoor: [
-    'socket.type_h',
-    'switch.israeli_rocker',
+    'socket.minimize_visibility',
+    'switch.minimize_visibility',
     'climate.warm_daylight_indoor',
   ],
 };
@@ -644,8 +683,8 @@ export const SCENE_PRESETS: Record<string, IsraeliScenePreset> = {
   kitchen_with_morning_light: {
     id: 'kitchen_with_morning_light',
     cueIds: [
-      'socket.type_h',
-      'switch.israeli_rocker',
+      'socket.minimize_visibility',
+      'switch.minimize_visibility',
       'brand.tnuva_dairy',
       'brand.taster_choice_nescafe',
       'climate.warm_daylight_indoor',
@@ -656,8 +695,8 @@ export const SCENE_PRESETS: Record<string, IsraeliScenePreset> = {
   bathroom_morning_routine: {
     id: 'bathroom_morning_routine',
     cueIds: [
-      'socket.type_h',
-      'switch.israeli_rocker',
+      'socket.minimize_visibility',
+      'switch.minimize_visibility',
       'climate.warm_daylight_indoor',
     ],
     description:
@@ -666,8 +705,8 @@ export const SCENE_PRESETS: Record<string, IsraeliScenePreset> = {
   bedroom_evening: {
     id: 'bedroom_evening',
     cueIds: [
-      'socket.type_h',
-      'switch.israeli_rocker',
+      'socket.minimize_visibility',
+      'switch.minimize_visibility',
       'arch.trissim',
       'climate.warm_daylight_indoor',
     ],
@@ -677,8 +716,8 @@ export const SCENE_PRESETS: Record<string, IsraeliScenePreset> = {
   living_room_couch: {
     id: 'living_room_couch',
     cueIds: [
-      'socket.type_h',
-      'switch.israeli_rocker',
+      'socket.minimize_visibility',
+      'switch.minimize_visibility',
       'arch.mirpeset',
       'arch.trissim',
       'climate.warm_daylight_indoor',

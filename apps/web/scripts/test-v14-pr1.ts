@@ -284,9 +284,13 @@ const VALID_REGISTERS: ReadonlySet<ReligiousRegister> = new Set([
     isExterior: false,
     isWindowVisible: false,
   });
+  // V14 hotfix #2 — kitchen baseline now uses socket.minimize_visibility
+  // (fail-closed strategy: hide sockets rather than describe Type H).
+  // socket.type_h is still in the library but only fires when explicitly
+  // opted in.
   assert(
-    kitchen.cues.some((c) => c.id === 'socket.type_h'),
-    '[V14 PR1.6] kitchen baseline includes socket.type_h',
+    kitchen.cues.some((c) => c.id === 'socket.minimize_visibility'),
+    '[V14 PR1.6] kitchen baseline uses socket.minimize_visibility (V14 hotfix #2 default)',
   );
   assert(
     kitchen.cues.some((c) => c.id === 'brand.tnuva_dairy'),
@@ -435,8 +439,14 @@ const VALID_REGISTERS: ReadonlySet<ReligiousRegister> = new Set([
     '[V14 PR1.9] shim mustAvoid forbids US-style suburbia',
   );
   assert(
-    block.promptText.includes('Type H') && block.promptText.includes('Israeli'),
-    '[V14 PR1.9] shim promptText mentions Type H + Israeli framing',
+    // V14 hotfix #2 — shim default no longer mentions "Type H" verbatim.
+    // The new default suppresses sockets in frame; the prompt should
+    // either mention Type H (legacy / opt-in) or instruct to keep
+    // sockets out of frame.
+    (block.promptText.includes('Type H') ||
+      /electrical wall sockets|out of frame/i.test(block.promptText)) &&
+      block.promptText.includes('Israeli'),
+    '[V14 PR1.9] shim promptText addresses Israeli outlets (Type H description OR minimize-visibility) + Israeli framing',
   );
 
   const noTalking = buildIsraeliRealismBlock({ isTalking: false });
@@ -460,8 +470,9 @@ const VALID_REGISTERS: ReadonlySet<ReligiousRegister> = new Set([
 
 // ── 10. End-to-end landing — buildImageBrief contains specific cue text ─────
 {
-  // Generic product_demo path (no intelligence). The shim path runs and
-  // surfaces Type H verbatim through israeliContextInstruction.
+  // Generic product_demo path (no intelligence). The shim default after
+  // V14 hotfix #2 emits the suppression instruction instead of the Type H
+  // description — assert on either path.
   const brief = buildImageBrief({
     sceneNumber: 1,
     totalScenes: 4,
@@ -474,16 +485,20 @@ const VALID_REGISTERS: ReadonlySet<ReligiousRegister> = new Set([
     intelligence: null,
   });
   assert(
-    brief.israeliContextInstruction.includes('Israeli Type H wall socket'),
-    '[V14 PR1.10] brief.israeliContextInstruction carries the Type H positive line verbatim',
+    brief.israeliContextInstruction.includes('Israeli Type H wall socket') ||
+      /Do NOT show any electrical wall sockets/i.test(
+        brief.israeliContextInstruction,
+      ),
+    '[V14 PR1.10] brief.israeliContextInstruction addresses outlets (Type H description OR minimize-visibility instruction)',
   );
   assert(
     brief.finalImagePrompt.includes('ISRAELI CONTEXT'),
     '[V14 PR1.10] finalImagePrompt still labels its ISRAELI CONTEXT section',
   );
   assert(
-    brief.finalImagePrompt.includes('Israeli Type H wall socket'),
-    '[V14 PR1.10] finalImagePrompt contains the Type H positive cue line verbatim',
+    brief.finalImagePrompt.includes('Israeli Type H wall socket') ||
+      /Do NOT show any electrical wall sockets/i.test(brief.finalImagePrompt),
+    '[V14 PR1.10] finalImagePrompt addresses outlets (description OR suppression)',
   );
   assert(
     brief.mustAvoid.some((s) => s.includes('NOT American suburban context')),

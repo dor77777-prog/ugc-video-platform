@@ -231,6 +231,12 @@ export interface ConsistencyAnchorInput {
   /** When provided, the snippet quotes it verbatim (PR3+). Otherwise emits a
    *  generic instruction that still pushes the model toward continuity. */
   outfitDescriptionLocked?: string | null;
+  /** V14 hotfix #2 — locked apartment register description. When supplied,
+   *  every scene of the same ad gets the same apartment-register line so
+   *  the modern/older split across frames stops happening. Output of
+   *  describeLockedEnvironmentRegister(...) from
+   *  apps/web/lib/avatars/environment-register.ts. */
+  environmentRegisterLocked?: string | null;
 }
 
 export function consistencyAnchorSnippet(
@@ -239,11 +245,15 @@ export function consistencyAnchorSnippet(
   const outfitClause = opts.outfitDescriptionLocked
     ? `The subject is wearing ${opts.outfitDescriptionLocked} (identical across all scenes in this ad).`
     : 'The subject\'s outfit must remain identical across all scenes in this ad — same shirt, same pants/skirt, same shoes, same jewelry. Outfit drift is a distraction and must not happen.';
+  const envClause = opts.environmentRegisterLocked
+    ? `Every scene in this ad takes place inside the same apartment register: ${opts.environmentRegisterLocked}. Wall colors, furniture style, level of clutter, lighting tone, and overall apartment age MUST stay consistent across all scenes — no switching between modern and older home registers.`
+    : 'Every scene in this ad takes place inside the same apartment register — same wall colors, same furniture style, same level of clutter or polish across all scenes. Do NOT switch between modern and older home registers between frames.';
   const positive = [
-    'CONSISTENCY ANCHOR (the subject is the same person across the whole ad):',
+    'CONSISTENCY ANCHOR (the subject is the same person, in the same apartment, across the whole ad):',
     `- This frame is part of a ${opts.totalScenes}-scene UGC ad series. Treat the avatar reference image as a strict identity anchor.`,
     '- Preserve identical facial features (eye shape, nose shape, jawline, eyebrow shape), identical hair length and color, identical skin tone, identical earrings/jewelry across every scene.',
     `- ${outfitClause}`,
+    `- ${envClause}`,
   ].join('\n');
   const negativeLines = [
     'NOT a different person from the previous scene',
@@ -252,6 +262,8 @@ export function consistencyAnchorSnippet(
     'NOT a different ethnicity from the avatar reference',
     'NOT mismatched eye color',
     'NOT a mismatched outfit between scenes in this same ad',
+    'NOT a switch between modern and older home registers across the ad',
+    'NOT inconsistent wall colors / furniture style / clutter level between frames of the same ad',
   ];
   return { id: 'frame-technique.consistency_anchor', positive, negativeLines };
 }
@@ -274,6 +286,8 @@ export interface FrameTechniqueContext {
   /** Avatar's locked outfit (PR3+). When null, consistency anchor still
    *  emits a generic continuity instruction. */
   outfitDescriptionLocked?: string | null;
+  /** V14 hotfix #2 — apartment register description locked at project level. */
+  environmentRegisterLocked?: string | null;
   /** Subject handle for the mirror/selfie snippets. Default: 'the subject'. */
   subjectShort?: string | null;
   /** Product details for productHandHoldSnippet. Pulled from
@@ -322,6 +336,7 @@ export function chooseFrameTechniqueSnippets(
       consistencyAnchorSnippet({
         totalScenes: ctx.totalScenes ?? 0,
         outfitDescriptionLocked: ctx.outfitDescriptionLocked ?? null,
+        environmentRegisterLocked: ctx.environmentRegisterLocked ?? null,
       }),
     );
   }

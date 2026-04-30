@@ -10,6 +10,11 @@ import { prisma } from '@/lib/db';
 import { findAvatar, describeAvatar } from '@/lib/avatars/catalog';
 import { computeLockedOutfit } from '@/lib/avatars/outfit';
 import {
+  computeLockedEnvironmentRegister,
+  describeLockedEnvironmentRegister,
+  type LockedEnvironmentRegister,
+} from '@/lib/avatars/environment-register';
+import {
   generateSceneImage,
   SceneImageSafetyError,
   SceneImageTimeoutError,
@@ -225,6 +230,39 @@ async function generateSceneImageImplInner(
     }
   }
 
+  // V14 hotfix #2 — environment register lock. Same shape as outfit lock:
+  // computed once on first scene gen with an avatar, persisted to
+  // Project.productData.lockedEnvironmentRegister, then quoted verbatim by
+  // the consistency anchor so every scene of the same ad reads the same
+  // apartment register (modern / older / urban / premium). Without this,
+  // the script LLM picks environment_style independently per scene and
+  // half the frames read modern while the other half read older — visibly
+  // breaks continuity.
+  let lockedEnvRegister: LockedEnvironmentRegister | null =
+    typeof data.lockedEnvironmentRegister === 'string'
+      ? (data.lockedEnvironmentRegister as LockedEnvironmentRegister)
+      : null;
+  if (!lockedEnvRegister && selectedAvatar) {
+    lockedEnvRegister = computeLockedEnvironmentRegister(selectedAvatar.archetype);
+    try {
+      await prisma.project.update({
+        where: { id: project.id },
+        data: {
+          productData: {
+            ...data,
+            lockedOutfit,
+            lockedEnvironmentRegister: lockedEnvRegister,
+          } as Prisma.InputJsonValue,
+        },
+      });
+    } catch {
+      // Non-fatal — same reasoning as outfit lock: deterministic, race-safe.
+    }
+  }
+  const environmentRegisterLockedText = lockedEnvRegister
+    ? describeLockedEnvironmentRegister(lockedEnvRegister)
+    : null;
+
   // V11 — pull the Product Intelligence bundle off productData. Used
   // by the deterministic Image Brief Builder (which replaces the old
   // narration → image prompt path) and by the QA evaluator below.
@@ -267,6 +305,7 @@ async function generateSceneImageImplInner(
     intelligence,
     isProblemScene: isProblem,
     outfitDescriptionLocked: lockedOutfit,
+    environmentRegisterLocked: environmentRegisterLockedText,
     isScrollStopper,
     scrollStopperReason,
     variationLedger,

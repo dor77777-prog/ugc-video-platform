@@ -44,9 +44,15 @@ function assert(cond: boolean, name: string, detail = '') {
     block.mustAvoid.some((s) => s.includes('US-style kitchen') || s.includes('suburban')),
     '[PR2.1] israeli-realism mustAvoid forbids US-style suburbia / kitchens',
   );
+  // V14 hotfix #2 — default cue strategy changed from "describe Type H"
+  // to "suppress sockets in frame". The prompt now either mentions Type H
+  // (when sockets are explicitly opted in) or instructs the model to keep
+  // sockets out of frame. Either path satisfies the Israeli-realism intent.
   assert(
-    block.promptText.includes('Type H') && block.promptText.includes('Israeli'),
-    '[PR2.1] israeli-realism promptText mentions Type H + Israeli framing',
+    (block.promptText.includes('Type H') ||
+      /electrical wall sockets|out of frame/i.test(block.promptText)) &&
+      block.promptText.includes('Israeli'),
+    '[PR2.1] israeli-realism promptText addresses outlets (Type H description OR minimize-visibility) + Israeli framing',
   );
 
   // The studio-portrait guard should switch off when isTalking=false
@@ -75,9 +81,11 @@ function assert(cond: boolean, name: string, detail = '') {
     cameraDirection: null,
     intelligence: null,
   });
+  // V14 hotfix #2 — same change as the block-level assertion above.
   assert(
-    brief.israeliContextInstruction.includes('Type H'),
-    '[PR2.1] image-brief still emits Type H Israeli outlet rule',
+    brief.israeliContextInstruction.includes('Type H') ||
+      /electrical wall sockets|out of frame/i.test(brief.israeliContextInstruction),
+    '[PR2.1] image-brief addresses Israeli outlets (Type H description OR minimize-visibility instruction)',
   );
   assert(
     brief.mustAvoid.some((s) => s.includes('US-style kitchen') || s.includes('suburban')),
