@@ -15,6 +15,7 @@ import { ElapsedTimer } from '@/components/ui/elapsed-timer';
 import { AudioPreview } from '@/components/ui/audio-preview';
 import { VideoPreview } from '@/components/ui/video-preview';
 import { cn } from '@/lib/utils';
+import { isPageVisible } from '@/lib/utils/visibility';
 import {
   CAPTION_PRESETS,
   DEFAULT_CAPTION_PRESET_ID,
@@ -414,6 +415,7 @@ export function SceneClipCard(props: SceneClipCardProps) {
         stop();
         return;
       }
+      if (!isPageVisible()) return;
       try {
         const res = await fetch(`/api/scenes/${propsRef.current.sceneId}`, {
           cache: 'no-store',
@@ -459,6 +461,7 @@ export function SceneClipCard(props: SceneClipCardProps) {
         stop();
         return;
       }
+      if (!isPageVisible()) return;
       try {
         const res = await fetch(`/api/scenes/${propsRef.current.sceneId}`, {
           cache: 'no-store',
@@ -508,6 +511,7 @@ export function SceneClipCard(props: SceneClipCardProps) {
       let polls = 0;
       const id = setInterval(async () => {
         polls++;
+        if (!isPageVisible()) return;
         try {
           const res = await fetch(`/api/scenes/${propsRef.current.sceneId}`, {
             cache: 'no-store',
@@ -541,6 +545,7 @@ export function SceneClipCard(props: SceneClipCardProps) {
       let polls = 0;
       const id = setInterval(async () => {
         polls++;
+        if (!isPageVisible()) return;
         try {
           const res = await fetch(`/api/scenes/${propsRef.current.sceneId}`, {
             cache: 'no-store',
@@ -593,6 +598,7 @@ export function SceneClipCard(props: SceneClipCardProps) {
     if (!voiceInFlightServer) return;
     const baselineUrl = initialVoiceUrlRef.current;
     const id = setInterval(async () => {
+      if (!isPageVisible()) return;
       try {
         const res = await fetch(`/api/scenes/${propsRef.current.sceneId}`, { cache: 'no-store' });
         if (!res.ok) return;
@@ -617,6 +623,7 @@ export function SceneClipCard(props: SceneClipCardProps) {
     if (!clipInFlightServer) return;
     const baselineUrl = initialClipUrlRef.current;
     const id = setInterval(async () => {
+      if (!isPageVisible()) return;
       try {
         const res = await fetch(`/api/scenes/${propsRef.current.sceneId}`, { cache: 'no-store' });
         if (!res.ok) return;
@@ -1241,6 +1248,7 @@ export function RenderFinalButton({
       const pollStartedAt = Date.now();
       const POLL_TIMEOUT_MS = 10 * 60 * 1000;
       const pollInterval = window.setInterval(async () => {
+        if (!isPageVisible()) return;
         try {
           const sres = await fetch(`/api/render/${data.jobId}/status`, { cache: 'no-store' });
           if (!sres.ok) return;

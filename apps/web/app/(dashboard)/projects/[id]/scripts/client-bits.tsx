@@ -11,6 +11,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { ProgressBar } from '@/components/ui/progress-bar';
 import { ElapsedTimer } from '@/components/ui/elapsed-timer';
 import { cn } from '@/lib/utils';
+import { isPageVisible } from '@/lib/utils/visibility';
 import { generateScriptsAction, updateScriptAction, type GenerateState } from './actions';
 
 // V6 streaming generator: 6 framework-specific calls fire in parallel
@@ -48,7 +49,10 @@ export function GenerateButton({
   // one as their framework finishes.
   useEffect(() => {
     if (!pending) return;
-    const id = setInterval(() => router.refresh(), 2500);
+    const id = setInterval(() => {
+      if (!isPageVisible()) return;
+      router.refresh();
+    }, 2500);
     return () => clearInterval(id);
   }, [pending, router]);
 

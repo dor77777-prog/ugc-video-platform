@@ -18,6 +18,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { ProgressBar } from '@/components/ui/progress-bar';
 import { ElapsedTimer } from '@/components/ui/elapsed-timer';
 import { cn } from '@/lib/utils';
+import { isPageVisible } from '@/lib/utils/visibility';
 import {
   updateScenePromptAction,
   type GenerateSceneImageState,
@@ -386,6 +387,9 @@ export function SceneCard(props: SceneCardProps) {
 
     const tick = async () => {
       if (aborted) return;
+      // V14.1 — skip the API call while the tab is hidden. The next tick
+      // (within 2.5s of returning) catches the user up.
+      if (!isPageVisible()) return;
       // If the prop already has the image, no need to poll anymore.
       if (propsRef.current.imageUrl) {
         stopPoll();
@@ -446,6 +450,7 @@ export function SceneCard(props: SceneCardProps) {
           clearInterval(burst);
           return;
         }
+        if (!isPageVisible()) return;
         try {
           const res = await fetch(`/api/scenes/${propsRef.current.sceneId}`, {
             cache: 'no-store',
@@ -486,6 +491,7 @@ export function SceneCard(props: SceneCardProps) {
     if (!imageInFlightServer) return;
     const baselineUrl = initialImageUrlRef.current;
     const id = setInterval(async () => {
+      if (!isPageVisible()) return;
       try {
         const res = await fetch(`/api/scenes/${propsRef.current.sceneId}`, { cache: 'no-store' });
         if (!res.ok) return;
