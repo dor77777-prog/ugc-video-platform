@@ -1,6 +1,10 @@
 # tachles · STATUS
 
-Living document. Last update: **2026-04-30** (V13 PR9 — `npm test`
+Living document. Last update: **2026-04-30** (V13.1 — ffmpeg cold-start
+download from CDN to `/tmp` because Vercel can't bundle the static
+binary on this monorepo + protective refund: a non-lipsync scene
+whose mux fails now skips clipUrl persistence + sets `status='failed'`
++ doesn't charge the user. Earlier today: V13 PR9 — `npm test`
 master runner ships. Cumulative V13 surface: PR1 removed the
 post-generation Image QA auto-regen loop; PR2 strengthened the
 upstream Image Brief with Israeli realism / hands physics / mirror
@@ -561,6 +565,7 @@ versus the typical 30s-mode video cost.
 
 | Tag | Date | Headline |
 |-----|------|----------|
+| **V13.1** | 2026-04-30 | **ffmpeg cold-start download + mux-failure refund.** Vercel's tracer + serverExternalPackages + outputFileTracingRoot all failed to bundle the ffmpeg-static binary into the function — verified locally that `vercel build` produces .vercel/output WITHOUT ffmpeg anywhere despite .vc-config.json's filePathMap declaring it. Symptom in prod: every mux ApiCall failed with ENOENT at `/var/task/node_modules/ffmpeg-static/ffmpeg`, and non-lipsync scenes shipped silent clips while the user paid $0.79 of Kling credit per attempt. Switched `lib/scenes/mux-audio.ts` to a cold-start CDN download: on first call after a warm-container miss, fetches `https://github.com/eugeneware/ffmpeg-static/releases/download/b6.1.1/ffmpeg-linux-${arch}.gz` (b6.1.1 = ffmpeg-static@5.3.0's binary-release-tag), gunzips, writes to `/tmp/tachles-ffmpeg-static`, chmods +x, caches for the warm container's lifetime. Adds ~1-3s on cold start; warm calls = zero overhead. Also added a protective layer in `clip-impl.ts`: when mux fails on a non-lipsync scene, the action skips persisting clipUrl, marks `status='failed' + lastErrorCode='render.ffmpeg_failed'`, and returns an error WITHOUT running the credit-charge transaction — the user no longer pays for silent clips. |
 | **V13 PR9** | 2026-04-30 | **`npm test` runs the V13 suite.** Master runner `apps/web/scripts/test-v13-all.ts` discovers and executes every `test-v13-pr*.ts`, prints per-script pass/fail + duration, exits non-zero on any failure. 360+ assertions across 8 scripts complete in ~5.4s. Trade-off vs the V13 §17 vitest port documented in the commit. |
 | **V13 PR8** | 2026-04-30 | **Admin scene debug panel** at `/admin/scenes/[id]/debug`. Status badge + last error + generation log + routing flags + image brief + final prompt + motion analysis + legacy QA (with banner) + generation history + project intelligence — every persisted artifact in one collapsible page. Reuses PR5 / PR6 / PR7 components. (Admin) layout already gates auth via `requireAdmin()`. |
 | **V13 PR7** | 2026-04-30 | **State-machine writes + UX components.** PR7.1 wires status transitions in `generate-impl` / `voice-impl` / `clip-impl` (each curated `<stage>.<reason>` lastErrorCode matches a PR5 entry). PR7.2 adds `flushSceneLogBuffer` — best-effort persistence of the buffered per-scene log into `Scene.generationLogJson` with cap-200 trim. PR7.3 ships `SceneCardStatusBadge` (Hebrew label per status, color-coded dot) + `SceneErrorDetails` (Hebrew message from PR5 map, retry / skip / debug actions). PR7.4 ships `SceneLogViewer` (reverse-chronological timeline of generationLogJson) + `WizardWarningsPanel` (collapsible אזהרות (N) above the scene grid). All RTL-first. |
