@@ -5,6 +5,7 @@
 // kling.ts wiring + clip-impl.ts plumbing.
 
 import { buildAnimationPlan } from '../lib/animation/animation-plan-builder';
+import { buildKlingPromptFromPlan } from '../lib/animation/kling';
 import type { MotionAnalysis } from '../lib/animation/motion-analysis';
 
 let failures = 0;
@@ -201,6 +202,92 @@ function assert(cond: boolean, name: string, detail = '') {
   });
   const faceZoomCount = dupCheck.forbiddenMotion.filter((s) => s === 'face zoom').length;
   assert(faceZoomCount === 1, '[PR3.1] forbiddenMotion is deduped (face zoom appears once)');
+}
+
+// ── PR3.2 — Kling prompt from plan ─────────────────────────────────────
+{
+  // Talking-head plan emits silent talking plate + talking-head negatives.
+  const talkPlan = buildAnimationPlan({
+    sceneGenerationType: 'talking_head',
+    requiresLipSync: true,
+  });
+  const talkPrompt = buildKlingPromptFromPlan(talkPlan);
+  assert(
+    talkPrompt.positive.includes('looks into the phone camera and appears to speak silently'),
+    '[PR3.2] talking-head plan emits SILENT_TALKING_HEAD_TOKENS in positive',
+  );
+  assert(
+    talkPrompt.negative.includes('frozen face'),
+    '[PR3.2] talking-head plan inherits SILENT_TALKING_HEAD_NEGATIVES baseline',
+  );
+  assert(
+    /face zoom/.test(talkPrompt.negative),
+    '[PR3.2] talking-head plan negative includes plan-level face zoom forbidden',
+  );
+
+  // Product demo plan emits non-talking guard, no silent talking block.
+  const demoPlan = buildAnimationPlan({ sceneGenerationType: 'product_demo' });
+  const demoPrompt = buildKlingPromptFromPlan(demoPlan);
+  assert(
+    demoPrompt.positive.includes('NOT speaking to the camera') ||
+      demoPrompt.positive.includes('do not turn this into a selfie'),
+    '[PR3.2] product_demo plan emits NON_TALKING_GUARD in positive',
+  );
+  assert(
+    !demoPrompt.positive.includes('looks into the phone camera and appears to speak silently'),
+    '[PR3.2] product_demo plan does NOT emit silent talking block',
+  );
+  assert(
+    /product disappearing|product cropped/.test(demoPrompt.negative),
+    '[PR3.2] product_demo plan negative includes product-disappearing guard',
+  );
+  assert(
+    /product morph/.test(demoPrompt.negative),
+    '[PR3.2] product_demo plan negative includes product morph forbidden',
+  );
+
+  // showFace=false + closeup_product → preserveProductVisibility + avoidFaceZoom
+  // surface in the positive prompt explicitly.
+  const closeupPlan = buildAnimationPlan({
+    sceneGenerationType: 'closeup_product',
+    showFace: false,
+    mustShowProduct: true,
+  });
+  const closeupPrompt = buildKlingPromptFromPlan(closeupPlan);
+  assert(
+    closeupPrompt.positive.includes('PRODUCT VISIBILITY GATE'),
+    '[PR3.2] closeup_product plan emits PRODUCT VISIBILITY GATE in positive',
+  );
+  assert(
+    closeupPrompt.positive.includes("face must not be zoomed into"),
+    '[PR3.2] closeup_product plan emits face-zoom guard in positive',
+  );
+
+  // cameraMotion enum renders correctly per camera vocabulary.
+  const ctaPlan = buildAnimationPlan({ sceneGenerationType: 'cta_visual' });
+  const ctaPrompt = buildKlingPromptFromPlan(ctaPlan);
+  assert(
+    /Slow Zoom In/.test(ctaPrompt.positive),
+    '[PR3.2] cta_visual plan renders cameraMotion=slow_push_in as "Slow Zoom In"',
+  );
+
+  // Free-text camera direction folds in as a hint after the enum token.
+  const promptWithHint = buildKlingPromptFromPlan(demoPlan, {
+    cameraDirection: 'over the shoulder, slight handheld',
+  });
+  assert(
+    promptWithHint.positive.includes('over the shoulder'),
+    '[PR3.2] cameraDirection hint folds into positive prompt',
+  );
+
+  // Forbidden motion items dedupe — even if "face zoom" appears in both
+  // baseline negatives and plan.forbiddenMotion, it shows up once.
+  const dupePrompt = buildKlingPromptFromPlan(closeupPlan);
+  const faceZoomMatches = dupePrompt.negative.match(/\bface zoom\b/g) ?? [];
+  assert(
+    faceZoomMatches.length === 1,
+    '[PR3.2] negative prompt is deduped (face zoom appears once)',
+  );
 }
 
 console.log('');

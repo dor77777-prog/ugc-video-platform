@@ -525,6 +525,92 @@ export interface KlingMotionPrompt {
   negative: string;
 }
 
+// V13 PR3.2 — camera vocabulary table. The AnimationPlan stores the
+// camera move as an enum; this table renders it into Kling-flavored
+// prompt text. Mirroring buildKlingMotionPrompt's existing wording
+// keeps Omni's per-token weighting consistent.
+const PLAN_CAMERA_TOKEN: Record<
+  import('./animation-plan-builder').AnimationCameraMotion,
+  string
+> = {
+  static: 'Static camera, eye-level, gentle handheld feel',
+  subtle_handheld: 'Static frame with very slight handheld breathing',
+  slow_push_in: 'Slow Zoom In',
+  slow_pull_back: 'Slow Zoom Out',
+};
+
+// V13 PR3.2 — primary plan-driven prompt builder. Reads an AnimationPlan
+// and emits the same { positive, negative } shape Omni expects. The plan
+// is the contract — this function just renders it. When a caller has the
+// plan, they should use this instead of buildKlingMotionPrompt; the
+// legacy field-driven builder stays in place for back-compat.
+export function buildKlingPromptFromPlan(
+  plan: import('./animation-plan-builder').AnimationPlan,
+  opts: {
+    /** Free-text camera direction the script LLM wrote — folded in as
+     *  a hint when present, but the plan's cameraMotion enum wins. */
+    cameraDirection?: string | null;
+  } = {},
+): KlingMotionPrompt {
+  const cameraToken = PLAN_CAMERA_TOKEN[plan.cameraMotion];
+  const cameraHint =
+    opts.cameraDirection && opts.cameraDirection.trim().length
+      ? `${cameraToken}. ${opts.cameraDirection.trim()}`
+      : cameraToken;
+
+  // Order: anti-drift guard (non-talking only) → camera → motion goal →
+  // human motion → object motion → preserve / avoid clauses → talking
+  // performance block (when speaking is expected).
+  const parts: string[] = [];
+
+  if (!plan.speakingExpected) {
+    parts.push(NON_TALKING_GUARD);
+  }
+  parts.push(cameraHint);
+  parts.push(`Animation goal: ${plan.animationGoal}`);
+  parts.push(`Human motion: ${plan.humanMotion}`);
+  parts.push(`Object motion: ${plan.objectMotion}`);
+
+  // Composition preservation — always on for plans (they're built with
+  // preserveComposition=true), but stating it explicitly in the prompt
+  // is what gets Omni to actually obey.
+  parts.push(
+    'Preserve everything visible in the input image (product, hands, environment) — do NOT crop in to the face or remove props',
+  );
+
+  if (plan.preserveProductVisibility) {
+    parts.push(
+      'PRODUCT VISIBILITY GATE: the product must remain in the frame from start to finish — never crop it out, never let it leave the frame',
+    );
+  }
+  if (plan.avoidFaceZoom) {
+    parts.push("The creator's face must not be zoomed into; do not crop in to it");
+  }
+  if (plan.speakingExpected) {
+    parts.push(SILENT_TALKING_HEAD_TOKENS);
+  }
+
+  // Negative prompt: plan's forbiddenMotion list (already deduped),
+  // joined with the appropriate scene-class baseline negatives so we
+  // keep belt + braces — Omni weights both lists, and the baseline
+  // catches mistakes the plan didn't enumerate.
+  const baselineNegatives = plan.speakingExpected
+    ? SILENT_TALKING_HEAD_NEGATIVES
+    : NON_TALKING_NEGATIVES;
+  const negativeBuf = new Set<string>();
+  for (const item of plan.forbiddenMotion) {
+    if (item.trim().length) negativeBuf.add(item.trim());
+  }
+  for (const item of baselineNegatives.split(',').map((s) => s.trim())) {
+    if (item.length) negativeBuf.add(item);
+  }
+
+  return {
+    positive: parts.filter((p) => p && p.trim().length).join('. ') + '.',
+    negative: Array.from(negativeBuf).join(', '),
+  };
+}
+
 export function buildKlingMotionPrompt(input: {
   cameraDirection?: string | null;
   performanceNote?: string | null;
