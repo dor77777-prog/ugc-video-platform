@@ -33,9 +33,42 @@ export default async function VideosPage({
 
   const project = await prisma.project.findFirst({
     where: { id: projectId, userId: dbUser.id },
-    include: {
+    // V14.1b — explicit select. The Scene model has 60+ columns (heavy
+    // JSON: motionAnalysisJson / generationLogJson / wordTimingsJson /
+    // captionChunksJson / briefJson / imageBriefJson, plus dozens of
+    // tracking timestamps); this page renders only 14 of them. Pulling
+    // the full row was shipping ~150KB per 6-scene project on every
+    // load. The trimmed select takes ~5KB.
+    select: {
+      id: true,
+      productName: true,
+      productData: true,
       selectedScript: {
-        include: { scenes: { orderBy: { sceneOrder: 'asc' } } },
+        select: {
+          id: true,
+          scenes: {
+            orderBy: { sceneOrder: 'asc' },
+            select: {
+              id: true,
+              sceneOrder: true,
+              sceneGoal: true,
+              sceneType: true,
+              cameraDirection: true,
+              sceneGenerationType: true,
+              requiresLipSync: true,
+              textHebrew: true,
+              imageUrl: true,
+              voiceUrl: true,
+              voiceDurationSeconds: true,
+              voiceGenerationCount: true,
+              voiceInFlightAt: true,
+              clipUrl: true,
+              clipDurationSeconds: true,
+              clipGenerationCount: true,
+              clipInFlightAt: true,
+            },
+          },
+        },
       },
     },
   });

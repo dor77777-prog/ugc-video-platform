@@ -67,9 +67,39 @@ export default async function ScriptsPage({
   const project = await timed('scripts-page:project.findFirst+scripts+scenes', () =>
     prisma.project.findFirst({
       where: { id: projectId, userId: dbUser.id },
-      include: {
+      // V14.1b — explicit select. Was fetching all Project + all Script
+      // + all Scene columns (heavy JSON: motionAnalysisJson /
+      // generationLogJson / wordTimingsJson / captionChunksJson /
+      // briefJson / imageBriefJson — none rendered here). Per-script
+      // payload drops from ~60-col Scene rows to 8 needed columns.
+      select: {
+        id: true,
+        productName: true,
+        selectedScriptId: true,
         scripts: {
-          include: { scenes: { orderBy: { sceneOrder: 'asc' } } },
+          select: {
+            id: true,
+            framework: true,
+            angle: true,
+            hook: true,
+            cta: true,
+            estimatedDurationSeconds: true,
+            qualityScoreOverall: true,
+            rawJson: true,
+            scenes: {
+              orderBy: { sceneOrder: 'asc' },
+              select: {
+                id: true,
+                sceneOrder: true,
+                sceneGoal: true,
+                textHebrew: true,
+                onScreenCaptionHebrew: true,
+                cameraDirection: true,
+                performanceNote: true,
+                durationSeconds: true,
+              },
+            },
+          },
         },
       },
     }),

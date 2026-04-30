@@ -16,7 +16,17 @@ export default async function DashboardHome() {
     prisma.renderJob.count({ where: { userId: dbUser.id, status: 'completed' } }),
     prisma.project.findMany({
       where: { userId: dbUser.id, status: { not: 'archived' } },
-      include: {
+      // V14.1b — explicit select instead of full include. Skips userId /
+      // productUrl / createdAt that the dashboard never renders, and
+      // pulls only id+imageUrl off scenes (the wizard helpers don't
+      // touch the rest of the 60-column Scene model).
+      select: {
+        id: true,
+        productName: true,
+        status: true,
+        updatedAt: true,
+        selectedScriptId: true,
+        productData: true,
         scripts: {
           select: {
             id: true,
