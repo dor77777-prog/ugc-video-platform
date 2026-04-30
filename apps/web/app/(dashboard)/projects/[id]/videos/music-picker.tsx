@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState, useTransition } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
@@ -33,7 +32,10 @@ interface MusicPickerProps {
   initialStartOffsetSec: number;
 }
 
-const MAX_OFFSET_SEC = 120;
+// Hard upper bound (10 minutes) — track-specific cap is computed from
+// the selected track's durationSeconds. The slider's actual max is the
+// min of the two so a 95-second track doesn't show 0..120s of empty range.
+const HARD_MAX_OFFSET_SEC = 600;
 
 export function MusicPicker({
   projectId,
@@ -44,14 +46,35 @@ export function MusicPicker({
   const [trackId, setTrackId] = useState<string | null>(
     initialSelectedTrackId,
   );
+  // The selected track drives the slider's max. When auto-mode is on (no
+  // explicit pick) we still need SOMETHING to anchor the slider to —
+  // pick the longest track so the slider can show its full range.
+  const selectedTrack: MusicTrack | null = trackId
+    ? (MUSIC_LIBRARY.find((t) => t.id === trackId) ?? null)
+    : null;
+  const sliderMaxSec = Math.min(
+    HARD_MAX_OFFSET_SEC,
+    selectedTrack?.durationSeconds ?? 120,
+  );
   const [offsetSec, setOffsetSec] = useState<number>(
-    Math.max(0, Math.min(MAX_OFFSET_SEC, initialStartOffsetSec)),
+    Math.max(0, Math.min(sliderMaxSec, initialStartOffsetSec)),
   );
   const [playingId, setPlayingId] = useState<string | null>(null);
+  // Live playback time of the currently-playing preview, in seconds.
+  // Updated on the audio element's `timeupdate` event so the "00:32 /
+  // 02:14" counter advances smoothly while preview plays.
+  const [playbackTimeSec, setPlaybackTimeSec] = useState<number>(0);
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  // Whenever the user picks a different track, clamp offsetSec to that
+  // track's duration. Otherwise a slider that was at 200s on a 289s
+  // track would silently overshoot a 95s track.
+  useEffect(() => {
+    if (offsetSec > sliderMaxSec) setOffsetSec(sliderMaxSec);
+  }, [sliderMaxSec, offsetSec]);
 
   // Stop preview audio on unmount (component might be remounted on
   // route refresh).
@@ -70,12 +93,21 @@ export function MusicPicker({
     if (!a) {
       a = new Audio();
       a.preload = 'auto';
-      a.addEventListener('ended', () => setPlayingId(null));
+      a.addEventListener('ended', () => {
+        setPlayingId(null);
+        setPlaybackTimeSec(0);
+      });
+      a.addEventListener('timeupdate', () => {
+        if (audioRef.current) {
+          setPlaybackTimeSec(audioRef.current.currentTime);
+        }
+      });
       audioRef.current = a;
     }
     if (playingId === track.id) {
       a.pause();
       setPlayingId(null);
+      setPlaybackTimeSec(0);
       return;
     }
     a.pause();
@@ -103,11 +135,12 @@ export function MusicPicker({
   // the audio in real time so the user can hear different start points
   // without re-clicking ▶.
   function onSliderInput(value: number) {
-    const clamped = Math.max(0, Math.min(MAX_OFFSET_SEC, value));
+    const clamped = Math.max(0, Math.min(sliderMaxSec, value));
     setOffsetSec(clamped);
     if (playingId !== null && audioRef.current) {
       try {
         audioRef.current.currentTime = clamped;
+        setPlaybackTimeSec(clamped);
       } catch {
         // Some browsers throw if the audio isn't ready to seek; ignore —
         // the next loadedmetadata cycle will catch up.
@@ -159,7 +192,7 @@ export function MusicPicker({
   }
 
   function commitOffset(next: number) {
-    const clamped = Math.max(0, Math.min(MAX_OFFSET_SEC, next));
+    const clamped = Math.max(0, Math.min(sliderMaxSec, next));
     setOffsetSec(clamped);
     persist(auto ? null : trackId, clamped);
   }
@@ -242,7 +275,10 @@ export function MusicPicker({
                     </span>
                   )}
                 </div>
-                <div className="flex flex-wrap gap-1 text-[10px] text-muted-foreground">
+                <div className="flex flex-wrap items-center gap-1 text-[10px] text-muted-foreground">
+                  <span className="rounded bg-muted px-1.5 py-0.5 font-mono tabular-nums">
+                    {formatSec(track.durationSeconds)}
+                  </span>
                   <span className="rounded bg-muted px-1.5 py-0.5">
                     {track.energy}
                   </span>
@@ -260,20 +296,22 @@ export function MusicPicker({
           })}
         </div>
 
-        {/* Offset slider */}
+        {/* Offset slider — bounded to the selected track's duration */}
         <div className="space-y-2 rounded-md border bg-muted/30 px-3 py-3">
           <div className="flex items-baseline justify-between gap-3">
             <Label className="text-sm font-medium">
               נקודת התחלה בתוך הטראק
             </Label>
-            <span className="text-sm tabular-nums font-mono">
-              {formatSec(offsetSec)}
+            <span className="text-sm tabular-nums font-mono" dir="ltr">
+              {playingId !== null
+                ? `${formatSec(playbackTimeSec)} / ${formatSec(sliderMaxSec)}`
+                : `${formatSec(offsetSec)} / ${formatSec(sliderMaxSec)}`}
             </span>
           </div>
           <input
             type="range"
             min={0}
-            max={MAX_OFFSET_SEC}
+            max={sliderMaxSec}
             step={1}
             value={offsetSec}
             onChange={(e) => onSliderInput(Number(e.target.value))}
@@ -281,14 +319,21 @@ export function MusicPicker({
             onTouchEnd={(e) =>
               commitOffset(Number((e.target as HTMLInputElement).value))
             }
-            disabled={pending}
+            disabled={pending || (auto && !selectedTrack)}
             className="w-full"
           />
-          <p className="text-[11px] text-muted-foreground">
-            לחצי ▶ על טראק כדי לשמוע אותו מהנקודה שסימנת. גרירה בזמן
-            השמעה מזיזה את הראש בזמן אמת. הסרטון הסופי יתחיל מאותה
-            נקודה — אם הטראק קצר מהסרטון, הוא יתפר חלקית בלולאה רכה.
-          </p>
+          {selectedTrack ? (
+            <p className="text-[11px] text-muted-foreground">
+              לחצי ▶ על טראק כדי לשמוע אותו מהנקודה שסימנת. גרירה בזמן
+              השמעה מזיזה את הראש בזמן אמת. הסרטון הסופי יתחיל מאותה
+              נקודה — אם הטראק קצר מהסרטון, הוא יתפר חלקית בלולאה רכה.
+            </p>
+          ) : (
+            <p className="text-[11px] text-muted-foreground">
+              במצב אוטומטי הטראק נבחר ברגע הרינדור לפי התסריט. בחרי
+              טראק ידנית כדי להגדיר את נקודת ההתחלה.
+            </p>
+          )}
         </div>
 
         {error && (

@@ -47,6 +47,11 @@ export interface MusicTrack {
   bestFor: string[];
   /** Buckets where we explicitly DON'T want this track. */
   avoidFor: string[];
+  /** Track length in seconds (rounded). V14 PR9 — used by the music
+   *  picker to bound the start-offset slider per track, and shown
+   *  under the track title in the picker. Probed once via ffprobe;
+   *  refresh the value if the file is replaced. */
+  durationSeconds: number;
 }
 
 // 17 user-provided Mixkit tracks. The IDs match the filename stem so
@@ -55,6 +60,7 @@ export const MUSIC_LIBRARY: readonly MusicTrack[] = [
   // ─── Calm / ambient / low-energy ───────────────────────────────────────
   {
     id: 'mixkit-beautiful-dream-493',
+    durationSeconds: 97,
     title: 'Beautiful Dream',
     fileUrl: 'https://pub-eb116bdbeab8486f96ecf7c4fbc1014a.r2.dev/music/mixkit-beautiful-dream-493.mp3',
     source: 'user_provided',
@@ -70,6 +76,7 @@ export const MUSIC_LIBRARY: readonly MusicTrack[] = [
   },
   {
     id: 'mixkit-hazy-after-hours-132',
+    durationSeconds: 127,
     title: 'Hazy After Hours',
     fileUrl: 'https://pub-eb116bdbeab8486f96ecf7c4fbc1014a.r2.dev/music/mixkit-hazy-after-hours-132.mp3',
     source: 'user_provided',
@@ -85,6 +92,7 @@ export const MUSIC_LIBRARY: readonly MusicTrack[] = [
   },
   {
     id: 'mixkit-silent-descent-614',
+    durationSeconds: 160,
     title: 'Silent Descent',
     fileUrl: 'https://pub-eb116bdbeab8486f96ecf7c4fbc1014a.r2.dev/music/mixkit-silent-descent-614.mp3',
     source: 'user_provided',
@@ -102,6 +110,7 @@ export const MUSIC_LIBRARY: readonly MusicTrack[] = [
   // ─── Warm / acoustic / family / lifestyle ──────────────────────────────
   {
     id: 'mixkit-sun-and-his-daughter-580',
+    durationSeconds: 168,
     title: 'Sun and His Daughter',
     fileUrl: 'https://pub-eb116bdbeab8486f96ecf7c4fbc1014a.r2.dev/music/mixkit-sun-and-his-daughter-580.mp3',
     source: 'user_provided',
@@ -117,6 +126,7 @@ export const MUSIC_LIBRARY: readonly MusicTrack[] = [
   },
   {
     id: 'mixkit-romantic-659',
+    durationSeconds: 159,
     title: 'Romantic',
     fileUrl: 'https://pub-eb116bdbeab8486f96ecf7c4fbc1014a.r2.dev/music/mixkit-romantic-659.mp3',
     source: 'user_provided',
@@ -132,6 +142,7 @@ export const MUSIC_LIBRARY: readonly MusicTrack[] = [
   },
   {
     id: 'mixkit-latin-lovers-39',
+    durationSeconds: 95,
     title: 'Latin Lovers',
     fileUrl: 'https://pub-eb116bdbeab8486f96ecf7c4fbc1014a.r2.dev/music/mixkit-latin-lovers-39.mp3',
     source: 'user_provided',
@@ -149,6 +160,7 @@ export const MUSIC_LIBRARY: readonly MusicTrack[] = [
   // ─── Tech / minimal-electronic / clean ─────────────────────────────────
   {
     id: 'mixkit-tech-house-vibes-130',
+    durationSeconds: 102,
     title: 'Tech House Vibes',
     fileUrl: 'https://pub-eb116bdbeab8486f96ecf7c4fbc1014a.r2.dev/music/mixkit-tech-house-vibes-130.mp3',
     source: 'user_provided',
@@ -164,6 +176,7 @@ export const MUSIC_LIBRARY: readonly MusicTrack[] = [
   },
   {
     id: 'mixkit-deep-urban-623',
+    durationSeconds: 289,
     title: 'Deep Urban',
     fileUrl: 'https://pub-eb116bdbeab8486f96ecf7c4fbc1014a.r2.dev/music/mixkit-deep-urban-623.mp3',
     source: 'user_provided',
@@ -179,6 +192,7 @@ export const MUSIC_LIBRARY: readonly MusicTrack[] = [
   },
   {
     id: 'mixkit-hip-hop-02-738',
+    durationSeconds: 115,
     title: 'Hip Hop 02',
     fileUrl: 'https://pub-eb116bdbeab8486f96ecf7c4fbc1014a.r2.dev/music/mixkit-hip-hop-02-738.mp3',
     source: 'user_provided',
@@ -196,6 +210,7 @@ export const MUSIC_LIBRARY: readonly MusicTrack[] = [
   // ─── Energetic / motion / fitness ──────────────────────────────────────
   {
     id: 'mixkit-driving-ambition-32',
+    durationSeconds: 102,
     title: 'Driving Ambition',
     fileUrl: 'https://pub-eb116bdbeab8486f96ecf7c4fbc1014a.r2.dev/music/mixkit-driving-ambition-32.mp3',
     source: 'user_provided',
@@ -211,6 +226,7 @@ export const MUSIC_LIBRARY: readonly MusicTrack[] = [
   },
   {
     id: 'mixkit-sports-highlights-51',
+    durationSeconds: 96,
     title: 'Sports Highlights',
     fileUrl: 'https://pub-eb116bdbeab8486f96ecf7c4fbc1014a.r2.dev/music/mixkit-sports-highlights-51.mp3',
     source: 'user_provided',
@@ -228,6 +244,7 @@ export const MUSIC_LIBRARY: readonly MusicTrack[] = [
   // ─── Holiday / themed (used only when explicitly matched) ──────────────
   {
     id: 'mixkit-a-very-happy-christmas-897',
+    durationSeconds: 130,
     title: 'A Very Happy Christmas',
     fileUrl: 'https://pub-eb116bdbeab8486f96ecf7c4fbc1014a.r2.dev/music/mixkit-a-very-happy-christmas-897.mp3',
     source: 'user_provided',
@@ -254,6 +271,7 @@ export const MUSIC_LIBRARY: readonly MusicTrack[] = [
   },
   {
     id: 'mixkit-fright-night-871',
+    durationSeconds: 101,
     title: 'Fright Night',
     fileUrl: 'https://pub-eb116bdbeab8486f96ecf7c4fbc1014a.r2.dev/music/mixkit-fright-night-871.mp3',
     source: 'user_provided',
