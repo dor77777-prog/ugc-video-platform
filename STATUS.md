@@ -1,20 +1,22 @@
 # tachles · STATUS
 
-Living document. Last update: **2026-04-30** (V13 PR2 — Image Brief
-strengthening. Four small commits, all on main: PR2.1 extracts the
-Israeli realism rules into `apps/web/lib/scene-planning/israeli-realism-rules.ts`;
-PR2.2 adds `scene-rules.ts` with hands-physics + mirror-safety
-detectors and rule builders, surfaced as `ImageBrief.handsPhysicsRequired`
-/ `ImageBrief.mirrorRisk` flags; PR2.3 adds the V13 §6.1 PRODUCT
-REFERENCE LOCK paragraph in `packages/prompts/src/scene-image-prompts.ts`
-(Image 2 must match shape/color/proportions/applicator/label) and
-gates the product mention on `isProblemScene` so problem scenes don't
-force the product into frame; PR2.4 adds the PRODUCT DEMO CONTACT
-PROOF rule that demands answers to all five demo questions
-(where/who/what part/what touches/what proves) for product_demo /
-hands_only / closeup_product. All deterministic, no LLM, no DB
-changes. 53 assertions in `scripts/test-v13-pr2.ts` — all pass. PR3
-(Animation Plan + Kling prompt rewrite) follows.).
+Living document. Last update: **2026-04-30** (V13 PR3 — Animation
+Plan + Kling prompt rewrite. Three small commits on main: PR3.1 adds
+`apps/web/lib/animation/animation-plan-builder.ts` — deterministic
+builder emitting a typed `AnimationPlan` (motionSubject /
+secondarySubject / cameraMotion enum / objectMotion / humanMotion /
+forbiddenMotion[] / preserveComposition / preserveProductVisibility /
+avoidFaceZoom / speakingExpected) from scene fields + optional
+motion-analysis. PR3.2 adds `buildKlingPromptFromPlan` in `kling.ts`
+that renders the plan into Omni's `{ positive, negative }` shape, with
+`forbiddenMotion` items merging into the negative prompt and dedupe
+via Set. PR3.3 plumbs the plan from `clip-impl.ts`: the legacy
+`buildKlingMotionPrompt` call site has been replaced with
+`buildAnimationPlan(...) + buildKlingPromptFromPlan(plan, ...)`, and
+the same V13 PR2 brief flags (handsPhysicsRequired / mirrorRisk /
+contactProofRequired) feed into the plan so the still and the clip
+share the same constraints. 56 assertions in
+`scripts/test-v13-pr3.ts` — all pass. tsc clean. No DB migration.).
 
 This is the deep spec — what each subsystem actually does, where it
 lives, what's real vs mocked, and known issues. For a high-level pitch
@@ -560,6 +562,7 @@ versus the typical 30s-mode video cost.
 
 | Tag | Date | Headline |
 |-----|------|----------|
+| **V13 PR3** | 2026-04-30 | **Animation Plan + Kling prompt rewrite — 3 small commits.** PR3.1: `apps/web/lib/animation/animation-plan-builder.ts` deterministic builder emitting `AnimationPlan` (motionSubject / secondarySubject / cameraMotion enum / forbiddenMotion[] / preserveProductVisibility / avoidFaceZoom / speakingExpected). Defaults follow the V13 §10.3 table per scene type; V4 metadata (cameraFocus / primarySubject / mustShowProduct / showFace) overrides; vision motion-analysis primaryAction takes precedence on hands/product subjects. PR3.2: `buildKlingPromptFromPlan` renders the plan into `{ positive, negative }`; `forbiddenMotion` merges into negative prompt with baseline class negatives via dedupe Set. PR3.3: `clip-impl.ts` now builds the plan once + calls `buildKlingPromptFromPlan` instead of the legacy `buildKlingMotionPrompt`; the same PR2 brief flags (handsPhysicsRequired / mirrorRisk / contactProofRequired) plumb into the plan so still and clip share constraints. Verification: `apps/web/scripts/test-v13-pr3.ts` runs 56 assertions, all pass. No DB migration. |
 | **V13 PR2** | 2026-04-30 | **Image Brief strengthening — 4 small commits.** PR2.1: extract Israeli realism rules → `apps/web/lib/scene-planning/israeli-realism-rules.ts` (refactor only, identical output). PR2.2: `scene-rules.ts` adds hands-physics + mirror-safety detectors + rule builders; `ImageBrief` exposes `handsPhysicsRequired` / `mirrorRisk` / `ruleBlocks`; renderFinalPrompt updated to drop the legacy "fails QA" wording. PR2.3: `packages/prompts/src/scene-image-prompts.ts` gains a PRODUCT REFERENCE LOCK paragraph (same shape / color / proportions / applicator design / label placement) and gates the product mention on `isProblemScene` so problem scenes don't force the product. PR2.4: `buildContactProofRule` emits a numbered PRODUCT DEMO CONTACT PROOF section weaving `activePart` / `contactPoint` / `substanceVisualType` into all five demo questions; triggers on product_demo / hands_only / closeup_product. Verification: `apps/web/scripts/test-v13-pr2.ts` runs 53 assertions, all pass. No DB migration. Deterministic and pure throughout. |
 | **V13 PR1** | 2026-04-30 | **Image QA auto-regeneration removed from active path.** Deleted `apps/web/lib/image-qa/` (the gpt-4o-mini vision evaluator), the QA branch in `lib/scenes/generate-impl.ts`, `buildCorrectiveBrief` in `lib/image-briefs/image-brief-builder.ts`, and the `IMAGE_QA_ENABLED` / `IMAGE_QA_MAX_RETRIES` / `OPENAI_IMAGE_QA_MODEL` env vars from `.env.example`. Image generation is now a single-pass call: brief builder → gpt-image-2 → persist. Historical DB columns `Scene.imageQaJson` / `imageRegenAttempts` / `needsManualReview` remain nullable; PR1 stops writing them. Vision calls we KEEP: Product Visual Analysis, Motion Analysis, Face Gate (all upstream/routing, not post-generation second-guess). Verification: `apps/web/scripts/test-v13-pr1.ts` runs 22 assertions. Net diff: -489 / +94. PR2 (Scene Plan), PR3 (Animation Plan + Kling rewrite) follow. |
 | **V12.7** | 2026-04-30 | **OpenAI balance parser fix + admin-scope key.** `fetchOpenAIBalance` was crashing with `total30.toFixed is not a function` because `/v1/organization/costs` sometimes returns `amount.value` as a string and `+` was concatenating, not adding. Coerce with `Number(r.amount?.value ?? 0)`. New env var `OPENAI_ADMIN_API_KEY` (sk-admin-…) — dedicated admin-scope key for Administration API reads, preferred over `OPENAI_API_KEY` (which is restricted to model invocation). All 4 cards on `/admin/costs` now show live data: Kling, PixVerse, ElevenLabs, OpenAI ($11.07 / 30d, $4.40 / 24h on smoke test). |

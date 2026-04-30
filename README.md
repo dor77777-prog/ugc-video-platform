@@ -3,7 +3,7 @@
 Hebrew-first AI platform for generating Israeli UGC product video ads from a product URL.
 
 **Brand:** מודעות וידאו שמוכרות. תכל'ס.
-**Status:** V13 PR2 (April 30 2026) — end-to-end functional, all wizard steps use real providers, no mocks in the active path. V13 PR1 removed the post-generation Image QA auto-regen loop. V13 PR2 strengthens the upstream Image Brief: extracted `lib/scene-planning/israeli-realism-rules.ts`, added `scene-rules.ts` (hands physics + mirror safety + product-demo contact proof detectors and builders), added a PRODUCT REFERENCE LOCK paragraph to the gpt-image-2 prompt builder, and gated the product mention on `isProblemScene` so problem scenes are pain-only. All deterministic, no LLM, no DB migration; 53 PR2 assertions pass. PR3 (Animation Plan + Kling rewrite) follows.
+**Status:** V13 PR3 (April 30 2026) — end-to-end functional, all wizard steps use real providers, no mocks in the active path. V13 PR1 removed the post-generation Image QA auto-regen loop; PR2 strengthened the upstream Image Brief; PR3 introduces the deterministic Animation Plan that drives Kling's `{ positive, negative }` prompt. The same brief flags (handsPhysicsRequired / mirrorRisk / contactProofRequired) feed both the still and the clip, so what you ask the image model to show is what you ask the video model to preserve. All deterministic, no LLM, no DB migration; 22 PR1 + 53 PR2 + 56 PR3 assertions pass.
 **Production:** https://tachles-lac.vercel.app (Vercel web + Railway worker + Supabase Postgres + Redis Cloud + Cloudflare R2).
 **Output:** 9:16 MP4 ads, 15s or 30s, with Hebrew voice-over + RTL captions + background music.
 
