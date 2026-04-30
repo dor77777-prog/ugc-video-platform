@@ -19,36 +19,44 @@ import { spawn } from 'child_process';
 import ffmpegStatic from 'ffmpeg-static';
 import { parseBuffer as parseMediaBuffer } from 'music-metadata';
 
-// Resolve the bundled ffmpeg binary once at module load. Vercel's
-// serverless runtime doesn't have ffmpeg on PATH, so spawning literal
-// 'ffmpeg' fails with ENOENT. ffmpeg-static ships one platform-specific
-// binary inside node_modules.
+// Resolve the ffmpeg binary path. Three-tier strategy:
 //
-// We deliberately do NOT use ffprobe-static here — it ships every
-// platform's binary (335MB total) and pushes the function bundle past
-// the 250MB Vercel limit. probeDurationSeconds() below uses the
-// pure-JS music-metadata library instead.
+// 1. Bundled — try every plausible node_modules path on Vercel + the
+//    package's reported path. Works on the worker host (apt-installed
+//    ffmpeg on PATH).
+// 2. /tmp cache — if cold-start download fired previously in this
+//    warm container, /tmp/ffmpeg-static-bin is reusable.
+// 3. CDN download to /tmp — Vercel's tracer + serverExternalPackages
+//    refused to bundle ffmpeg-static across multiple attempts (binary
+//    file routinely missing from the function bundle despite being
+//    declared in .vc-config.json filePathMap). Fall back to fetching
+//    the same binary from npm's tarball mirror at first call. ~46MB
+//    download adds ~1-3s on cold start; warm calls re-use /tmp.
 //
-// Vercel monorepo bundling caveat: ffmpeg-static is hoisted to the
-// repo's top-level node_modules (not apps/web/node_modules). With
-// outputFileTracingRoot pointing at the repo root, the tracer copies
-// it to /var/task/node_modules/ffmpeg-static/ffmpeg. But on some
-// builds (or when serverExternalPackages rewrites the runtime path
-// constant) we can land on a stale path that doesn't exist anymore.
-// Try several plausible locations and pick the first one that
-// actually exists + has the executable bit. This makes the spawn
-// resilient to bundler quirks.
-function resolveFfmpegBin(): string {
+// This trades a one-time cold-start cost for guaranteed correctness —
+// the previous attempts at fixing bundler-specific issues kept
+// shipping ENOENT in prod.
+
+export class MuxError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'MuxError';
+  }
+}
+
+const TMP_FFMPEG = '/tmp/tachles-ffmpeg-static';
+
+function tryLocalPaths(): string | null {
   const candidates: string[] = [];
   if (typeof ffmpegStatic === 'string' && ffmpegStatic.length > 0) {
     candidates.push(ffmpegStatic);
   }
-  // Vercel runtime layout candidates (in priority order).
   candidates.push(
     '/var/task/node_modules/ffmpeg-static/ffmpeg',
     '/var/task/apps/web/node_modules/ffmpeg-static/ffmpeg',
     path.join(process.cwd(), 'node_modules', 'ffmpeg-static', 'ffmpeg'),
     path.join(process.cwd(), '..', '..', 'node_modules', 'ffmpeg-static', 'ffmpeg'),
+    TMP_FFMPEG,
   );
   for (const candidate of candidates) {
     try {
@@ -59,19 +67,56 @@ function resolveFfmpegBin(): string {
       /* keep trying */
     }
   }
-  // Final fallback: rely on PATH (works on the worker host where
-  // ffmpeg is apt-installed; will throw ENOENT on Vercel — but at
-  // that point we've already tried every plausible bundled path).
-  return ffmpegStatic ?? 'ffmpeg';
+  return null;
 }
 
-const FFMPEG_BIN: string = resolveFfmpegBin();
-
-export class MuxError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'MuxError';
+// CDN URL for ffmpeg-static's prebuilt binaries. Mirrors the package's
+// own postinstall download targets — same checksums, same versions.
+function downloadUrlForRuntime(): string | null {
+  const arch = process.arch; // 'arm64' | 'x64' | …
+  const platform = process.platform; // 'linux' | 'darwin' | …
+  if (platform === 'linux' && arch === 'arm64') {
+    return 'https://github.com/eugeneware/ffmpeg-static/releases/download/b6.0/linux-arm64';
   }
+  if (platform === 'linux' && arch === 'x64') {
+    return 'https://github.com/eugeneware/ffmpeg-static/releases/download/b6.0/linux-x64';
+  }
+  // Other archs (darwin/win) aren't expected on Vercel; bail and let
+  // the bundled path or PATH ffmpeg take over.
+  return null;
+}
+
+let ffmpegPathPromise: Promise<string> | null = null;
+
+async function downloadFfmpegToTmp(): Promise<string> {
+  const url = downloadUrlForRuntime();
+  if (!url) {
+    throw new MuxError(
+      `No bundled ffmpeg found and no CDN URL for platform=${process.platform} arch=${process.arch}`,
+    );
+  }
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new MuxError(`ffmpeg CDN download failed: HTTP ${res.status} ${url}`);
+  }
+  const bytes = Buffer.from(await res.arrayBuffer());
+  await fs.writeFile(TMP_FFMPEG, bytes);
+  await fs.chmod(TMP_FFMPEG, 0o755);
+  return TMP_FFMPEG;
+}
+
+async function ensureFfmpegBin(): Promise<string> {
+  const local = tryLocalPaths();
+  if (local) return local;
+  if (!ffmpegPathPromise) {
+    ffmpegPathPromise = downloadFfmpegToTmp().catch((err) => {
+      // Reset the cached promise on failure so the next call can
+      // retry rather than seeing the stale rejection forever.
+      ffmpegPathPromise = null;
+      throw err;
+    });
+  }
+  return ffmpegPathPromise;
 }
 
 export interface MuxInput {
@@ -136,17 +181,16 @@ export async function muxVoiceOntoVideo(input: MuxInput): Promise<Buffer> {
 }
 
 async function runFfmpeg(args: string[]): Promise<void> {
+  const bin = await ensureFfmpegBin();
   return new Promise((resolve, reject) => {
-    const p = spawn(FFMPEG_BIN, args);
+    const p = spawn(bin, args);
     let stderr = '';
     p.stderr.on('data', (d) => {
       stderr += d.toString();
     });
     p.on('error', (err) =>
       reject(
-        new MuxError(
-          `ffmpeg spawn failed (binary=${FFMPEG_BIN}): ${err.message}`,
-        ),
+        new MuxError(`ffmpeg spawn failed (binary=${bin}): ${err.message}`),
       ),
     );
     p.on('close', (code) => {
