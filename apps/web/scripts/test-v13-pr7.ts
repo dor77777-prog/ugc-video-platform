@@ -128,6 +128,81 @@ const clipImpl = fs.readFileSync(path.join(WEB, 'lib/scenes/clip-impl.ts'), 'utf
   }
 }
 
+// ── PR7.3 — Scene-card UX components exist + import the right things ─
+{
+  const badgePath = path.resolve(WEB, 'components/wizard/scene-card-status-badge.tsx');
+  const detailsPath = path.resolve(WEB, 'components/wizard/scene-error-details.tsx');
+  assert(fs.existsSync(badgePath), '[PR7.3] scene-card-status-badge.tsx file exists');
+  assert(fs.existsSync(detailsPath), '[PR7.3] scene-error-details.tsx file exists');
+
+  const badge = fs.readFileSync(badgePath, 'utf8');
+  assert(
+    /import .* from .*lib\/scenes\/scene-status/.test(badge),
+    '[PR7.3] status badge imports from lib/scenes/scene-status (PR6 helper)',
+  );
+  // Must list all 11 SceneStatus values in HEBREW_LABELS so the type
+  // exhaustiveness check passes at compile time.
+  for (const status of [
+    'pending',
+    'planning',
+    'brief_built',
+    'generating_image',
+    'image_ready',
+    'generating_voice',
+    'voice_ready',
+    'generating_clip',
+    'clip_ready',
+    'needs_review',
+    'failed',
+  ]) {
+    assert(
+      badge.includes(`${status}:`),
+      `[PR7.3] HEBREW_LABELS covers status "${status}"`,
+    );
+  }
+  // Must contain Hebrew label characters
+  assert(/[א-ת]/.test(badge), '[PR7.3] status badge contains Hebrew text');
+  assert(
+    /dir="rtl"/.test(badge),
+    '[PR7.3] status badge sets dir="rtl"',
+  );
+
+  const details = fs.readFileSync(detailsPath, 'utf8');
+  assert(
+    /'use client'/.test(details),
+    '[PR7.3] scene-error-details is a client component',
+  );
+  assert(
+    /getSceneErrorMessage/.test(details) &&
+      /['"]@\/lib\/errors\/scene-error-messages['"]/.test(details),
+    '[PR7.3] scene-error-details imports getSceneErrorMessage (PR5 map)',
+  );
+  assert(
+    /נסה שוב/.test(details),
+    '[PR7.3] scene-error-details renders Hebrew "נסה שוב" retry button',
+  );
+  assert(
+    /דלג על סצנה זו/.test(details),
+    '[PR7.3] scene-error-details renders Hebrew "דלג על סצנה זו" skip button',
+  );
+  assert(
+    /צפה ב-debug/.test(details),
+    '[PR7.3] scene-error-details renders Hebrew "צפה ב-debug" admin link',
+  );
+  assert(
+    /<details>/.test(details),
+    '[PR7.3] scene-error-details exposes raw error in <details>',
+  );
+  assert(
+    /role="alert"/.test(details),
+    '[PR7.3] scene-error-details has role="alert" for screen readers',
+  );
+  assert(
+    /dir="rtl"/.test(details),
+    '[PR7.3] scene-error-details sets dir="rtl"',
+  );
+}
+
 console.log('');
 if (failures === 0) {
   console.log('PR7 verification: ALL CHECKS PASSED');
