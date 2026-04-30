@@ -10,6 +10,8 @@ import {
 import {
   detectHandsPhysicsRequired,
   detectMirrorRisk,
+  detectContactProofRequired,
+  buildContactProofRule,
 } from '../lib/scene-planning/scene-rules';
 import { buildImageBrief } from '../lib/image-briefs/image-brief-builder';
 import { buildScenePrompt } from '@ugc-video/prompts';
@@ -274,6 +276,103 @@ function assert(cond: boolean, name: string, detail = '') {
   assert(
     noAvatarProduct.includes('PRODUCT REFERENCE LOCK'),
     '[PR2.3] no-avatar product scene also includes PRODUCT REFERENCE LOCK',
+  );
+}
+
+// ── PR2.4 — Product demo contact proof rule ────────────────────────────
+{
+  for (const t of ['product_demo', 'hands_only', 'closeup_product']) {
+    assert(
+      detectContactProofRequired({ sceneGenerationType: t }),
+      `[PR2.4] detectContactProofRequired === true for sceneType="${t}"`,
+    );
+  }
+  for (const t of ['talking_head', 'problem_visual', 'cta_visual', 'hold_product']) {
+    assert(
+      !detectContactProofRequired({ sceneGenerationType: t }),
+      `[PR2.4] detectContactProofRequired === false for sceneType="${t}"`,
+    );
+  }
+
+  // Contact-proof rule with full visual analysis fields.
+  const rich = buildContactProofRule({
+    activePart: 'rotating brush head',
+    contactPoint: 'scalp at the part line',
+    substanceVisualType: 'transparent serum',
+  });
+  assert(
+    rich.promptText.includes('rotating brush head') && rich.promptText.includes('scalp at the part line'),
+    '[PR2.4] contact-proof rule weaves activePart + contactPoint into the prompt',
+  );
+  assert(
+    rich.promptText.includes('transparent serum'),
+    '[PR2.4] contact-proof rule weaves substanceVisualType into the prompt',
+  );
+  assert(
+    rich.mustShow.some((s) => s.includes('rotating brush head')),
+    '[PR2.4] contact-proof mustShow names the active part',
+  );
+  assert(
+    rich.mustAvoid.some((s) => s.includes('hovering above scalp at the part line')),
+    '[PR2.4] contact-proof mustAvoid names the contact-point hover failure mode',
+  );
+
+  // Degraded path: visual analysis fields missing — rule still emits
+  // generic but useful language.
+  const generic = buildContactProofRule({});
+  assert(
+    generic.promptText.includes('PRODUCT DEMO CONTACT PROOF'),
+    '[PR2.4] contact-proof rule emits the section header even with null fields',
+  );
+  assert(
+    /the intended surface — direct physical contact/.test(generic.promptText),
+    '[PR2.4] contact-proof rule emits a generic surface-contact line when fields missing',
+  );
+
+  // Brief integration: product_demo → contactProofRequired flag + section in prompt.
+  const demoBrief = buildImageBrief({
+    sceneNumber: 3,
+    totalScenes: 4,
+    sceneGoal: 'demo the product',
+    sceneGenerationType: 'product_demo',
+    faceVisibility: 'partial_face',
+    spokenTextHebrew: 'תראו',
+    rawVisualBrief: 'product demo',
+    cameraDirection: null,
+    intelligence: null,
+  });
+  assert(
+    demoBrief.contactProofRequired === true,
+    '[PR2.4] product_demo brief.contactProofRequired=true',
+  );
+  assert(
+    demoBrief.finalImagePrompt.includes('PRODUCT DEMO CONTACT PROOF'),
+    '[PR2.4] product_demo finalImagePrompt contains contact-proof section',
+  );
+  assert(
+    /1\. Where is the product/.test(demoBrief.finalImagePrompt),
+    '[PR2.4] contact-proof prompt poses all 5 questions (numbered list visible)',
+  );
+
+  // Talking head brief should NOT trigger the rule.
+  const talkBrief = buildImageBrief({
+    sceneNumber: 0,
+    totalScenes: 4,
+    sceneGoal: 'hook',
+    sceneGenerationType: 'talking_head',
+    faceVisibility: 'clear_front_facing',
+    spokenTextHebrew: 'שלום',
+    rawVisualBrief: 'opening hook',
+    cameraDirection: null,
+    intelligence: null,
+  });
+  assert(
+    talkBrief.contactProofRequired === false,
+    '[PR2.4] talking_head brief.contactProofRequired=false',
+  );
+  assert(
+    !talkBrief.finalImagePrompt.includes('PRODUCT DEMO CONTACT PROOF'),
+    '[PR2.4] talking_head finalImagePrompt does NOT include contact-proof section',
   );
 }
 

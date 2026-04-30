@@ -41,6 +41,15 @@ const HANDS_DOMINANT_SCENE_TYPES = new Set([
   'product_intro',
 ]);
 
+/** Scene types whose entire purpose is to PROVE the product mechanism by
+ *  showing the active part touching the intended surface. These are the
+ *  scenes where a vague prompt produces a vague image. */
+const CONTACT_PROOF_SCENE_TYPES = new Set([
+  'product_demo',
+  'hands_only',
+  'closeup_product',
+]);
+
 /** Words in cameraDirection / sceneGoal that strongly imply mirror framing. */
 const MIRROR_KEYWORDS = [
   'mirror',
@@ -119,5 +128,90 @@ export function buildMirrorSafetyRule(): MirrorSafetyRule {
     ],
     promptText:
       'MIRROR SAFETY: the main action happens only in the foreground. If a mirror appears in frame, it must be soft, partial background context — not a sharp duplicated reflection. Do not show a conflicting reflected product or mismatched hand action in the mirror. Do not rely on the mirror to show the product interaction.',
+  };
+}
+
+export interface ContactProofRule {
+  mustShow: string[];
+  mustAvoid: string[];
+  promptText: string;
+}
+
+export interface ContactProofInput {
+  /** Free-text description of the active part of the product, e.g.
+   *  "rotating brush head", "applicator nozzle", "silicone tip". */
+  activePart?: string | null;
+  /** Free-text description of where the active part touches, e.g.
+   *  "scalp at the part line", "front teeth and gums", "underarm skin". */
+  contactPoint?: string | null;
+  /** Free-text description of the substance dispensed, if any, e.g.
+   *  "transparent serum", "thick gel", "fine mist", "white foam". */
+  substanceVisualType?: string | null;
+}
+
+export function detectContactProofRequired(input: DetectInput): boolean {
+  const t = (input.sceneGenerationType ?? '').toLowerCase();
+  return CONTACT_PROOF_SCENE_TYPES.has(t);
+}
+
+export function buildContactProofRule(input: ContactProofInput): ContactProofRule {
+  const activePart = (input.activePart ?? '').trim();
+  const contactPoint = (input.contactPoint ?? '').trim();
+  const substance = (input.substanceVisualType ?? '').trim();
+
+  const mustShow: string[] = [];
+  const mustAvoid: string[] = [];
+
+  // V13 §6: product demos must answer ALL FIVE — where is the product
+  // in the frame, who/what holds it, what part is active, what does the
+  // active part touch, what detail proves the claim is real.
+  mustShow.push('the product clearly placed inside the frame, not cropped');
+  mustShow.push('the human or hand that grips the product is identifiable');
+
+  if (activePart) {
+    mustShow.push(`the active part of the product (${activePart}) is unambiguously visible`);
+  } else {
+    mustShow.push('the active part of the product is unambiguously visible');
+  }
+
+  if (contactPoint) {
+    mustShow.push(`direct physical contact between the active part and ${contactPoint}`);
+    mustAvoid.push(`active part hovering above ${contactPoint} instead of touching it`);
+  } else {
+    mustShow.push('direct physical contact between the active part and the intended surface');
+    mustAvoid.push('active part floating above the surface instead of touching it');
+  }
+
+  if (substance) {
+    mustShow.push(`substance accuracy: ${substance} — texture and opacity must match`);
+    mustAvoid.push(
+      `wrong substance look (e.g. opaque white cream when the brief calls for ${substance})`,
+    );
+  }
+
+  const lines: string[] = [];
+  lines.push('PRODUCT DEMO CONTACT PROOF — the frame must answer all five:');
+  lines.push('1. Where is the product in the frame? (clearly placed, not cropped, not floating in negative space)');
+  lines.push('2. Who/what holds it? (human hand or applicator grip — visible and identifiable)');
+  lines.push(
+    activePart
+      ? `3. What part of the product is active? (${activePart} — unambiguously visible)`
+      : '3. What part of the product is active? (the active part is unambiguously visible)',
+  );
+  lines.push(
+    contactPoint
+      ? `4. What does the active part touch? (${contactPoint} — direct physical contact, no hover gap)`
+      : '4. What does the active part touch? (the intended surface — direct physical contact, no hover gap)',
+  );
+  lines.push(
+    substance
+      ? `5. What detail proves the claim is real? (${substance} visible at the contact point with the right texture and opacity)`
+      : '5. What detail proves the claim is real? (a real-world consequence of the product working — visible substance, visible result, visible mechanism — at the contact point)',
+  );
+
+  return {
+    mustShow,
+    mustAvoid,
+    promptText: lines.join('\n'),
   };
 }

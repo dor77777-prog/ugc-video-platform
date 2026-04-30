@@ -21,8 +21,10 @@ import { buildIsraeliRealismBlock } from '@/lib/scene-planning/israeli-realism-r
 import {
   detectHandsPhysicsRequired,
   detectMirrorRisk,
+  detectContactProofRequired,
   buildHandsPhysicsRule,
   buildMirrorSafetyRule,
+  buildContactProofRule,
 } from '@/lib/scene-planning/scene-rules';
 
 export interface ImageBrief {
@@ -42,6 +44,9 @@ export interface ImageBrief {
   handsPhysicsRequired: boolean;
   /** V13 PR2.2 — true when the brief appended the mirror-safety rule. */
   mirrorRisk: boolean;
+  /** V13 PR2.4 — true when the brief appended the product-demo
+   *  contact-proof rule (product_demo / hands_only / closeup_product). */
+  contactProofRequired: boolean;
   /** V13 PR2.2 — extra prompt blocks appended after the universal sections. */
   ruleBlocks: string[];
   negativeConstraints: string[];
@@ -265,6 +270,22 @@ export function buildImageBrief(input: BuildImageBriefInput): ImageBrief {
     for (const m of r.mustAvoid) mustAvoid.push(m);
     ruleBlocks.push(r.promptText);
   }
+  // V13 PR2.4 — product demo scenes must answer all five contact-proof
+  // questions. We use whatever fields the visual analysis gave us; the
+  // rule still emits useful generic language when fields are null.
+  const contactProofRequired = detectContactProofRequired({
+    sceneGenerationType: input.sceneGenerationType,
+  });
+  if (contactProofRequired) {
+    const r = buildContactProofRule({
+      activePart: visual?.activePart ?? null,
+      contactPoint: visual?.contactPoint ?? null,
+      substanceVisualType: visual?.substanceVisualType ?? null,
+    });
+    for (const m of r.mustShow) mustShow.push(m);
+    for (const m of r.mustAvoid) mustAvoid.push(m);
+    ruleBlocks.push(r.promptText);
+  }
 
   // ── Visual priority ───────────────────────────────────────────────────
   const visualPriorityOrder = (() => {
@@ -312,6 +333,7 @@ export function buildImageBrief(input: BuildImageBriefInput): ImageBrief {
     productAccuracyInstruction,
     handsPhysicsRequired,
     mirrorRisk,
+    contactProofRequired,
     ruleBlocks,
     negativeConstraints: dedupeKeepOrder(negativeConstraints),
     finalImagePrompt,
