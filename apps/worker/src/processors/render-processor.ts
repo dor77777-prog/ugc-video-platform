@@ -10,6 +10,7 @@ import {
   selectMusicTrack,
   resolveMusicVolume,
   findTrackById,
+  listSafeFallbackTracks,
   type MusicProfile,
   buildAssFromChunks,
   type CaptionChunk,
@@ -35,7 +36,10 @@ import {
 
 export async function processRenderJob(job: Job<RenderJobPayload>) {
   const { renderJobId } = job.data;
-  console.log(`[render] starting job ${renderJobId}`);
+  // V14 PR9.2 marker — if you don't see this line in Railway logs for a
+  // fresh render, the worker hasn't picked up the latest deploy and the
+  // music-picker / caption-bidi fixes won't be active.
+  console.log(`[render] V14-music-picker-build-2 starting job ${renderJobId}`);
 
   const renderJob = await prisma.renderJob.findUnique({
     where: { id: renderJobId },
@@ -106,35 +110,80 @@ export async function processRenderJob(job: Job<RenderJobPayload>) {
         ? Math.max(0, productData.musicStartOffsetSec as number)
         : 0;
 
-    // V14 hotfix: stale selectedMusicId (e.g. user picked one of the
-    // 4 deleted Mixkit tracks before the catalog cleanup) must NOT
-    // silence the render. If findTrackById returns null we fall
-    // through to the legacy selectMusicTrack auto-selector instead
-    // of returning null. The render gets bg music from the auto
-    // path; the user can re-pick via the picker on next visit.
+    // V14 hotfix #2 — three-tier music resolution with explicit
+    // logging at every branch. The user reported renders coming out
+    // silent EVEN AT offset=0 with valid catalog tracks selected,
+    // which the previous logic shouldn't have allowed. Adding
+    // diagnostics + an ultimate fallback so a music render NEVER
+    // ships silent when the toggle is on.
+    //
+    //   Tier 1 — user-pick: productData.selectedMusicId resolves via
+    //            findTrackById to a valid catalog entry. Use it.
+    //   Tier 2 — auto-select: selectMusicTrack picks based on script
+    //            musicProfile + productCategory + duration mode.
+    //   Tier 3 — safe fallback: listSafeFallbackTracks() returns
+    //            general-UGC-safe tracks. Pick the first one. Beats
+    //            shipping a render with no music when the user
+    //            explicitly enabled it.
     const userPickedTrack = userPickedTrackId
       ? findTrackById(userPickedTrackId)
       : null;
     if (userPickedTrackId && !userPickedTrack) {
       console.warn(
-        `[render] selectedMusicId="${userPickedTrackId}" not in catalog ` +
-          `(probably stale after a track was deleted) — falling back to auto-select`,
+        `[render-music] selectedMusicId="${userPickedTrackId}" NOT IN CATALOG — ` +
+          `falling through to auto-select`,
       );
     }
-    const musicSelection = userPickedTrack
-      ? ({
-          track: userPickedTrack,
-          score: 1,
-          reason: 'user_override',
-        } as ReturnType<typeof selectMusicTrack>)
-      : selectMusicTrack({
-          productCategory,
-          scriptFramework: renderJob.script.framework ?? null,
-          emotionalTrigger,
-          musicProfile,
-          durationMode,
-          userEnabledMusic,
-        });
+    let musicSelection: ReturnType<typeof selectMusicTrack> = null;
+    if (userPickedTrack) {
+      console.log(
+        `[render-music] tier-1 user-pick: ${userPickedTrack.id} ` +
+          `(fileUrl=${userPickedTrack.fileUrl})`,
+      );
+      musicSelection = {
+        track: userPickedTrack,
+        score: 1,
+        reason: 'user_override',
+      } as ReturnType<typeof selectMusicTrack>;
+    } else if (userEnabledMusic) {
+      const auto = selectMusicTrack({
+        productCategory,
+        scriptFramework: renderJob.script.framework ?? null,
+        emotionalTrigger,
+        musicProfile,
+        durationMode,
+        userEnabledMusic,
+      });
+      if (auto) {
+        console.log(
+          `[render-music] tier-2 auto-select: ${auto.track.id} ` +
+            `(score=${auto.score}, reason=${auto.reason})`,
+        );
+        musicSelection = auto;
+      } else {
+        // Tier 3 — safe fallback. Should be rare but never ship silent.
+        const safe = listSafeFallbackTracks();
+        const fallback = safe[0];
+        if (fallback) {
+          console.warn(
+            `[render-music] tier-3 SAFE FALLBACK: ${fallback.id} ` +
+              `(auto-select returned null; bg music toggle is ON so we MUST ship music)`,
+          );
+          musicSelection = {
+            track: fallback,
+            score: 0,
+            reason: 'safe_fallback',
+          } as ReturnType<typeof selectMusicTrack>;
+        } else {
+          console.error(
+            `[render-music] no tracks available — listSafeFallbackTracks returned empty. ` +
+              `Render will be silent. Investigate the catalog.`,
+          );
+        }
+      }
+    } else {
+      console.log('[render-music] backgroundMusic toggle OFF — rendering voice-only');
+    }
     const musicVolume = userEnabledMusic ? resolveMusicVolume(musicProfile) : 0.08;
     const musicUrl: string | null = musicSelection?.track.fileUrl ?? null;
     // The user's offset is only meaningful when their track resolves —
