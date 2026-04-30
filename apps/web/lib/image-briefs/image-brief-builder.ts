@@ -18,6 +18,12 @@ import type {
   ProductIntelligence,
 } from '@/lib/product-intelligence';
 import { buildIsraeliRealismBlock } from '@/lib/scene-planning/israeli-realism-rules';
+import {
+  detectHandsPhysicsRequired,
+  detectMirrorRisk,
+  buildHandsPhysicsRule,
+  buildMirrorSafetyRule,
+} from '@/lib/scene-planning/scene-rules';
 
 export interface ImageBrief {
   sceneNumber: number;
@@ -32,6 +38,12 @@ export interface ImageBrief {
   realismInstruction: string;
   israeliContextInstruction: string;
   productAccuracyInstruction: string;
+  /** V13 PR2.2 — true when the brief appended the hands-physics rule. */
+  handsPhysicsRequired: boolean;
+  /** V13 PR2.2 — true when the brief appended the mirror-safety rule. */
+  mirrorRisk: boolean;
+  /** V13 PR2.2 — extra prompt blocks appended after the universal sections. */
+  ruleBlocks: string[];
   negativeConstraints: string[];
   finalImagePrompt: string;
 }
@@ -224,6 +236,36 @@ export function buildImageBrief(input: BuildImageBriefInput): ImageBrief {
   // ── Negative constraints (joined into the prompt at the end) ──────────
   const negativeConstraints: string[] = [...mustAvoid];
 
+  // ── Scene-specific safety rules (hands physics + mirror) ──────────────
+  // Pure detectors; same input → same flags. Promoted to ImageBrief so the
+  // admin debug panel + future Scene Plan can read them directly.
+  const handsPhysicsRequired = detectHandsPhysicsRequired({
+    sceneGenerationType: input.sceneGenerationType,
+    mustShowProduct: input.mustShowProduct,
+    cameraDirection: input.cameraDirection,
+    sceneGoal: input.sceneGoal,
+    faceVisibility: input.faceVisibility,
+  });
+  const mirrorRisk = detectMirrorRisk({
+    sceneGenerationType: input.sceneGenerationType,
+    mustShowProduct: input.mustShowProduct,
+    cameraDirection: input.cameraDirection,
+    sceneGoal: input.sceneGoal,
+    faceVisibility: input.faceVisibility,
+  });
+  const ruleBlocks: string[] = [];
+  if (handsPhysicsRequired) {
+    const r = buildHandsPhysicsRule();
+    for (const m of r.mustShow) mustShow.push(m);
+    for (const m of r.mustAvoid) mustAvoid.push(m);
+    ruleBlocks.push(r.promptText);
+  }
+  if (mirrorRisk) {
+    const r = buildMirrorSafetyRule();
+    for (const m of r.mustAvoid) mustAvoid.push(m);
+    ruleBlocks.push(r.promptText);
+  }
+
   // ── Visual priority ───────────────────────────────────────────────────
   const visualPriorityOrder = (() => {
     if (isProblem) return ['the problem itself', 'environment that grounds the problem', 'subject\'s reaction'];
@@ -250,6 +292,7 @@ export function buildImageBrief(input: BuildImageBriefInput): ImageBrief {
     environmentDetails,
     mustShow,
     negativeConstraints,
+    ruleBlocks,
     isProblem,
     isTalking,
   });
@@ -267,6 +310,9 @@ export function buildImageBrief(input: BuildImageBriefInput): ImageBrief {
     realismInstruction,
     israeliContextInstruction,
     productAccuracyInstruction,
+    handsPhysicsRequired,
+    mirrorRisk,
+    ruleBlocks,
     negativeConstraints: dedupeKeepOrder(negativeConstraints),
     finalImagePrompt,
   };
@@ -283,6 +329,10 @@ function renderFinalPrompt(p: {
   environmentDetails: string[];
   mustShow: string[];
   negativeConstraints: string[];
+  /** V13 PR2.2 — extra prompt sections (HANDS PHYSICS, MIRROR SAFETY, …)
+   *  appended after universal context, before the MUST SHOW / MUST NOT
+   *  SHOW lists. */
+  ruleBlocks: string[];
   isProblem: boolean;
   isTalking: boolean;
 }): string {
@@ -301,14 +351,19 @@ function renderFinalPrompt(p: {
   if (!p.isTalking && !p.isProblem) {
     sections.push(`PRODUCT ACCURACY: ${p.productAccuracyInstruction}.`);
   }
+  for (const block of p.ruleBlocks) {
+    sections.push(`${block}.`);
+  }
   if (p.mustShow.length) {
     sections.push(
       `MUST SHOW (camera REQUIREMENTS — frame must contain these): ${p.mustShow.join('; ')}.`,
     );
   }
   if (p.negativeConstraints.length) {
+    // V13 PR1 removed the post-gen QA loop — wording updated from
+    // "fails QA if these appear" to a flat forbidden list.
     sections.push(
-      `MUST NOT SHOW (forbidden — image fails QA if these appear): ${p.negativeConstraints.join('; ')}.`,
+      `MUST NOT SHOW (forbidden): ${p.negativeConstraints.join('; ')}.`,
     );
   }
   return sections.join('\n');
