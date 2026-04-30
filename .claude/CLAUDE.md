@@ -1,7 +1,7 @@
 # tachles — Claude Project Context
 
 Hebrew-first AI platform for Israeli UGC product video ads.
-**Current version:** V13 PR1 (2026-04-30)
+**Current version:** V13 PR2 (2026-04-30)
 **Production:** https://tachles-lac.vercel.app
 **Output:** 9:16 MP4 ads, 15s or 30s, Hebrew voice-over + RTL captions + background music.
 
@@ -45,7 +45,8 @@ Hebrew-first AI platform for Israeli UGC product video ads.
 - V12.5 — Live provider balance dashboard. `lib/providers/balance.ts` queries Kling `/account/costs`, PixVerse `/openapi/v2/account/balance`, ElevenLabs `/v1/user/subscription`, and OpenAI `/v1/organization/costs` in parallel; surfaced at the top of `/admin/costs` with 60s revalidation. Soft-fails per-provider — an outage on one doesn't break the page.
 - V12.6 — Graceful per-provider fallback. When a balance fetcher fails (HTTP 401/403/network), the card falls back to local `ApiCall` aggregates (30d spend + call count) instead of just showing the error. `ProviderFallbackCard` keeps the error visible in a `<details>` block with a fix hint.
 - V12.7 — OpenAI parser fix + admin key. `fetchOpenAIBalance` was crashing because `/v1/organization/costs` sometimes returns `amount.value` as a string and `+` was concatenating. Coerced with `Number(...)`. New env var `OPENAI_ADMIN_API_KEY` (sk-admin-…) is preferred over `OPENAI_API_KEY` for Administration API reads — regular keys (sk-svcacct, sk-…) are scoped to model invocation only.
-- V13 PR1 — Image QA auto-regen loop removed from active path. Deleted `apps/web/lib/image-qa/`, the QA branch in `lib/scenes/generate-impl.ts`, `buildCorrectiveBrief` in `image-brief-builder.ts`, and the `IMAGE_QA_ENABLED` / `IMAGE_QA_MAX_RETRIES` / `OPENAI_IMAGE_QA_MODEL` env vars. Single-pass image gen now: brief builder → gpt-image-2 → persist. Quality strategy moved to upstream creative planning. DB columns `Scene.imageQaJson` / `imageRegenAttempts` / `needsManualReview` remain nullable for historical data; PR1 stops writing them. Vision calls KEPT: Product Visual Analysis, Motion Analysis, Face Gate (all upstream/routing, not post-generation). PR2 will introduce the deterministic Scene Plan.
+- V13 PR1 — Image QA auto-regen loop removed from active path. Deleted `apps/web/lib/image-qa/`, the QA branch in `lib/scenes/generate-impl.ts`, `buildCorrectiveBrief` in `image-brief-builder.ts`, and the `IMAGE_QA_ENABLED` / `IMAGE_QA_MAX_RETRIES` / `OPENAI_IMAGE_QA_MODEL` env vars. Single-pass image gen now: brief builder → gpt-image-2 → persist. Quality strategy moved to upstream creative planning. DB columns `Scene.imageQaJson` / `imageRegenAttempts` / `needsManualReview` remain nullable for historical data; PR1 stops writing them. Vision calls KEPT: Product Visual Analysis, Motion Analysis, Face Gate (all upstream/routing, not post-generation).
+- V13 PR2 — Image Brief strengthening, four small commits. PR2.1 extracts Israeli realism into `apps/web/lib/scene-planning/israeli-realism-rules.ts`. PR2.2 adds `scene-rules.ts` with hands-physics + mirror-safety detectors and rule builders, surfaced as `ImageBrief.handsPhysicsRequired` / `mirrorRisk` / `ruleBlocks` flags. PR2.3 adds the PRODUCT REFERENCE LOCK paragraph in `packages/prompts/src/scene-image-prompts.ts` and gates product mention on `isProblemScene`. PR2.4 adds `buildContactProofRule` answering all five demo questions (where/who/active part/contact/proof) for product_demo / hands_only / closeup_product. Deterministic, no LLM, no DB migration. Verification: `apps/web/scripts/test-v13-pr2.ts` runs 53 assertions.
 
 ---
 

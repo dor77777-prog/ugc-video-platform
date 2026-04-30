@@ -1,20 +1,20 @@
 # tachles · STATUS
 
-Living document. Last update: **2026-04-30** (V13 PR1 — Image QA
-auto-regeneration removed from the active path. The post-generation
-vision-model second-guess + corrective-brief retry loop has been
-deleted in full: `lib/image-qa/`, `buildCorrectiveBrief`, the QA
-branch in `generate-impl.ts`, and the `IMAGE_QA_ENABLED` /
-`IMAGE_QA_MAX_RETRIES` / `OPENAI_IMAGE_QA_MODEL` env vars. The
-quality strategy is now upstream-only — Product Intelligence → Scene
-Plan → Image Brief → better prompt + better animation prompt — not
-"generate then re-generate until a vision model approves". DB columns
-`Scene.imageQaJson` / `imageRegenAttempts` / `needsManualReview`
-remain nullable for historical data; PR1 stops writing them. Vision
-calls we KEEP: Product Visual Analysis (planning), Motion Analysis
-(planning), Face Gate (lipsync routing). PR2 will introduce the
-deterministic Scene Plan + strengthen the Image Brief; PR3 the
-Animation Plan + Kling prompt rewrite.).
+Living document. Last update: **2026-04-30** (V13 PR2 — Image Brief
+strengthening. Four small commits, all on main: PR2.1 extracts the
+Israeli realism rules into `apps/web/lib/scene-planning/israeli-realism-rules.ts`;
+PR2.2 adds `scene-rules.ts` with hands-physics + mirror-safety
+detectors and rule builders, surfaced as `ImageBrief.handsPhysicsRequired`
+/ `ImageBrief.mirrorRisk` flags; PR2.3 adds the V13 §6.1 PRODUCT
+REFERENCE LOCK paragraph in `packages/prompts/src/scene-image-prompts.ts`
+(Image 2 must match shape/color/proportions/applicator/label) and
+gates the product mention on `isProblemScene` so problem scenes don't
+force the product into frame; PR2.4 adds the PRODUCT DEMO CONTACT
+PROOF rule that demands answers to all five demo questions
+(where/who/what part/what touches/what proves) for product_demo /
+hands_only / closeup_product. All deterministic, no LLM, no DB
+changes. 53 assertions in `scripts/test-v13-pr2.ts` — all pass. PR3
+(Animation Plan + Kling prompt rewrite) follows.).
 
 This is the deep spec — what each subsystem actually does, where it
 lives, what's real vs mocked, and known issues. For a high-level pitch
@@ -560,6 +560,7 @@ versus the typical 30s-mode video cost.
 
 | Tag | Date | Headline |
 |-----|------|----------|
+| **V13 PR2** | 2026-04-30 | **Image Brief strengthening — 4 small commits.** PR2.1: extract Israeli realism rules → `apps/web/lib/scene-planning/israeli-realism-rules.ts` (refactor only, identical output). PR2.2: `scene-rules.ts` adds hands-physics + mirror-safety detectors + rule builders; `ImageBrief` exposes `handsPhysicsRequired` / `mirrorRisk` / `ruleBlocks`; renderFinalPrompt updated to drop the legacy "fails QA" wording. PR2.3: `packages/prompts/src/scene-image-prompts.ts` gains a PRODUCT REFERENCE LOCK paragraph (same shape / color / proportions / applicator design / label placement) and gates the product mention on `isProblemScene` so problem scenes don't force the product. PR2.4: `buildContactProofRule` emits a numbered PRODUCT DEMO CONTACT PROOF section weaving `activePart` / `contactPoint` / `substanceVisualType` into all five demo questions; triggers on product_demo / hands_only / closeup_product. Verification: `apps/web/scripts/test-v13-pr2.ts` runs 53 assertions, all pass. No DB migration. Deterministic and pure throughout. |
 | **V13 PR1** | 2026-04-30 | **Image QA auto-regeneration removed from active path.** Deleted `apps/web/lib/image-qa/` (the gpt-4o-mini vision evaluator), the QA branch in `lib/scenes/generate-impl.ts`, `buildCorrectiveBrief` in `lib/image-briefs/image-brief-builder.ts`, and the `IMAGE_QA_ENABLED` / `IMAGE_QA_MAX_RETRIES` / `OPENAI_IMAGE_QA_MODEL` env vars from `.env.example`. Image generation is now a single-pass call: brief builder → gpt-image-2 → persist. Historical DB columns `Scene.imageQaJson` / `imageRegenAttempts` / `needsManualReview` remain nullable; PR1 stops writing them. Vision calls we KEEP: Product Visual Analysis, Motion Analysis, Face Gate (all upstream/routing, not post-generation second-guess). Verification: `apps/web/scripts/test-v13-pr1.ts` runs 22 assertions. Net diff: -489 / +94. PR2 (Scene Plan), PR3 (Animation Plan + Kling rewrite) follow. |
 | **V12.7** | 2026-04-30 | **OpenAI balance parser fix + admin-scope key.** `fetchOpenAIBalance` was crashing with `total30.toFixed is not a function` because `/v1/organization/costs` sometimes returns `amount.value` as a string and `+` was concatenating, not adding. Coerce with `Number(r.amount?.value ?? 0)`. New env var `OPENAI_ADMIN_API_KEY` (sk-admin-…) — dedicated admin-scope key for Administration API reads, preferred over `OPENAI_API_KEY` (which is restricted to model invocation). All 4 cards on `/admin/costs` now show live data: Kling, PixVerse, ElevenLabs, OpenAI ($11.07 / 30d, $4.40 / 24h on smoke test). |
 | **V12.6** | 2026-04-30 | **Graceful per-provider fallback** on `/admin/costs`. When a balance fetcher fails (HTTP 401 / 403 / network), the card no longer just shows the error — it falls back to local `ApiCall` aggregates (30d spend + call count) so the page stays useful. New helper `ProviderFallbackCard` keeps the error visible in a `<details>` block with a fix hint (e.g. "add user_read scope to ElevenLabs key"). |
