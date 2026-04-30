@@ -69,7 +69,7 @@ export function MusicPicker({
     let a = audioRef.current;
     if (!a) {
       a = new Audio();
-      a.preload = 'none';
+      a.preload = 'auto';
       a.addEventListener('ended', () => setPlayingId(null));
       audioRef.current = a;
     }
@@ -79,14 +79,40 @@ export function MusicPicker({
       return;
     }
     a.pause();
+    // The slider is the "preview start point". Clicking ▶ starts the
+    // audio from offsetSec, not from 0 — so what the user hears in the
+    // preview is exactly what they'll get in the final render.
     a.src = track.fileUrl;
-    a.currentTime = 0;
+    const seekToBeforePlay = () => {
+      if (audioRef.current) audioRef.current.currentTime = offsetSec;
+    };
+    if (a.readyState >= 1) {
+      seekToBeforePlay();
+    } else {
+      a.addEventListener('loadedmetadata', seekToBeforePlay, { once: true });
+    }
     a.play()
       .then(() => setPlayingId(track.id))
       .catch(() => {
         setPlayingId(null);
         setError('הדפדפן חסם השמעת תצוגה מקדימה — לחצי שוב');
       });
+  }
+
+  // Live-scrub: while a preview is playing, dragging the slider seeks
+  // the audio in real time so the user can hear different start points
+  // without re-clicking ▶.
+  function onSliderInput(value: number) {
+    const clamped = Math.max(0, Math.min(MAX_OFFSET_SEC, value));
+    setOffsetSec(clamped);
+    if (playingId !== null && audioRef.current) {
+      try {
+        audioRef.current.currentTime = clamped;
+      } catch {
+        // Some browsers throw if the audio isn't ready to seek; ignore —
+        // the next loadedmetadata cycle will catch up.
+      }
+    }
   }
 
   function persist(nextTrackId: string | null, nextOffsetSec: number) {
@@ -250,7 +276,7 @@ export function MusicPicker({
             max={MAX_OFFSET_SEC}
             step={1}
             value={offsetSec}
-            onChange={(e) => setOffsetSec(Number(e.target.value))}
+            onChange={(e) => onSliderInput(Number(e.target.value))}
             onMouseUp={(e) => commitOffset(Number((e.target as HTMLInputElement).value))}
             onTouchEnd={(e) =>
               commitOffset(Number((e.target as HTMLInputElement).value))
@@ -259,8 +285,9 @@ export function MusicPicker({
             className="w-full"
           />
           <p className="text-[11px] text-muted-foreground">
-            הסרטון יתחיל מנקודה זו בתוך טראק המוזיקה. אם המוזיקה קצרה
-            יותר מהסרטון — היא תיתפר חלקית בלולאה רכה.
+            לחצי ▶ על טראק כדי לשמוע אותו מהנקודה שסימנת. גרירה בזמן
+            השמעה מזיזה את הראש בזמן אמת. הסרטון הסופי יתחיל מאותה
+            נקודה — אם הטראק קצר מהסרטון, הוא יתפר חלקית בלולאה רכה.
           </p>
         </div>
 
