@@ -1,22 +1,21 @@
 # tachles · STATUS
 
-Living document. Last update: **2026-04-30** (V13 PR3 — Animation
-Plan + Kling prompt rewrite. Three small commits on main: PR3.1 adds
-`apps/web/lib/animation/animation-plan-builder.ts` — deterministic
-builder emitting a typed `AnimationPlan` (motionSubject /
-secondarySubject / cameraMotion enum / objectMotion / humanMotion /
-forbiddenMotion[] / preserveComposition / preserveProductVisibility /
-avoidFaceZoom / speakingExpected) from scene fields + optional
-motion-analysis. PR3.2 adds `buildKlingPromptFromPlan` in `kling.ts`
-that renders the plan into Omni's `{ positive, negative }` shape, with
-`forbiddenMotion` items merging into the negative prompt and dedupe
-via Set. PR3.3 plumbs the plan from `clip-impl.ts`: the legacy
-`buildKlingMotionPrompt` call site has been replaced with
-`buildAnimationPlan(...) + buildKlingPromptFromPlan(plan, ...)`, and
-the same V13 PR2 brief flags (handsPhysicsRequired / mirrorRisk /
-contactProofRequired) feed into the plan so the still and the clip
-share the same constraints. 56 assertions in
-`scripts/test-v13-pr3.ts` — all pass. tsc clean. No DB migration.).
+Living document. Last update: **2026-04-30** (V13 PR9 — `npm test`
+master runner ships. Cumulative V13 surface: PR1 removed the
+post-generation Image QA auto-regen loop; PR2 strengthened the
+upstream Image Brief with Israeli realism / hands physics / mirror
+safety / product reference lock / product-demo contact-proof rules;
+PR3 added the deterministic Animation Plan + `buildKlingPromptFromPlan`;
+PR4 added a stage-tagged logger with sensitive-data masking; PR5
+shipped the curated Hebrew error map; PR6 added the
+`v13_scene_state_log` migration (status / lastErrorCode /
+lastErrorMessage / generationLogJson) + `apps/web/lib/scenes/scene-status.ts`;
+PR7 wired state transitions in every pipeline impl + persisted
+the per-scene log buffer + shipped four wizard UX components
+(`SceneCardStatusBadge` / `SceneErrorDetails` / `SceneLogViewer` /
+`WizardWarningsPanel`); PR8 surfaced everything on
+`/admin/scenes/[id]/debug`; PR9 wraps the 8 verification scripts behind
+a single `npm test` command. 360+ assertions pass. tsc clean.).
 
 This is the deep spec — what each subsystem actually does, where it
 lives, what's real vs mocked, and known issues. For a high-level pitch
@@ -562,6 +561,12 @@ versus the typical 30s-mode video cost.
 
 | Tag | Date | Headline |
 |-----|------|----------|
+| **V13 PR9** | 2026-04-30 | **`npm test` runs the V13 suite.** Master runner `apps/web/scripts/test-v13-all.ts` discovers and executes every `test-v13-pr*.ts`, prints per-script pass/fail + duration, exits non-zero on any failure. 360+ assertions across 8 scripts complete in ~5.4s. Trade-off vs the V13 §17 vitest port documented in the commit. |
+| **V13 PR8** | 2026-04-30 | **Admin scene debug panel** at `/admin/scenes/[id]/debug`. Status badge + last error + generation log + routing flags + image brief + final prompt + motion analysis + legacy QA (with banner) + generation history + project intelligence — every persisted artifact in one collapsible page. Reuses PR5 / PR6 / PR7 components. (Admin) layout already gates auth via `requireAdmin()`. |
+| **V13 PR7** | 2026-04-30 | **State-machine writes + UX components.** PR7.1 wires status transitions in `generate-impl` / `voice-impl` / `clip-impl` (each curated `<stage>.<reason>` lastErrorCode matches a PR5 entry). PR7.2 adds `flushSceneLogBuffer` — best-effort persistence of the buffered per-scene log into `Scene.generationLogJson` with cap-200 trim. PR7.3 ships `SceneCardStatusBadge` (Hebrew label per status, color-coded dot) + `SceneErrorDetails` (Hebrew message from PR5 map, retry / skip / debug actions). PR7.4 ships `SceneLogViewer` (reverse-chronological timeline of generationLogJson) + `WizardWarningsPanel` (collapsible אזהרות (N) above the scene grid). All RTL-first. |
+| **V13 PR6** | 2026-04-30 | **Scene state machine + log buffer schema.** Additive migration `v13_scene_state_log` adds 4 nullable columns to `Scene`: `status` (String @default("pending")), `lastErrorCode`, `lastErrorMessage`, `generationLogJson`. Canonical state set lives in `apps/web/lib/scenes/scene-status.ts` as a const tuple + derived TS type + `isSceneStatus` guard + terminal/in-flight predicates — no Prisma enum per house style. Migration applied to Supabase production. |
+| **V13 PR5** | 2026-04-30 | **Curated Hebrew error messages map** at `apps/web/lib/errors/scene-error-messages.ts`. Codes follow `<stage>.<reason>` so they grep alongside the [stage:scope] log lines. Coverage: scrape · intelligence · script · scene-plan · image-brief · image-gen · voice · motion · animation-plan · kling · face-gate · pixverse · render · cross-stage credits / rate-limit / spend-cap. `getSceneErrorMessage(code, raw)` returns `{ hebrew, retryHint?, needsUserEdit?, isFallback }`. |
+| **V13 PR4** | 2026-04-30 | **Stage-tagged logger.** `apps/web/lib/logging/log.ts` adds `logStage(stage, scope)` returning a StageLogger with `.debug/.info/.warn/.error/.span(label, fn)`. `[stage:scope]` prefix on every line; LOG_LEVEL env filter (default debug in dev, info in prod); sensitive-data masking (sk-…, Bearer, JWT, long base64). Wired into image-brief + image-gen + voice (PR4.2) and motion-analysis + kling + face-gate + pixverse (PR4.3) — zero `console.*` left in clip-impl active path. |
 | **V13 PR3** | 2026-04-30 | **Animation Plan + Kling prompt rewrite — 3 small commits.** PR3.1: `apps/web/lib/animation/animation-plan-builder.ts` deterministic builder emitting `AnimationPlan` (motionSubject / secondarySubject / cameraMotion enum / forbiddenMotion[] / preserveProductVisibility / avoidFaceZoom / speakingExpected). Defaults follow the V13 §10.3 table per scene type; V4 metadata (cameraFocus / primarySubject / mustShowProduct / showFace) overrides; vision motion-analysis primaryAction takes precedence on hands/product subjects. PR3.2: `buildKlingPromptFromPlan` renders the plan into `{ positive, negative }`; `forbiddenMotion` merges into negative prompt with baseline class negatives via dedupe Set. PR3.3: `clip-impl.ts` now builds the plan once + calls `buildKlingPromptFromPlan` instead of the legacy `buildKlingMotionPrompt`; the same PR2 brief flags (handsPhysicsRequired / mirrorRisk / contactProofRequired) plumb into the plan so still and clip share constraints. Verification: `apps/web/scripts/test-v13-pr3.ts` runs 56 assertions, all pass. No DB migration. |
 | **V13 PR2** | 2026-04-30 | **Image Brief strengthening — 4 small commits.** PR2.1: extract Israeli realism rules → `apps/web/lib/scene-planning/israeli-realism-rules.ts` (refactor only, identical output). PR2.2: `scene-rules.ts` adds hands-physics + mirror-safety detectors + rule builders; `ImageBrief` exposes `handsPhysicsRequired` / `mirrorRisk` / `ruleBlocks`; renderFinalPrompt updated to drop the legacy "fails QA" wording. PR2.3: `packages/prompts/src/scene-image-prompts.ts` gains a PRODUCT REFERENCE LOCK paragraph (same shape / color / proportions / applicator design / label placement) and gates the product mention on `isProblemScene` so problem scenes don't force the product. PR2.4: `buildContactProofRule` emits a numbered PRODUCT DEMO CONTACT PROOF section weaving `activePart` / `contactPoint` / `substanceVisualType` into all five demo questions; triggers on product_demo / hands_only / closeup_product. Verification: `apps/web/scripts/test-v13-pr2.ts` runs 53 assertions, all pass. No DB migration. Deterministic and pure throughout. |
 | **V13 PR1** | 2026-04-30 | **Image QA auto-regeneration removed from active path.** Deleted `apps/web/lib/image-qa/` (the gpt-4o-mini vision evaluator), the QA branch in `lib/scenes/generate-impl.ts`, `buildCorrectiveBrief` in `lib/image-briefs/image-brief-builder.ts`, and the `IMAGE_QA_ENABLED` / `IMAGE_QA_MAX_RETRIES` / `OPENAI_IMAGE_QA_MODEL` env vars from `.env.example`. Image generation is now a single-pass call: brief builder → gpt-image-2 → persist. Historical DB columns `Scene.imageQaJson` / `imageRegenAttempts` / `needsManualReview` remain nullable; PR1 stops writing them. Vision calls we KEEP: Product Visual Analysis, Motion Analysis, Face Gate (all upstream/routing, not post-generation second-guess). Verification: `apps/web/scripts/test-v13-pr1.ts` runs 22 assertions. Net diff: -489 / +94. PR2 (Scene Plan), PR3 (Animation Plan + Kling rewrite) follow. |
