@@ -23,7 +23,13 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 import { config as loadDotenv } from 'dotenv';
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import {
+  S3Client,
+  PutObjectCommand,
+  ListObjectsV2Command,
+  DeleteObjectCommand,
+  type ListObjectsV2CommandOutput,
+} from '@aws-sdk/client-s3';
 
 // Load .env from the repo root so this script works without manual
 // env-var exports.
@@ -53,6 +59,7 @@ function mimeFromExt(p: string): string {
 async function main() {
   const args = process.argv.slice(2);
   const dryRun = args.includes('--dry');
+  const deleteOrphans = args.includes('--delete-orphans');
   const skipArg = args.find((a) => a.startsWith('--skip='));
   const skip = new Set(
     (skipArg ? skipArg.replace('--skip=', '') : '').split(',').filter(Boolean),
@@ -82,9 +89,11 @@ async function main() {
   console.log(`🔗 Bucket: ${bucket}`);
   console.log(`📍 Public URL: ${publicUrl}`);
   if (dryRun) console.log('⚠ DRY RUN — no uploads will happen.\n');
+  if (deleteOrphans) console.log('🗑  --delete-orphans ON — R2 keys absent from local will be removed.\n');
 
   let totalFiles = 0;
   let totalBytes = 0;
+  let totalDeleted = 0;
 
   for (const folder of FOLDERS) {
     if (skip.has(folder.local)) {
@@ -136,10 +145,75 @@ async function main() {
         console.error(`   ✗ ${remoteKey} — ${(err as Error).message}`);
       }
     }
+
+    // ── Optional: delete orphans ────────────────────────────────────────
+    // List every key under <folder.remote>/ and delete the ones whose
+    // basename is NOT in our local file set. Used when files were
+    // removed locally and we want R2 to mirror that — e.g. music tracks
+    // dropped from the catalog. Paginates through ListObjectsV2 because
+    // the default cap is 1000 keys per page.
+    if (deleteOrphans) {
+      const localBasenames = new Set(files);
+      const orphanKeys: string[] = [];
+      let continuationToken: string | undefined = undefined;
+      do {
+        const listed: ListObjectsV2CommandOutput = await client.send(
+          new ListObjectsV2Command({
+            Bucket: bucket,
+            Prefix: `${folder.remote}/`,
+            ContinuationToken: continuationToken,
+          }),
+        );
+        for (const obj of listed.Contents ?? []) {
+          if (!obj.Key) continue;
+          const basename = obj.Key.slice(folder.remote.length + 1);
+          // Only act on files with a tracked extension — leave anything
+          // exotic alone (better to be conservative than to nuke a
+          // README or favicon someone uploaded out-of-band).
+          const ext = path.extname(basename).toLowerCase();
+          if (!validExts.includes(ext)) continue;
+          if (!localBasenames.has(basename)) {
+            orphanKeys.push(obj.Key);
+          }
+        }
+        continuationToken = listed.IsTruncated
+          ? listed.NextContinuationToken
+          : undefined;
+      } while (continuationToken);
+
+      if (orphanKeys.length === 0) {
+        console.log(`   ℹ  no orphans to delete in ${folder.remote}/`);
+      } else {
+        console.log(
+          `   🗑  ${orphanKeys.length} orphan(s) to delete in ${folder.remote}/:`,
+        );
+        for (const key of orphanKeys) {
+          if (dryRun) {
+            console.log(`      [DRY] DELETE ${key}`);
+            totalDeleted++;
+            continue;
+          }
+          try {
+            await client.send(
+              new DeleteObjectCommand({ Bucket: bucket, Key: key }),
+            );
+            console.log(`      ✓ deleted ${key}`);
+            totalDeleted++;
+          } catch (err) {
+            console.error(`      ✗ ${key} — ${(err as Error).message}`);
+          }
+        }
+      }
+    }
   }
 
   const totalMb = (totalBytes / 1024 / 1024).toFixed(1);
   console.log(`\n${dryRun ? 'Would upload' : 'Uploaded'} ${totalFiles} files (${totalMb} MB)`);
+  if (deleteOrphans) {
+    console.log(
+      `${dryRun ? 'Would delete' : 'Deleted'} ${totalDeleted} orphan key(s) from R2`,
+    );
+  }
 
   if (!dryRun && totalFiles > 0) {
     console.log(`\nVerify a sample:`);

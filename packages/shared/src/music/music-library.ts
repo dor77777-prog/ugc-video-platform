@@ -84,21 +84,6 @@ export const MUSIC_LIBRARY: readonly MusicTrack[] = [
     avoidFor: ['fitness', 'kids', 'direct_response'],
   },
   {
-    id: 'mixkit-valley-sunset-127',
-    title: 'Valley Sunset',
-    fileUrl: 'https://pub-eb116bdbeab8486f96ecf7c4fbc1014a.r2.dev/music/mixkit-valley-sunset-127.mp3',
-    source: 'user_provided',
-    license: 'user_provided_free_to_use',
-    attributionRequired: false,
-    allowedPlatforms: ['all'],
-    moods: ['warm_lifestyle', 'calm_wellness', 'general_ugc'],
-    categories: ['lifestyle', 'home', 'wellness', 'travel'],
-    energy: 'low',
-    style: 'cinematic_light',
-    bestFor: ['lifestyle', 'home', 'travel', 'wellness', 'storytelling'],
-    avoidFor: ['fitness', 'kids', 'direct_response'],
-  },
-  {
     id: 'mixkit-silent-descent-614',
     title: 'Silent Descent',
     fileUrl: 'https://pub-eb116bdbeab8486f96ecf7c4fbc1014a.r2.dev/music/mixkit-silent-descent-614.mp3',
@@ -112,21 +97,6 @@ export const MUSIC_LIBRARY: readonly MusicTrack[] = [
     style: 'cinematic_light',
     bestFor: ['premium', 'jewelry', 'tech', 'storytelling', 'lifestyle'],
     avoidFor: ['kids', 'fitness', 'high_energy_demo'],
-  },
-  {
-    id: 'mixkit-spirit-in-the-woods-139',
-    title: 'Spirit in the Woods',
-    fileUrl: 'https://pub-eb116bdbeab8486f96ecf7c4fbc1014a.r2.dev/music/mixkit-spirit-in-the-woods-139.mp3',
-    source: 'user_provided',
-    license: 'user_provided_free_to_use',
-    attributionRequired: false,
-    allowedPlatforms: ['all'],
-    moods: ['warm_lifestyle', 'playful_family', 'calm_wellness'],
-    categories: ['lifestyle', 'home', 'family', 'kids', 'travel'],
-    energy: 'low',
-    style: 'acoustic',
-    bestFor: ['family', 'kids', 'home', 'lifestyle', 'storytelling', 'travel'],
-    avoidFor: ['fitness', 'direct_response'],
   },
 
   // ─── Warm / acoustic / family / lifestyle ──────────────────────────────
@@ -175,21 +145,6 @@ export const MUSIC_LIBRARY: readonly MusicTrack[] = [
     bestFor: ['fashion', 'lifestyle', 'food', 'travel'],
     avoidFor: ['tech_minimal', 'wellness', 'baby'],
   },
-  {
-    id: 'mixkit-discover-587',
-    title: 'Discover',
-    fileUrl: 'https://pub-eb116bdbeab8486f96ecf7c4fbc1014a.r2.dev/music/mixkit-discover-587.mp3',
-    source: 'user_provided',
-    license: 'user_provided_free_to_use',
-    attributionRequired: false,
-    allowedPlatforms: ['all'],
-    moods: ['general_ugc', 'warm_lifestyle', 'clean_premium'],
-    categories: ['lifestyle', 'tech', 'storytelling'],
-    energy: 'medium',
-    style: 'cinematic_light',
-    bestFor: ['lifestyle', 'storytelling', 'tech', 'discovery', 'general_ugc'],
-    avoidFor: ['kids'],
-  },
 
   // ─── Tech / minimal-electronic / clean ─────────────────────────────────
   {
@@ -206,24 +161,6 @@ export const MUSIC_LIBRARY: readonly MusicTrack[] = [
     style: 'minimal_electronic',
     bestFor: ['tech', 'gadgets', 'electronics', 'apps', 'direct_response'],
     avoidFor: ['baby', 'wellness', 'beauty'],
-  },
-  {
-    id: 'mixkit-cbpd-400',
-    title: 'CBPD',
-    fileUrl: 'https://pub-eb116bdbeab8486f96ecf7c4fbc1014a.r2.dev/music/mixkit-cbpd-400.mp3',
-    // Filename gives no mood hint — classify conservatively as a safe
-    // generic UGC bed. Better to ship as the fallback bucket than to
-    // miss it entirely.
-    source: 'user_provided',
-    license: 'user_provided_free_to_use',
-    attributionRequired: false,
-    allowedPlatforms: ['all'],
-    moods: ['general_ugc'],
-    categories: ['general'],
-    energy: 'medium',
-    style: 'general_ugc',
-    bestFor: ['general_ugc'],
-    avoidFor: [],
   },
   {
     id: 'mixkit-deep-urban-623',
