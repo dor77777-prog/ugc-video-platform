@@ -843,59 +843,70 @@ export function SceneCard(props: SceneCardProps) {
           </div>
         )}
 
-        {/* V14.6 — voice section: status + preview + regenerate. Hidden
-            when no voice is selected for the project (the picker at the
-            top of the page is the prereq). */}
-        {props.voiceSelected && (
-          <div className="pt-3 border-t border-border space-y-2">
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2 text-xs">
-                <span className="text-muted-foreground">קריינות:</span>
-                {showVoiceWorking ? (
-                  <span className="flex items-center gap-1 text-primary">
-                    <span className="animate-pulse">🎙</span>
-                    <span>יוצר…</span>
-                  </span>
-                ) : hasVoice ? (
-                  <span className="text-emerald-600 dark:text-emerald-400">
-                    ✓ נוצרה
-                  </span>
-                ) : (
-                  <span className="text-muted-foreground">לא נוצרה</span>
-                )}
-                {props.voiceGenerationCount > 0 && !showVoiceWorking && (
-                  <span className="text-muted-foreground">
-                    · {props.voiceGenerationCount} ניסיונות
-                  </span>
-                )}
-              </div>
-              <Button
-                type="button"
-                size="sm"
-                variant={hasVoice ? 'outline' : 'default'}
-                disabled={showVoiceWorking}
-                onClick={handleRegenerateVoice}
-              >
-                {showVoiceWorking
-                  ? 'יוצר…'
-                  : hasVoice
-                    ? '↻ צור מחדש (1 קרדיט)'
-                    : '🎙 צור קול (1 קרדיט)'}
-              </Button>
+        {/* V14.6 / V14.8 — voice section: ALWAYS visible so the user
+            can find it. When no voice is picked yet, the button is
+            disabled with a hint to pick one at the top of the page.
+            When voice exists, AudioPreview is shown so the user can
+            listen + regenerate per scene. */}
+        <div className="pt-3 border-t border-border space-y-2">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className="flex items-center gap-2 text-xs">
+              <span className="text-muted-foreground">קריינות:</span>
+              {showVoiceWorking ? (
+                <span className="flex items-center gap-1 text-primary">
+                  <span className="animate-pulse">🎙</span>
+                  <span>יוצר…</span>
+                </span>
+              ) : hasVoice ? (
+                <span className="text-emerald-600 dark:text-emerald-400">
+                  ✓ נוצרה
+                </span>
+              ) : !props.voiceSelected ? (
+                <span className="text-amber-600 dark:text-amber-400">
+                  ⚠ בחר קול בראש העמוד
+                </span>
+              ) : (
+                <span className="text-muted-foreground">לא נוצרה</span>
+              )}
+              {props.voiceGenerationCount > 0 && !showVoiceWorking && (
+                <span className="text-muted-foreground">
+                  · {props.voiceGenerationCount} ניסיונות
+                </span>
+              )}
             </div>
-            {hasVoice && (
-              <AudioPreview
-                src={effectiveVoiceUrl!}
-                durationSeconds={props.voiceDurationSeconds}
-              />
-            )}
-            {voiceError && (
-              <div className="text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded-md p-2">
-                {voiceError}
-              </div>
-            )}
+            <Button
+              type="button"
+              size="sm"
+              variant={hasVoice ? 'outline' : 'default'}
+              disabled={showVoiceWorking || !props.voiceSelected}
+              onClick={handleRegenerateVoice}
+              title={
+                !props.voiceSelected
+                  ? 'בחר קול בראש העמוד לפני יצירה'
+                  : hasVoice
+                    ? 'יוצר קול חדש לפי התסריט'
+                    : 'יוצר קול לפי התסריט'
+              }
+            >
+              {showVoiceWorking
+                ? 'יוצר…'
+                : hasVoice
+                  ? '↻ צור מחדש (1 קרדיט)'
+                  : '🎙 צור קול (1 קרדיט)'}
+            </Button>
           </div>
-        )}
+          {hasVoice && (
+            <AudioPreview
+              src={effectiveVoiceUrl!}
+              durationSeconds={props.voiceDurationSeconds}
+            />
+          )}
+          {voiceError && (
+            <div className="text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded-md p-2">
+              {voiceError}
+            </div>
+          )}
+        </div>
       </CardContent>
     </Card>
   );
