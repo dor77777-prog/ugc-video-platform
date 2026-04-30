@@ -28,7 +28,7 @@ import {
   type ImageBrief,
 } from '@/lib/image-briefs/image-brief-builder';
 import type { ProductIntelligence } from '@/lib/product-intelligence';
-import { logStage } from '@/lib/logging/log';
+import { logStage, flushSceneLogBuffer } from '@/lib/logging/log';
 
 const COST_PER_SCENE_IMAGE = PER_OPERATION_CREDITS.image; // 2 credits
 
@@ -119,6 +119,10 @@ export async function generateSceneImageImpl(
     await prisma.scene
       .update({ where: { id: sceneId }, data: { imageInFlightAt: null } })
       .catch(() => {/* best effort */});
+    // V13 PR7.2 — flush stage logs into Scene.generationLogJson so the
+    // wizard log viewer + admin debug panel can render them. Best
+    // effort; failures here never affect the caller.
+    await flushSceneLogBuffer(sceneId, prisma);
   }
 }
 

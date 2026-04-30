@@ -13,7 +13,7 @@ import {
 } from '@/lib/voice/elevenlabs';
 import { getStorage } from '@/lib/storage';
 import { recordApiCallStart, recordApiCallComplete } from '@/lib/usage/log';
-import { logStage } from '@/lib/logging/log';
+import { logStage, flushSceneLogBuffer } from '@/lib/logging/log';
 import { priceElevenLabsTts } from '@/lib/usage/pricing';
 import { buildCreditMutationOps } from '@/lib/usage/credits';
 import { checkRateLimit, RateLimitedError } from '@/lib/usage/rate-limit';
@@ -113,6 +113,8 @@ export async function generateSceneVoiceImpl(
     await prisma.scene
       .update({ where: { id: sceneId }, data: { voiceInFlightAt: null } })
       .catch(() => {/* best effort */});
+    // V13 PR7.2 — flush the per-scene log buffer.
+    await flushSceneLogBuffer(sceneId, prisma);
   }
 }
 

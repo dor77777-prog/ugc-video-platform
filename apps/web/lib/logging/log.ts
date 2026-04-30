@@ -113,6 +113,105 @@ export interface StageLogger {
   span<T>(label: string, fn: () => Promise<T>): Promise<T>;
 }
 
+/** A single buffered entry persisted to Scene.generationLogJson. */
+export interface SceneLogEntry {
+  stage: string;
+  level: LogLevel;
+  message: string;
+  data?: Record<string, unknown>;
+  /** ISO timestamp string. */
+  ts: string;
+}
+
+// V13 PR7.2 — per-scene log buffer.
+//
+// When a logger's `scope` starts with `scn_`, every entry is also
+// appended to an in-memory buffer keyed by sceneId. Callers can later
+// flush the buffer into Scene.generationLogJson via flushSceneLogBuffer
+// — a single write that appends N entries to the row's existing list
+// and trims to the cap so row size stays bounded.
+//
+// Buffer lives at module scope so loggers built in different request
+// handlers but for the same scene merge into one flushable batch. In
+// long-running processes (the worker) this is unbounded — keep the cap
+// + flush cadence honest.
+
+const MAX_BUFFER_PER_SCENE = 200;
+const MAX_LOG_PER_ROW = 200;
+const sceneBuffers = new Map<string, SceneLogEntry[]>();
+
+function bufferEntry(scope: string, entry: SceneLogEntry): void {
+  if (!scope.startsWith('scn_')) return;
+  const sceneId = scope;
+  const buf = sceneBuffers.get(sceneId) ?? [];
+  buf.push(entry);
+  // Hard cap on the buffer to bound memory; oldest entries drop first.
+  if (buf.length > MAX_BUFFER_PER_SCENE) {
+    buf.splice(0, buf.length - MAX_BUFFER_PER_SCENE);
+  }
+  sceneBuffers.set(sceneId, buf);
+}
+
+/** Drain the buffer for a scene and return the entries. Subsequent
+ *  reads return []. Callers that want to peek without draining should
+ *  call `peekSceneLogBuffer` instead. */
+export function drainSceneLogBuffer(sceneId: string): SceneLogEntry[] {
+  const buf = sceneBuffers.get(sceneId);
+  if (!buf || buf.length === 0) return [];
+  sceneBuffers.delete(sceneId);
+  return buf;
+}
+
+/** Inspect the current buffer without removing entries. */
+export function peekSceneLogBuffer(sceneId: string): readonly SceneLogEntry[] {
+  return sceneBuffers.get(sceneId) ?? [];
+}
+
+/** Prisma client type used by flushSceneLogBuffer. Type-only import
+ *  keeps the runtime decoupled — log.ts stays free of any Prisma
+ *  runtime surface, and callers from db.ts pass their own client. */
+type FlushPrismaLike = import('@prisma/client').PrismaClient;
+
+/** Persist buffered entries onto Scene.generationLogJson, appending to
+ *  whatever is already there and trimming to MAX_LOG_PER_ROW so the
+ *  row stays bounded.
+ *
+ *  Best-effort: if Prisma errors (race / DB blip) the entries are
+ *  silently dropped — we never want logging persistence to mask real
+ *  pipeline failures. The console-side logs already shipped, so the
+ *  signal isn't lost.
+ */
+export async function flushSceneLogBuffer(
+  sceneId: string,
+  prisma: FlushPrismaLike,
+): Promise<{ flushed: number; total: number } | null> {
+  const fresh = drainSceneLogBuffer(sceneId);
+  if (fresh.length === 0) return null;
+  try {
+    const row = await prisma.scene.findUnique({
+      where: { id: sceneId },
+      select: { generationLogJson: true },
+    });
+    const existing = Array.isArray(row?.generationLogJson)
+      ? (row.generationLogJson as unknown as SceneLogEntry[])
+      : [];
+    const merged = existing.concat(fresh);
+    const trimmed =
+      merged.length > MAX_LOG_PER_ROW
+        ? merged.slice(merged.length - MAX_LOG_PER_ROW)
+        : merged;
+    await prisma.scene.update({
+      where: { id: sceneId },
+      data: { generationLogJson: trimmed as unknown as object },
+    });
+    return { flushed: fresh.length, total: trimmed.length };
+  } catch {
+    // Best-effort. Logs already hit the console; persistence is
+    // a nice-to-have.
+    return null;
+  }
+}
+
 function emit(
   level: LogLevel,
   stage: string,
@@ -120,6 +219,18 @@ function emit(
   msg: string,
   data: Record<string, unknown> | undefined,
 ): void {
+  // Always buffer for scene scopes regardless of level filter so the
+  // wizard's debug viewer doesn't lose debug-level breadcrumbs in prod
+  // (where LOG_LEVEL=info filters them off the console).
+  if (scope.startsWith('scn_')) {
+    bufferEntry(scope, {
+      stage,
+      level,
+      message: msg,
+      data: data === undefined ? undefined : (maskValue(data) as Record<string, unknown>),
+      ts: new Date().toISOString(),
+    });
+  }
   if (!shouldLog(level)) return;
   const tag = `[${stage}:${scope}]`;
   const masked = data === undefined ? undefined : maskValue(data);
@@ -162,4 +273,9 @@ export const __testing = {
   shouldLog,
   maskValue,
   MIN_LEVEL,
+  /** Drops every per-scene buffer — useful between unit tests so state
+   *  doesn't leak from one assertion block to the next. */
+  resetSceneBuffers: () => sceneBuffers.clear(),
+  MAX_BUFFER_PER_SCENE,
+  MAX_LOG_PER_ROW,
 };

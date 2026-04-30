@@ -3,7 +3,13 @@
 // PR4.1: logStage helper. Future commits add wired call sites in the
 // active path; those get assertions in this same file as PR4.2 / PR4.3.
 
-import { logStage, __testing } from '../lib/logging/log';
+import {
+  logStage,
+  __testing,
+  drainSceneLogBuffer,
+  peekSceneLogBuffer,
+  flushSceneLogBuffer,
+} from '../lib/logging/log';
 
 let failures = 0;
 function ok(name: string) {
@@ -298,6 +304,206 @@ async function main() {
     assert(
       !/\bconsole\.(log|warn|error)\b/.test(clipImpl),
       '[PR4.3] clip-impl.ts has zero console.* calls (all routed through stage loggers)',
+    );
+  }
+
+  // ── PR7.2 — Per-scene log buffer ───────────────────────────────────
+  {
+    __testing.resetSceneBuffers();
+
+    // Non-scene scopes don't buffer.
+    logStage('kling', 'global').info('not buffered');
+    assert(
+      peekSceneLogBuffer('global').length === 0,
+      '[PR7.2] non-scene scopes do not populate the per-scene buffer',
+    );
+
+    // Scene-scoped logs buffer at every level (debug too — wizard
+    // viewer wants the full breadcrumb in dev).
+    const log = logStage('kling', 'scn_test1');
+    log.debug('debug line');
+    log.info('info line');
+    log.warn('warn line');
+    log.error('error line');
+    const peeked = peekSceneLogBuffer('scn_test1');
+    assert(peeked.length === 4, '[PR7.2] all four levels buffer (debug + info + warn + error)');
+    assert(
+      peeked[0]?.stage === 'kling' && peeked[0]?.level === 'debug',
+      '[PR7.2] buffered entry preserves stage + level',
+    );
+    assert(
+      typeof peeked[0]?.ts === 'string' && peeked[0]!.ts.length > 0,
+      '[PR7.2] buffered entry has ISO timestamp',
+    );
+
+    // Drain returns and clears.
+    const drained = drainSceneLogBuffer('scn_test1');
+    assert(drained.length === 4, '[PR7.2] drainSceneLogBuffer returns the buffered entries');
+    assert(
+      peekSceneLogBuffer('scn_test1').length === 0,
+      '[PR7.2] drainSceneLogBuffer clears the buffer',
+    );
+
+    // Sensitive data masked at buffer time too.
+    const log2 = logStage('image-gen', 'scn_test2');
+    log2.info('with secret', { apiKey: 'sk-abcdef0123456789' });
+    const buf2 = drainSceneLogBuffer('scn_test2');
+    assert(
+      buf2[0]?.data?.apiKey !== 'sk-abcdef0123456789' &&
+        typeof buf2[0]?.data?.apiKey === 'string' &&
+        (buf2[0]!.data!.apiKey as string).startsWith('…'),
+      '[PR7.2] sensitive data is masked at buffer time, not just on console',
+    );
+
+    // Cap at MAX_BUFFER_PER_SCENE — overflow drops oldest entries.
+    __testing.resetSceneBuffers();
+    const log3 = logStage('test', 'scn_overflow');
+    const cap = __testing.MAX_BUFFER_PER_SCENE;
+    for (let i = 0; i < cap + 50; i++) {
+      log3.info(`line ${i}`);
+    }
+    const buf3 = peekSceneLogBuffer('scn_overflow');
+    assert(
+      buf3.length === cap,
+      `[PR7.2] buffer caps at MAX_BUFFER_PER_SCENE (${cap}); overflow drops oldest`,
+    );
+    assert(
+      buf3[0]?.message === `line 50`,
+      '[PR7.2] when over capacity, oldest entries are dropped first',
+    );
+  }
+
+  // ── PR7.2 — flushSceneLogBuffer with a fake Prisma ─────────────────
+  {
+    __testing.resetSceneBuffers();
+    logStage('image-gen', 'scn_flush1').info('one');
+    logStage('image-gen', 'scn_flush1').info('two');
+
+    let writtenData: unknown = null;
+    const fakePrisma = {
+      scene: {
+        findUnique: async () => ({ generationLogJson: null }),
+        update: async (args: { data: { generationLogJson: unknown } }) => {
+          writtenData = args.data.generationLogJson;
+          return {};
+        },
+      },
+    } as unknown as Parameters<typeof flushSceneLogBuffer>[1];
+
+    const result = await flushSceneLogBuffer('scn_flush1', fakePrisma);
+    assert(
+      result?.flushed === 2 && result?.total === 2,
+      '[PR7.2] flushSceneLogBuffer returns { flushed, total } on success',
+    );
+    assert(
+      Array.isArray(writtenData) && (writtenData as unknown[]).length === 2,
+      '[PR7.2] flushSceneLogBuffer writes a JSON array to Scene.generationLogJson',
+    );
+    assert(
+      peekSceneLogBuffer('scn_flush1').length === 0,
+      '[PR7.2] buffer is empty after flush',
+    );
+
+    // Empty buffer → no-op, returns null.
+    const noop = await flushSceneLogBuffer('scn_empty', fakePrisma);
+    assert(noop === null, '[PR7.2] flush on empty buffer returns null without writing');
+
+    // Existing entries on the row are preserved + appended to.
+    __testing.resetSceneBuffers();
+    logStage('image-gen', 'scn_merge').info('new entry');
+    const fakePrisma2 = {
+      scene: {
+        findUnique: async () => ({
+          generationLogJson: [
+            { stage: 'voice', level: 'info', message: 'old', ts: '2026-04-30T00:00:00Z' },
+          ],
+        }),
+        update: async (args: { data: { generationLogJson: unknown } }) => {
+          writtenData = args.data.generationLogJson;
+          return {};
+        },
+      },
+    } as unknown as Parameters<typeof flushSceneLogBuffer>[1];
+    await flushSceneLogBuffer('scn_merge', fakePrisma2);
+    assert(
+      Array.isArray(writtenData) && (writtenData as unknown[]).length === 2,
+      '[PR7.2] flush concatenates new entries onto existing row data',
+    );
+    assert(
+      Array.isArray(writtenData) && (writtenData as Array<{ message: string }>)[0]?.message === 'old',
+      '[PR7.2] existing entries preserved at front; new entries appended',
+    );
+
+    // Trim to MAX_LOG_PER_ROW.
+    __testing.resetSceneBuffers();
+    const log4 = logStage('image-gen', 'scn_trim');
+    for (let i = 0; i < 20; i++) log4.info(`new ${i}`);
+    const oldEntries = Array.from({ length: __testing.MAX_LOG_PER_ROW - 5 }, (_, i) => ({
+      stage: 'voice',
+      level: 'info',
+      message: `old ${i}`,
+      ts: '2026-04-30T00:00:00Z',
+    }));
+    const fakePrisma3 = {
+      scene: {
+        findUnique: async () => ({ generationLogJson: oldEntries }),
+        update: async (args: { data: { generationLogJson: unknown } }) => {
+          writtenData = args.data.generationLogJson;
+          return {};
+        },
+      },
+    } as unknown as Parameters<typeof flushSceneLogBuffer>[1];
+    await flushSceneLogBuffer('scn_trim', fakePrisma3);
+    assert(
+      Array.isArray(writtenData) && (writtenData as unknown[]).length === __testing.MAX_LOG_PER_ROW,
+      `[PR7.2] flush trims merged list to MAX_LOG_PER_ROW (${__testing.MAX_LOG_PER_ROW})`,
+    );
+
+    // Best-effort on Prisma error — returns null, doesn't throw.
+    __testing.resetSceneBuffers();
+    logStage('image-gen', 'scn_dberror').info('oops');
+    const failingPrisma = {
+      scene: {
+        findUnique: async () => {
+          throw new Error('DB down');
+        },
+        update: async () => ({}),
+      },
+    } as unknown as Parameters<typeof flushSceneLogBuffer>[1];
+    const failResult = await flushSceneLogBuffer('scn_dberror', failingPrisma);
+    assert(
+      failResult === null,
+      '[PR7.2] flushSceneLogBuffer returns null (best-effort) on Prisma error',
+    );
+  }
+
+  // ── PR7.2 — Each pipeline impl calls flushSceneLogBuffer in finally ──
+  {
+    const fs = require('node:fs') as typeof import('node:fs');
+    const path = require('node:path') as typeof import('node:path');
+    const generateImpl = fs.readFileSync(
+      path.resolve(__dirname, '../lib/scenes/generate-impl.ts'),
+      'utf8',
+    );
+    const voiceImpl = fs.readFileSync(
+      path.resolve(__dirname, '../lib/scenes/voice-impl.ts'),
+      'utf8',
+    );
+    const clipImpl = fs.readFileSync(
+      path.resolve(__dirname, '../lib/scenes/clip-impl.ts'),
+      'utf8',
+    );
+    assert(
+      /flushSceneLogBuffer\(sceneId/.test(generateImpl),
+      '[PR7.2] generate-impl flushes the per-scene log buffer',
+    );
+    assert(
+      /flushSceneLogBuffer\(sceneId/.test(voiceImpl),
+      '[PR7.2] voice-impl flushes the per-scene log buffer',
+    );
+    assert(
+      /flushSceneLogBuffer\(sceneId/.test(clipImpl),
+      '[PR7.2] clip-impl flushes the per-scene log buffer',
     );
   }
 

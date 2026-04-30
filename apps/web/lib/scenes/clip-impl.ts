@@ -29,7 +29,7 @@ import {
   detectMirrorRisk,
   detectContactProofRequired,
 } from '@/lib/scene-planning/scene-rules';
-import { logStage } from '@/lib/logging/log';
+import { logStage, flushSceneLogBuffer } from '@/lib/logging/log';
 import {
   getLipSyncProvider,
   LipSyncProviderError,
@@ -216,6 +216,8 @@ export async function generateSceneClipImpl(
     await prisma.scene
       .update({ where: { id: sceneId }, data: { clipInFlightAt: null } })
       .catch(() => {/* best effort */});
+    // V13 PR7.2 — flush the per-scene log buffer.
+    await flushSceneLogBuffer(sceneId, prisma);
   }
 }
 
