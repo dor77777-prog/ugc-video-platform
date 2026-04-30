@@ -29,6 +29,7 @@ import {
   detectMirrorRisk,
   detectContactProofRequired,
 } from '@/lib/scene-planning/scene-rules';
+import { logStage } from '@/lib/logging/log';
 import {
   getLipSyncProvider,
   LipSyncProviderError,
@@ -275,18 +276,25 @@ async function generateSceneClipImplInner(
     planLipSyncCap,
   );
   const lipSyncMaxSceneOrder = effectiveLipSyncCap - 1; // zero-indexed
+  const clipLog = logStage('clip', sceneId);
+  const motionLog = logStage('motion-analysis', sceneId);
+  const klingLog = logStage('kling', sceneId);
+  const faceGateLog = logStage('face-gate', sceneId);
+  const pixverseLog = logStage('pixverse', sceneId);
+
   if (
     explicitRequiresLipSync == null &&
     routing.requiresLipSync &&
     scene.sceneOrder > lipSyncMaxSceneOrder
   ) {
-    console.log(
-      `[clip] scene=${sceneId} order=${scene.sceneOrder} mode=${videoMode.mode} — ` +
-        `auto-routed as ${routing.sceneGenerationType} but lipsync cap ` +
-        `(mode=${videoMode.maxLipSyncScenes}, plan=${planLipSyncCap}, ` +
-        `effective=${effectiveLipSyncCap}) forces silent path. ` +
-        `User can override via the LipSync toggle.`,
-    );
+    clipLog.info('lipsync cap forces silent path', {
+      order: scene.sceneOrder,
+      mode: videoMode.mode,
+      autoRoutedAs: routing.sceneGenerationType,
+      maxLipSyncScenes: videoMode.maxLipSyncScenes,
+      planLipSyncCap,
+      effectiveLipSyncCap,
+    });
     routing.requiresLipSync = false;
     routing.sceneGenerationType = 'broll';
     routing.faceVisibility = 'partial_face';
@@ -363,10 +371,15 @@ async function generateSceneClipImplInner(
 
   if (cacheValid) {
     motionAnalysis = cachedJson as MotionAnalysis;
-    console.log(
-      `[clip] scene=${sceneId} motion-analysis CACHE HIT (image unchanged) — skipping gpt-4o-mini call`,
-    );
+    motionLog.info('cache hit — skipping gpt-4o-mini call', {
+      cachedImageUrl,
+    });
   } else {
+    motionLog.info('calling gpt-4o-mini', {
+      model: process.env.OPENAI_MOTION_VISION_MODEL ?? 'gpt-4o-mini',
+      isTalkingHead: routing.requiresLipSync,
+      sceneType: routing.sceneGenerationType,
+    });
     const motionAnalysisCallId = await recordApiCallStart({
       provider: 'openai',
       operation: 'motion_analysis',
@@ -382,6 +395,7 @@ async function generateSceneClipImplInner(
         isTalkingHead: routing.requiresLipSync,
         sceneGenerationType: routing.sceneGenerationType,
       });
+      const durationMs = Date.now() - motionAnalysisStartedAt;
       await recordApiCallComplete(motionAnalysisCallId, {
         success: true,
         model: process.env.OPENAI_MOTION_VISION_MODEL ?? 'gpt-4o-mini',
@@ -392,7 +406,15 @@ async function generateSceneClipImplInner(
         ),
         inputTokens: motionAnalysis.usage.inputTokens,
         outputTokens: motionAnalysis.usage.outputTokens,
-        durationMs: Date.now() - motionAnalysisStartedAt,
+        durationMs,
+      });
+      motionLog.info('analysis returned', {
+        primaryAction: motionAnalysis.primaryAction,
+        secondaryMotions: motionAnalysis.secondaryMotions.length,
+        preserveElements: motionAnalysis.preserveElements.length,
+        framingRisks: motionAnalysis.framingRisks.length,
+        faceState: motionAnalysis.faceState,
+        durationMs,
       });
       // Persist the result so the next clip-regen on this same image
       // reuses it. Best-effort — if the write fails (race with another
@@ -411,10 +433,16 @@ async function generateSceneClipImplInner(
       // Vision analysis is best-effort. If it fails (timeout / quota /
       // bad JSON), we fall back to the generic motion prompt — Kling will
       // still produce something usable, just less specific.
+      const durationMs = Date.now() - motionAnalysisStartedAt;
+      const errMsg = (err as Error).message;
       await recordApiCallComplete(motionAnalysisCallId, {
         success: false,
-        errorMessage: (err as Error).message,
-        durationMs: Date.now() - motionAnalysisStartedAt,
+        errorMessage: errMsg,
+        durationMs,
+      });
+      motionLog.warn('analysis failed — falling back to generic motion prompt', {
+        errMsg,
+        durationMs,
       });
       motionAnalysis = null;
     }
@@ -475,11 +503,18 @@ async function generateSceneClipImplInner(
   // One log line summarizing the routing decision for /admin/costs
   // forensics. Lets us answer "why did Kling drift on this scene?"
   // without having to re-derive the inputs.
-  console.log(
-    `[clip] scene=${sceneId} type=${routing.sceneGenerationType} ` +
-      `lipsync=${routing.requiresLipSync} productRef=${!!productRefUrl} ` +
-      `motionAnalysis=${!!motionAnalysis}`,
-  );
+  clipLog.info('routing decided', {
+    sceneType: routing.sceneGenerationType,
+    lipsync: routing.requiresLipSync,
+    productRef: !!productRefUrl,
+    motionAnalysis: !!motionAnalysis,
+    plan: {
+      animationGoal: animationPlan.animationGoal,
+      motionSubject: animationPlan.motionSubject,
+      cameraMotion: animationPlan.cameraMotion,
+      forbiddenMotionCount: animationPlan.forbiddenMotion.length,
+    },
+  });
 
   // ── Stage 1 — silent image-to-video ────────────────────────────────────
   // Match the Kling clip length to the voice duration so the audio mux
@@ -492,6 +527,14 @@ async function generateSceneClipImplInner(
   );
   let i2vResult;
   const i2vStartedAt = Date.now();
+  klingLog.info('calling i2v', {
+    model: process.env.KLING_IMAGE_TO_VIDEO_MODEL ?? 'kling-v3-omni',
+    durationSeconds: clipDuration,
+    aspectRatio: '9:16',
+    referenceCount: productRefUrl ? 1 : 0,
+    promptChars: motionPrompt.positive.length,
+    negativeChars: motionPrompt.negative.length,
+  });
   // Two-phase log: row appears in /admin/costs as "in_progress" the
   // moment we start, with createdAt = now. Closes when we know the result.
   const i2vCallId = await recordApiCallStart({
@@ -514,20 +557,29 @@ async function generateSceneClipImplInner(
     });
   } catch (err) {
     const errMsg = (err as Error).message;
+    const durationMs = Date.now() - i2vStartedAt;
     await recordApiCallComplete(i2vCallId, {
       success: false,
       errorMessage: errMsg,
-      durationMs: Date.now() - i2vStartedAt,
+      durationMs,
     });
+    klingLog.error('i2v failed', { errMsg, durationMs });
     return classifyClipError(err, 'motion');
   }
 
+  const i2vDurationMs = Date.now() - i2vStartedAt;
   await recordApiCallComplete(i2vCallId, {
     success: true,
     model: i2vResult.modelUsed,
     costUsd: priceKling(klingPricingKeyForModel(i2vResult.modelUsed)),
     units: 1,
-    durationMs: Date.now() - i2vStartedAt,
+    durationMs: i2vDurationMs,
+  });
+  klingLog.info('i2v returned', {
+    model: i2vResult.modelUsed,
+    durationSeconds: i2vResult.durationSeconds,
+    bytes: i2vResult.videoBytes.byteLength,
+    durationMs: i2vDurationMs,
   });
 
   // ── Stage 2 — optional lipsync ─────────────────────────────────────────
@@ -555,23 +607,21 @@ async function generateSceneClipImplInner(
     try {
       const { runFaceGate } = await import('@/lib/animation/face-gate');
       gateResult = await runFaceGate({ imageUrl: scene.imageUrl! });
-      console.log(
-        `[clip] scene=${sceneId} face-gate: ` +
-          `shouldLipSync=${gateResult.shouldLipSync} ` +
-          `fullFace=${gateResult.fullFaceDetected} ` +
-          `mouth=${gateResult.mouthVisible} ` +
-          `visibility=${gateResult.faceVisibility} ` +
-          `confidence=${gateResult.faceDetectionConfidence.toFixed(2)} — ` +
-          `${gateResult.reason}`,
-      );
+      faceGateLog.info('verdict', {
+        shouldLipSync: gateResult.shouldLipSync,
+        fullFaceDetected: gateResult.fullFaceDetected,
+        mouthVisible: gateResult.mouthVisible,
+        faceVisibility: gateResult.faceVisibility,
+        confidence: Number(gateResult.faceDetectionConfidence.toFixed(2)),
+        reason: gateResult.reason,
+      });
     } catch (err) {
       // Gate failure is non-fatal — be conservative and SKIP lipsync.
       // Better to ship a non-lipsynced clip than burn PixVerse credits
       // on an unverified face.
-      console.warn(
-        `[clip] scene=${sceneId} face-gate failed:`,
-        (err as Error).message,
-      );
+      faceGateLog.warn('failed — skipping lipsync to be safe', {
+        errMsg: (err as Error).message,
+      });
     }
 
     if (!gateResult || !gateResult.shouldLipSync) {
@@ -580,9 +630,9 @@ async function generateSceneClipImplInner(
   }
 
   if (needsLipSync && scene.voiceUrl && !lipSyncSkipReason) {
-    console.log(
-      `[clip] scene=${sceneId} order=${scene.sceneOrder} — entering lipsync stage (pixverse)`,
-    );
+    pixverseLog.info('entering lipsync stage', {
+      order: scene.sceneOrder,
+    });
     // Save the silent clip first so we can hand a public URL to Kling.
     const silentStorage = await getStorage();
     const silentFilename = `${scene.id}-silent-${Date.now()}.mp4`;
@@ -633,6 +683,11 @@ async function generateSceneClipImplInner(
         projectId,
       });
       try {
+        pixverseLog.info('calling lipsync provider', {
+          provider: lipsyncProvider.name,
+          durationSeconds: finalDuration,
+          faceVisibility: routing.faceVisibility,
+        });
         const lsResult = await lipsyncProvider.generate({
           videoUrl: videoPublicUrl!,
           audioUrl: audioPublicUrl!,
@@ -643,6 +698,7 @@ async function generateSceneClipImplInner(
         finalVideoBytes = lsResult.videoBytes;
         finalDuration = lsResult.durationSeconds;
         lipSyncTaskId = lsResult.providerJobId;
+        const lsDurationMs = Date.now() - lipsyncStartedAt;
         await recordApiCallComplete(lipsyncCallId, {
           success: true,
           model: lsResult.modelUsed,
@@ -651,14 +707,28 @@ async function generateSceneClipImplInner(
           // Sync.so calls in /admin/costs.
           costUsd: priceLipSync(lsResult.providerName, finalDuration),
           units: 1,
-          durationMs: Date.now() - lipsyncStartedAt,
+          durationMs: lsDurationMs,
+        });
+        // Trust completion data, ignore status field — see comment in
+        // lib/animation/lipsync/pixverse.ts about the unreliability of
+        // the status enum on Pixverse.
+        pixverseLog.info('lipsync returned (status field ignored)', {
+          providerJobId: lsResult.providerJobId,
+          durationSeconds: lsResult.durationSeconds,
+          bytes: lsResult.videoBytes.byteLength,
+          durationMs: lsDurationMs,
         });
       } catch (err) {
         const errMsg = (err as Error).message;
+        const lsDurationMs = Date.now() - lipsyncStartedAt;
         await recordApiCallComplete(lipsyncCallId, {
           success: false,
           errorMessage: errMsg,
-          durationMs: Date.now() - lipsyncStartedAt,
+          durationMs: lsDurationMs,
+        });
+        pixverseLog.error('lipsync failed — keeping silent clip', {
+          errMsg,
+          durationMs: lsDurationMs,
         });
         // Fallback: keep the silent clip. Don't crash the whole project.
         // The composer will mux audio later — viewer gets a watchable

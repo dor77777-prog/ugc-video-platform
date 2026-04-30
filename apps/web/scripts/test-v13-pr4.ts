@@ -232,6 +232,73 @@ async function main() {
       /voiceLog\.error\(/.test(voiceImpl),
       '[PR4.2] voice-impl.ts logs errors via voice logger',
     );
+
+    // ── PR4.3 — clip-impl.ts wires motion-analysis / kling / face-gate / pixverse ──
+    const clipImpl = fs.readFileSync(
+      path.resolve(__dirname, '../lib/scenes/clip-impl.ts'),
+      'utf8',
+    );
+    assert(
+      /logStage\(['"]clip['"]\s*,\s*sceneId\)/.test(clipImpl),
+      "[PR4.3] clip-impl.ts uses logStage('clip', sceneId)",
+    );
+    assert(
+      /logStage\(['"]motion-analysis['"]\s*,\s*sceneId\)/.test(clipImpl),
+      "[PR4.3] clip-impl.ts uses logStage('motion-analysis', sceneId)",
+    );
+    assert(
+      /logStage\(['"]kling['"]\s*,\s*sceneId\)/.test(clipImpl),
+      "[PR4.3] clip-impl.ts uses logStage('kling', sceneId)",
+    );
+    assert(
+      /logStage\(['"]face-gate['"]\s*,\s*sceneId\)/.test(clipImpl),
+      "[PR4.3] clip-impl.ts uses logStage('face-gate', sceneId)",
+    );
+    assert(
+      /logStage\(['"]pixverse['"]\s*,\s*sceneId\)/.test(clipImpl),
+      "[PR4.3] clip-impl.ts uses logStage('pixverse', sceneId)",
+    );
+    assert(
+      /motionLog\.info\(['"]cache hit/.test(clipImpl),
+      '[PR4.3] clip-impl.ts logs motion-analysis cache hit',
+    );
+    assert(
+      /klingLog\.info\(['"]calling i2v['"]/.test(clipImpl),
+      '[PR4.3] clip-impl.ts logs "calling i2v" before Kling call',
+    );
+    assert(
+      /klingLog\.info\(['"]i2v returned['"]/.test(clipImpl),
+      '[PR4.3] clip-impl.ts logs "i2v returned" with model + duration',
+    );
+    assert(
+      /klingLog\.error\(/.test(clipImpl),
+      '[PR4.3] clip-impl.ts logs Kling i2v failures',
+    );
+    assert(
+      /faceGateLog\.info\(['"]verdict['"]/.test(clipImpl),
+      '[PR4.3] clip-impl.ts logs face-gate verdict',
+    );
+    assert(
+      /faceGateLog\.warn\(/.test(clipImpl),
+      '[PR4.3] clip-impl.ts logs face-gate failures (warn)',
+    );
+    assert(
+      /pixverseLog\.info\(['"]entering lipsync stage['"]/.test(clipImpl),
+      '[PR4.3] clip-impl.ts logs entering pixverse lipsync stage',
+    );
+    assert(
+      /pixverseLog\.info\(['"]lipsync returned/.test(clipImpl),
+      '[PR4.3] clip-impl.ts logs pixverse completion',
+    );
+    assert(
+      /pixverseLog\.error\(/.test(clipImpl),
+      '[PR4.3] clip-impl.ts logs pixverse failures',
+    );
+    // No console.* leftovers in clip-impl.ts active path.
+    assert(
+      !/\bconsole\.(log|warn|error)\b/.test(clipImpl),
+      '[PR4.3] clip-impl.ts has zero console.* calls (all routed through stage loggers)',
+    );
   }
 
   console.log('');
