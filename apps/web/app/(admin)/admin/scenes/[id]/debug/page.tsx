@@ -51,6 +51,51 @@ export default async function AdminSceneDebugPage({ params }: PageProps) {
   const data = (project.productData as Record<string, unknown> | null) ?? {};
   const intelligence =
     (data as { intelligence?: unknown }).intelligence ?? null;
+  // V14 PR3 — project-level locked outfit (computed once on first scene gen).
+  const lockedOutfit =
+    typeof (data as { lockedOutfit?: unknown }).lockedOutfit === 'string'
+      ? ((data as { lockedOutfit: string }).lockedOutfit)
+      : null;
+  // V14 PR5 — script-level genre / voice_profile / hook_alternatives lifted
+  // from script.rawJson if present (V5 scripts have rawJson but no V6 keys —
+  // safe optional-chain).
+  const scriptRaw =
+    (scene.script as { rawJson?: Record<string, unknown> | null }).rawJson ??
+    null;
+  const v14Genre = (scriptRaw as { genre?: string | null } | null)?.genre ?? null;
+  const v14VoiceProfile =
+    (scriptRaw as { voice_profile?: string | null } | null)?.voice_profile ?? null;
+  const v14HookAlternatives =
+    (scriptRaw as { hook_alternatives?: string[] } | null)?.hook_alternatives ??
+    null;
+  // V14 PR5 — per-scene israeli_setting_cue persisted on the scene's slot in
+  // the script's rawJson scenes array (matching scene.sceneOrder).
+  const v14SceneCue = (() => {
+    const scenes =
+      (scriptRaw as { scenes?: Array<{ scene_order?: number; israeli_setting_cue?: string | null }> } | null)
+        ?.scenes;
+    if (!Array.isArray(scenes)) return null;
+    const match = scenes.find((s) => s.scene_order === scene.sceneOrder);
+    return match?.israeli_setting_cue ?? null;
+  })();
+  // V14 PR2/PR4 — pull the V14 brief fields from imageBriefJson when persisted.
+  const briefV14 = (() => {
+    if (!scene.imageBriefJson || typeof scene.imageBriefJson !== 'object') return null;
+    const b = scene.imageBriefJson as Record<string, unknown>;
+    return {
+      frameTechniqueSnippetIds: Array.isArray(b.frameTechniqueSnippetIds)
+        ? (b.frameTechniqueSnippetIds as string[])
+        : null,
+      scrollStopperApplied:
+        typeof b.scrollStopperApplied === 'boolean' ? b.scrollStopperApplied : null,
+      scrollStopperReason:
+        typeof b.scrollStopperReason === 'string' ? b.scrollStopperReason : null,
+      variationDiversity:
+        b.variationDiversity && typeof b.variationDiversity === 'object'
+          ? (b.variationDiversity as Record<string, { distinct: number; total: number }>)
+          : null,
+    };
+  })();
 
   const status: SceneStatus = isSceneStatus(scene.status) ? scene.status : 'pending';
   const errorEntry =
@@ -137,7 +182,44 @@ export default async function AdminSceneDebugPage({ params }: PageProps) {
         />
       </DebugSection>
 
-      {/* ── Image brief ───────────────────────────────────────────── */}
+      {/* ── V14 — frame techniques, scroll-stopper, outfit lock, genre ── */}
+      <DebugSection title="V14 — frame techniques + scroll-stopper + outfit + genre">
+        <KeyValueGrid
+          rows={[
+            ['V14 PR1 israeli_setting_cue (per scene, from script.rawJson)', v14SceneCue ?? '—'],
+            [
+              'V14 PR2 frameTechniqueSnippetIds (brief)',
+              briefV14?.frameTechniqueSnippetIds?.length
+                ? briefV14.frameTechniqueSnippetIds.join(', ')
+                : '—',
+            ],
+            ['V14 PR3 lockedOutfit (project)', lockedOutfit ?? '— not yet locked —'],
+            [
+              'V14 PR4 scrollStopperApplied',
+              briefV14?.scrollStopperApplied == null
+                ? '—'
+                : String(briefV14.scrollStopperApplied),
+            ],
+            ['V14 PR4 scrollStopperReason', briefV14?.scrollStopperReason ?? '—'],
+            ['V14 PR5 genre (script)', v14Genre ?? '—'],
+            ['V14 PR5 voice_profile (script)', v14VoiceProfile ?? '—'],
+            [
+              'V14 PR5 hook_alternatives count',
+              v14HookAlternatives ? String(v14HookAlternatives.length) : '—',
+            ],
+          ]}
+        />
+        {briefV14?.variationDiversity && (
+          <div className="mt-3">
+            <p className="mb-1 text-xs font-semibold text-zinc-600">
+              V14 PR4 variationDiversity (across earlier scenes in this script)
+            </p>
+            <PrettyJson value={briefV14.variationDiversity} />
+          </div>
+        )}
+      </DebugSection>
+
+      {/* ── Image brief (full JSON) ────────────────────────────────── */}
       <DebugSection title="Image Brief" hidden={!scene.imageBriefJson}>
         <PrettyJson value={scene.imageBriefJson} />
       </DebugSection>
