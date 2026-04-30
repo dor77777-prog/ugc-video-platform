@@ -121,6 +121,48 @@ const ENVIRONMENT_STYLES = [
   'neutral_israeli_indoor',
 ] as const;
 
+// V14 PR5 — six canonical genres. Maps 1:1 to the FRAMEWORKS list but uses
+// the plain-English genre names from HEBREW_SCRIPT_CREATIVE_RULES.md §2 so
+// downstream UI / admin debug can show the genre without translating from
+// the framework slug. Optional in the schema for back-compat with V5
+// scripts saved before V6.
+const GENRES = [
+  'problem_solution',
+  'ugc_review_mock_confession',
+  'listicle',
+  'day_in_the_life',
+  'comparison',
+  'tutorial',
+] as const;
+
+// V14 PR5 — eight voice-profile archetypes. Drives downstream voice
+// selection in lib/voice/voice-presets.ts. Optional for back-compat.
+const VOICE_PROFILES = [
+  'young_female_warm',
+  'young_female_energetic',
+  'young_male_warm',
+  'young_male_energetic',
+  'mature_female_authoritative',
+  'mature_female_intimate',
+  'mature_male_authoritative',
+  'mature_male_intimate',
+] as const;
+
+// V14 PR5 — eight canonical Israeli setting cue IDs. The deterministic
+// image-brief-builder (israeli-realism-rules.ts SCENE_PRESETS) expands
+// these into atomic cues. Per-scene field, optional. The string '' or
+// null both signal "no preset, use environment_type defaults".
+const ISRAELI_SETTING_CUES = [
+  'kitchen_with_morning_light',
+  'bathroom_morning_routine',
+  'bedroom_evening',
+  'living_room_couch',
+  'tel_aviv_street_evening',
+  'supermarket_aisle',
+  'gym_modern',
+  'outdoor_park_afternoon',
+] as const;
+
 export const SCRIPT_FRAMEWORKS = FRAMEWORKS;
 export const SCENE_GOALS_LIST = SCENE_GOALS;
 export const SCENE_GENERATION_TYPES_LIST = SCENE_GENERATION_TYPES;
@@ -130,6 +172,9 @@ export const PRODUCT_VISIBILITY_PRIORITY_LIST = PRODUCT_VISIBILITY_PRIORITY;
 export const CAMERA_FOCUS_LIST = CAMERA_FOCUS;
 export const ENVIRONMENT_TYPES_LIST = ENVIRONMENT_TYPES;
 export const ENVIRONMENT_STYLES_LIST = ENVIRONMENT_STYLES;
+export const GENRES_LIST = GENRES;
+export const VOICE_PROFILES_LIST = VOICE_PROFILES;
+export const ISRAELI_SETTING_CUES_LIST = ISRAELI_SETTING_CUES;
 
 const SCENE_ITEM_SCHEMA = {
   type: 'object',
@@ -161,6 +206,9 @@ const SCENE_ITEM_SCHEMA = {
     'israeli_environment_required',
     'local_realism_notes',
     'why_this_scene_exists',
+    // V14 PR5 — optional Israeli setting cue ID. Maps to one of the 8
+    // canonical scene presets in apps/web/lib/scene-planning/israeli-realism-rules.ts.
+    'israeli_setting_cue',
   ],
   properties: {
     scene_order: {
@@ -273,6 +321,12 @@ const SCENE_ITEM_SCHEMA = {
       description:
         '1 short Hebrew sentence — what conversion-job does this specific scene do? ("hook stops the scroll", "establishes the daily pain", "shows the product solving it in one tap"). Used by the editor + admin forensics to spot redundant scenes.',
     },
+    israeli_setting_cue: {
+      type: ['string', 'null'] as unknown as 'string',
+      enum: [...ISRAELI_SETTING_CUES, null] as unknown as string[],
+      description:
+        'V14 PR5. One of the 8 canonical Israeli scene preset IDs (kitchen_with_morning_light / bathroom_morning_routine / bedroom_evening / living_room_couch / tel_aviv_street_evening / supermarket_aisle / gym_modern / outdoor_park_afternoon) or null when no preset fits. The deterministic image-brief-builder expands this into atomic Israeli realism cues.',
+    },
   },
 } as const;
 
@@ -292,6 +346,11 @@ const SCRIPT_ITEM_SCHEMA = {
     'quality_score',
     'diversity_notes',
     'music_profile',
+    // V14 PR5 — new top-level metadata. All nullable for back-compat
+    // with V5 scripts already saved in DB.
+    'genre',
+    'voice_profile',
+    'hook_alternatives',
   ],
   properties: {
     framework: {
@@ -379,6 +438,24 @@ const SCRIPT_ITEM_SCHEMA = {
     hook_reason: {
       type: 'string',
       description: 'Why the selected hook is the strongest. 1 short Hebrew sentence.',
+    },
+    genre: {
+      type: ['string', 'null'] as unknown as 'string',
+      enum: [...GENRES, null] as unknown as string[],
+      description:
+        'V14 PR5. One of 6 plain-English genre labels (problem_solution / ugc_review_mock_confession / listicle / day_in_the_life / comparison / tutorial). Maps 1:1 to framework. Optional for back-compat with V5 scripts.',
+    },
+    voice_profile: {
+      type: ['string', 'null'] as unknown as 'string',
+      enum: [...VOICE_PROFILES, null] as unknown as string[],
+      description:
+        'V14 PR5. One of 8 voice archetypes — drives downstream voice selection (gender × age × tone). Pick to match the script\'s persona / age / tone. Optional for back-compat.',
+    },
+    hook_alternatives: {
+      type: 'array',
+      items: { type: 'string' },
+      description:
+        'V14 PR5. The 4 hook_options that were NOT selected (the script\'s hook_options minus selected_hook). For future A/B testing surfaces. Length should be 4 when hook_options has 5; OK to be empty for back-compat.',
     },
     diversity_notes: {
       type: 'string',
