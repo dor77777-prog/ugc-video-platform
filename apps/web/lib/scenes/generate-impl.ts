@@ -101,10 +101,17 @@ export async function generateSceneImageImpl(
     return { success: false, error: 'אין מספיק קרדיטים', needsCredits: true };
   }
 
-  // Mark in-flight + run inside try/finally so we always clean up.
+  // Mark in-flight + transition to generating_image. Clearing
+  // lastErrorCode/Message means the wizard's error panel goes away as
+  // soon as a regenerate fires; the next failure will repopulate it.
   await prisma.scene.update({
     where: { id: sceneId },
-    data: { imageInFlightAt: new Date() },
+    data: {
+      imageInFlightAt: new Date(),
+      status: 'generating_image',
+      lastErrorCode: null,
+      lastErrorMessage: null,
+    },
   });
   try {
     return await generateSceneImageImplInner(sceneId, userId, scene);
@@ -278,12 +285,25 @@ async function generateSceneImageImplInner(
       errorMessage: errMsg,
       durationMs,
     });
+    // Persist the failure to Scene.status + lastError* so the wizard
+    // surfaces the right curated Hebrew message via PR5's map. Best-
+    // effort — never let a status-write failure mask the original error.
+    const writeFailure = async (code: string) => {
+      await prisma.scene
+        .update({
+          where: { id: sceneId },
+          data: { status: 'failed', lastErrorCode: code, lastErrorMessage: errMsg },
+        })
+        .catch(() => {/* best effort */});
+    };
     if (err instanceof LlmConfigError) {
       imageLog.error('config error', { errMsg, durationMs });
+      await writeFailure('image-gen.config');
       return { success: false, error: err.message };
     }
     if (err instanceof SceneImageTimeoutError) {
       imageLog.error('timed out', { durationMs });
+      await writeFailure('image-gen.timeout');
       return {
         success: false,
         error: 'OpenAI לא הגיב תוך 3 דקות לסצנה זו. נסה שוב — אם זה חוזר על עצמו, יש עומס/תקלה אצלם.',
@@ -292,6 +312,7 @@ async function generateSceneImageImplInner(
     }
     if (err instanceof SceneImageSafetyError) {
       imageLog.warn('safety rejected', { errMsg, durationMs });
+      await writeFailure('image-gen.safety_rejected');
       return {
         success: false,
         error:
@@ -300,6 +321,7 @@ async function generateSceneImageImplInner(
       };
     }
     imageLog.error('failed', { errMsg, durationMs });
+    await writeFailure('image-gen.generic');
     return { success: false, error: `יצירת התמונה נכשלה: ${errMsg}` };
   }
 
@@ -348,6 +370,10 @@ async function generateSceneImageImplInner(
         imageGenerationCount: { increment: 1 },
         imageProvider: result.model,
         imageBriefJson: brief as unknown as Prisma.InputJsonValue,
+        // V13 PR7.1 — image stage succeeded; clear any prior error.
+        status: 'image_ready',
+        lastErrorCode: null,
+        lastErrorMessage: null,
       },
     }),
     ...buildCreditMutationOps(prisma, {

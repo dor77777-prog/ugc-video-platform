@@ -202,7 +202,13 @@ export async function generateSceneClipImpl(
   // exceptions or returns.
   await prisma.scene.update({
     where: { id: sceneId },
-    data: { clipInFlightAt: new Date() },
+    data: {
+      clipInFlightAt: new Date(),
+      // V13 PR7.1 — transition to generating_clip; clear prior errors.
+      status: 'generating_clip',
+      lastErrorCode: null,
+      lastErrorMessage: null,
+    },
   });
   try {
     return await generateSceneClipImplInner(sceneId, userId, scene);
@@ -564,6 +570,22 @@ async function generateSceneClipImplInner(
       durationMs,
     });
     klingLog.error('i2v failed', { errMsg, durationMs });
+    // V13 PR7.1 — persist failure state + curated code so the wizard
+    // can render the right Hebrew error message via PR5's map.
+    const code =
+      err instanceof VideoProviderConfigError
+        ? 'kling.config'
+        : err instanceof VideoProviderTimeoutError
+          ? 'kling.timeout'
+          : err instanceof VideoProviderApiError
+            ? 'kling.task_failed'
+            : 'kling.network';
+    await prisma.scene
+      .update({
+        where: { id: sceneId },
+        data: { status: 'failed', lastErrorCode: code, lastErrorMessage: errMsg },
+      })
+      .catch(() => {/* best effort */});
     return classifyClipError(err, 'motion');
   }
 
@@ -831,6 +853,13 @@ async function generateSceneClipImplInner(
         clipMotionImageUrl: scene.imageUrl,
         clipMotionGeneratedAt: new Date(),
         clipMotionDurationSec: finalDuration,
+        // V13 PR7.1 — clip stage succeeded; clear any prior error.
+        // Lipsync skip reasons (face-gate / public-url) don't fail the
+        // overall clip — the user gets a watchable result with audio
+        // muxed in by ffmpeg, so we still mark this clip_ready.
+        status: 'clip_ready',
+        lastErrorCode: null,
+        lastErrorMessage: null,
       },
     }),
     ...buildCreditMutationOps(prisma, {

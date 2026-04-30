@@ -95,10 +95,17 @@ export async function generateSceneVoiceImpl(
     return { success: false, error: 'אין מספיק קרדיטים', needsCredits: true };
   }
 
-  // Mark in-flight + run inside try/finally so we always clean up.
+  // Mark in-flight + transition to generating_voice. Clearing
+  // lastErrorCode/Message means the wizard's error panel disappears
+  // as soon as a regen fires; the next failure repopulates it.
   await prisma.scene.update({
     where: { id: sceneId },
-    data: { voiceInFlightAt: new Date() },
+    data: {
+      voiceInFlightAt: new Date(),
+      status: 'generating_voice',
+      lastErrorCode: null,
+      lastErrorMessage: null,
+    },
   });
   try {
     return await generateSceneVoiceImplInner(sceneId, userId, scene);
@@ -189,12 +196,22 @@ async function generateSceneVoiceImplInner(
       errorMessage: errMsg,
       durationMs,
     });
+    const writeFailure = async (code: string) => {
+      await prisma.scene
+        .update({
+          where: { id: sceneId },
+          data: { status: 'failed', lastErrorCode: code, lastErrorMessage: errMsg },
+        })
+        .catch(() => {/* best effort */});
+    };
     if (err instanceof VoiceConfigError) {
       voiceLog.error('config error', { errMsg, durationMs });
+      await writeFailure('voice.config');
       return { success: false, error: err.message, configError: true };
     }
     if (err instanceof VoiceTimeoutError) {
       voiceLog.error('timed out', { durationMs });
+      await writeFailure('voice.elevenlabs_timeout');
       return {
         success: false,
         error: 'ElevenLabs לא הגיב בזמן. נסה שוב.',
@@ -202,6 +219,12 @@ async function generateSceneVoiceImplInner(
       };
     }
     voiceLog.error('failed', { errMsg, durationMs });
+    // Detect character-limit responses by message; ElevenLabs surfaces
+    // them as 401 with a specific body. Fall back to generic on misses.
+    const code = /character.{0,8}limit|quota/i.test(errMsg)
+      ? 'voice.character_limit'
+      : 'voice.config';
+    await writeFailure(code);
     return { success: false, error: `יצירת הקול נכשלה: ${errMsg}` };
   }
 
@@ -270,6 +293,10 @@ async function generateSceneVoiceImplInner(
             ? (captionChunks as unknown as Prisma.InputJsonValue)
             : Prisma.JsonNull,
         captionsGeneratedAt: captionChunks.length > 0 ? new Date() : null,
+        // V13 PR7.1 — voice stage succeeded; clear any prior error.
+        status: 'voice_ready',
+        lastErrorCode: null,
+        lastErrorMessage: null,
       },
     }),
     ...buildCreditMutationOps(prisma, {
