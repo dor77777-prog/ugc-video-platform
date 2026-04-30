@@ -1,7 +1,19 @@
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   transpilePackages: ['@ugc-video/shared', '@ugc-video/prompts'],
   reactStrictMode: true,
+  // Monorepo root — npm hoists ffmpeg-static + a bunch of other deps
+  // here. Without an explicit tracing root, Vercel's file tracer
+  // looks at apps/web only and silently skips the binary, so the
+  // function bundle on /var/task ships without ffmpeg → ENOENT at
+  // spawn time. Setting tracingRoot to the repo root fixes that.
+  outputFileTracingRoot: path.resolve(__dirname, '../..'),
   // In Next.js 15 the client-side router cache stores dynamic page RSC payloads
   // for 30s by default. Setting dynamic to 0 means every navigation to a
   // server-rendered page (dashboard, projects, scripts, scenes, etc.) gets fresh

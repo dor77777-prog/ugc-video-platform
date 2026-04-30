@@ -12,6 +12,7 @@
 // and save Kling's output directly.
 
 import { promises as fs } from 'fs';
+import { existsSync, statSync } from 'fs';
 import path from 'path';
 import os from 'os';
 import { spawn } from 'child_process';
@@ -27,7 +28,44 @@ import { parseBuffer as parseMediaBuffer } from 'music-metadata';
 // platform's binary (335MB total) and pushes the function bundle past
 // the 250MB Vercel limit. probeDurationSeconds() below uses the
 // pure-JS music-metadata library instead.
-const FFMPEG_BIN: string = ffmpegStatic ?? 'ffmpeg';
+//
+// Vercel monorepo bundling caveat: ffmpeg-static is hoisted to the
+// repo's top-level node_modules (not apps/web/node_modules). With
+// outputFileTracingRoot pointing at the repo root, the tracer copies
+// it to /var/task/node_modules/ffmpeg-static/ffmpeg. But on some
+// builds (or when serverExternalPackages rewrites the runtime path
+// constant) we can land on a stale path that doesn't exist anymore.
+// Try several plausible locations and pick the first one that
+// actually exists + has the executable bit. This makes the spawn
+// resilient to bundler quirks.
+function resolveFfmpegBin(): string {
+  const candidates: string[] = [];
+  if (typeof ffmpegStatic === 'string' && ffmpegStatic.length > 0) {
+    candidates.push(ffmpegStatic);
+  }
+  // Vercel runtime layout candidates (in priority order).
+  candidates.push(
+    '/var/task/node_modules/ffmpeg-static/ffmpeg',
+    '/var/task/apps/web/node_modules/ffmpeg-static/ffmpeg',
+    path.join(process.cwd(), 'node_modules', 'ffmpeg-static', 'ffmpeg'),
+    path.join(process.cwd(), '..', '..', 'node_modules', 'ffmpeg-static', 'ffmpeg'),
+  );
+  for (const candidate of candidates) {
+    try {
+      if (existsSync(candidate) && statSync(candidate).isFile()) {
+        return candidate;
+      }
+    } catch {
+      /* keep trying */
+    }
+  }
+  // Final fallback: rely on PATH (works on the worker host where
+  // ffmpeg is apt-installed; will throw ENOENT on Vercel — but at
+  // that point we've already tried every plausible bundled path).
+  return ffmpegStatic ?? 'ffmpeg';
+}
+
+const FFMPEG_BIN: string = resolveFfmpegBin();
 
 export class MuxError extends Error {
   constructor(message: string) {
@@ -104,7 +142,13 @@ async function runFfmpeg(args: string[]): Promise<void> {
     p.stderr.on('data', (d) => {
       stderr += d.toString();
     });
-    p.on('error', (err) => reject(new MuxError(`ffmpeg spawn failed: ${err.message}`)));
+    p.on('error', (err) =>
+      reject(
+        new MuxError(
+          `ffmpeg spawn failed (binary=${FFMPEG_BIN}): ${err.message}`,
+        ),
+      ),
+    );
     p.on('close', (code) => {
       if (code === 0) resolve();
       else
