@@ -12,6 +12,12 @@ import { processRenderJob } from './processors/render-processor';
 import { runKlingSweep } from './processors/kling-sweep';
 
 console.log('[worker] starting…');
+// V14 PR9.3 marker — printed at every container boot. If Railway builds
+// from the wrong commit, this string is the proof: it shows the SHA of
+// the source the running container was COMPILED from. Railway sets
+// RAILWAY_GIT_COMMIT_SHA for every build automatically.
+const builtFromSha = process.env.RAILWAY_GIT_COMMIT_SHA ?? '(unknown — RAILWAY_GIT_COMMIT_SHA not set)';
+console.log(`[worker] BUILD_MARKER=V14-PR9.3 builtFromSha=${builtFromSha}`);
 console.log(`[worker] redis: ${env.redisUrl}`);
 console.log(`[worker] concurrency: ${env.workerConcurrency}`);
 

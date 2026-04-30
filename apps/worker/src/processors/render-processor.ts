@@ -36,10 +36,13 @@ import {
 
 export async function processRenderJob(job: Job<RenderJobPayload>) {
   const { renderJobId } = job.data;
-  // V14 PR9.2 marker — if you don't see this line in Railway logs for a
-  // fresh render, the worker hasn't picked up the latest deploy and the
-  // music-picker / caption-bidi fixes won't be active.
-  console.log(`[render] V14-music-picker-build-2 starting job ${renderJobId}`);
+  // V14 PR9.3 marker — printed at every render start. The SHA suffix
+  // shows the exact source commit Railway built from. If this SHA does
+  // NOT match the latest commit on origin/main, Railway's GitHub
+  // integration is stale and the fix is to disconnect+reconnect the
+  // repo in Settings → Source.
+  const sha = (process.env.RAILWAY_GIT_COMMIT_SHA ?? 'unknown').slice(0, 8);
+  console.log(`[render] V14-PR9.3 sha=${sha} starting job ${renderJobId}`);
 
   const renderJob = await prisma.renderJob.findUnique({
     where: { id: renderJobId },
@@ -185,12 +188,66 @@ export async function processRenderJob(job: Job<RenderJobPayload>) {
       console.log('[render-music] backgroundMusic toggle OFF — rendering voice-only');
     }
     const musicVolume = userEnabledMusic ? resolveMusicVolume(musicProfile) : 0.08;
-    const musicUrl: string | null = musicSelection?.track.fileUrl ?? null;
+    let musicUrl: string | null = musicSelection?.track.fileUrl ?? null;
     // The user's offset is only meaningful when their track resolves —
     // a stale pick that fell back to auto-select uses offset=0 (auto
     // tracks haven't been previewed; the user couldn't have chosen
     // a meaningful offset for them).
-    const musicStartOffsetSec = userPickedTrack ? userPickedOffsetSec : 0;
+    let musicStartOffsetSec = userPickedTrack ? userPickedOffsetSec : 0;
+
+    // V14 PR9.3 — runtime URL probe. Even if the catalog is up-to-date in
+    // git, a deployed Worker might be running an older bundle whose
+    // catalog still references a track that has since been deleted from
+    // R2 (HTTP 404). Probing the URL with HEAD before composing means a
+    // stale catalog never produces a silent render: we iterate through
+    // safe-fallback tracks until one returns 200 OK.
+    if (musicUrl && musicSelection) {
+      const probeStart = Date.now();
+      const head = await fetch(musicUrl, { method: 'HEAD' }).catch(
+        (err) => ({ ok: false, status: 0, statusText: String(err) }) as Response,
+      );
+      if (!head.ok) {
+        console.warn(
+          `[render-music] picked track ${musicSelection.track.id} returned ` +
+            `HTTP ${head.status} (${head.statusText}) on HEAD — probing fallbacks`,
+        );
+        const candidates = listSafeFallbackTracks().filter(
+          (t) => t.id !== musicSelection!.track.id,
+        );
+        let healed = false;
+        for (const cand of candidates) {
+          const r = await fetch(cand.fileUrl, { method: 'HEAD' }).catch(
+            () => ({ ok: false, status: 0 }) as Response,
+          );
+          if (r.ok) {
+            console.log(
+              `[render-music] healed via runtime probe: ${cand.id} ` +
+                `(replaces stale ${musicSelection.track.id}, took ${Date.now() - probeStart}ms)`,
+            );
+            musicSelection = {
+              track: cand,
+              score: 0,
+              reason: 'runtime_probe_heal',
+            } as ReturnType<typeof selectMusicTrack>;
+            musicUrl = cand.fileUrl;
+            // Falling back from user pick → offset is meaningless on a
+            // different track. Reset to 0.
+            musicStartOffsetSec = 0;
+            healed = true;
+            break;
+          }
+        }
+        if (!healed) {
+          console.error(
+            `[render-music] runtime probe found NO usable tracks — shipping silent. ` +
+              `Investigate the R2 music catalog vs music-library.ts in the running bundle.`,
+          );
+          musicSelection = null;
+          musicUrl = null;
+        }
+      }
+    }
+
     if (musicSelection) {
       console.log(
         `[render] music selected: ${musicSelection.track.id} ` +
