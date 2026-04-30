@@ -294,6 +294,13 @@ export interface ScriptGenerationOutput {
     regenCalls: number;
     scriptsBelowThreshold: number; // count after retries — should be 0 ideally
   };
+  /** V13 hardening — number of onScriptReady callbacks that threw.
+   *  Callers SHOULD treat persistFailures > 0 as a partial-success at
+   *  best and `persistFailures === scripts.length` as a hard failure
+   *  to surface to the user (otherwise an empty UI is shown without
+   *  any error message — see the prod incident where the v13_scene_state_log
+   *  migration hadn't been applied yet). */
+  persistFailures: number;
 }
 
 // V6: per-framework parallel generation (Apr 2026). The previous version
@@ -341,6 +348,10 @@ export async function generateScripts(
   const startedAt = Date.now();
   let totalInputTokens = 0;
   let totalOutputTokens = 0;
+  // V13 hardening: count onScriptReady (typically persist-to-Prisma)
+  // failures so the caller can surface "scripts generated but none
+  // persisted" to the user instead of pretending success.
+  let persistFailures = 0;
 
   // Fire all 6 framework-pinned calls in parallel. Each call uses
   // SINGLE_SCRIPT_JSON_SCHEMA so the response is one well-typed script;
@@ -385,16 +396,21 @@ export async function generateScripts(
         // different slug despite the prompt pinning.
         parsedRegen.script.framework = framework;
         const generated = toGenerated(parsedRegen.script, false);
-        // Fire the streaming callback. Errors here are logged and
-        // swallowed so one persist failure doesn't poison the batch.
+        // Fire the streaming callback. Errors here are logged AND
+        // counted (V13 hardening — see ScriptGenerationOutput.persistFailures)
+        // so one persist failure doesn't poison the batch but the
+        // caller can still tell whether persistence succeeded. The
+        // earlier silent-swallow masked a missing-column migration in
+        // prod for hours.
         if (options?.onScriptReady) {
           try {
             await options.onScriptReady(generated, index);
           } catch (err) {
-            console.warn(
+            console.error(
               `[scripts] onScriptReady for framework=${framework} threw:`,
               (err as Error).message,
             );
+            persistFailures++;
           }
         }
         return generated;
@@ -428,6 +444,7 @@ export async function generateScripts(
       regenCalls: 0, // V6: regen folded into per-framework retry inside generateSingleFrameworkScript
       scriptsBelowThreshold,
     },
+    persistFailures,
   };
 }
 

@@ -258,6 +258,26 @@ export async function generateScriptsAction(
     );
     generated = result.scripts;
     usage = result.usage;
+
+    // V13 hardening: if every persist callback failed, the LLM call
+    // succeeded but no Script rows landed in the DB — pre-V13 the
+    // user just saw an empty wizard step with no error. Surface it.
+    // The earlier prod incident was the v13_scene_state_log migration
+    // not being applied; this guard would have caught it.
+    if (
+      result.persistFailures > 0 &&
+      result.persistFailures >= result.scripts.length
+    ) {
+      await recordApiCallComplete(scriptCallId, {
+        success: false,
+        errorMessage: `persist failed for all ${result.persistFailures} scripts`,
+        durationMs: Date.now() - scriptStartedAt,
+      });
+      return {
+        error:
+          'התסריטים נוצרו אך לא נשמרו במסד הנתונים. ייתכן שמיגרציה חסרה — בדוק את לוגי Vercel ואת מצב Supabase. לא חויבת קרדיטים על הקריאה הזו.',
+      };
+    }
   } catch (err) {
     // Close the in-progress row as failed so the dashboard reflects it.
     await recordApiCallComplete(scriptCallId, {
