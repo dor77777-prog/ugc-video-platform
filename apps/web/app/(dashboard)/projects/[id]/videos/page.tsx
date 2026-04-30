@@ -5,15 +5,19 @@ import { getOrCreateAppUser } from '@/lib/auth/sync-user';
 import { findVoicePreset } from '@/lib/voice/voice-presets';
 import { Card, CardContent } from '@/components/ui/card';
 import { Stepper } from '@/components/wizard/stepper';
-import { VoicePicker } from './voice-picker';
+// V14.3-B — VoicePicker / MusicPicker are exported from client-bits
+// as next/dynamic lazy wrappers (ssr: false). The page still renders
+// the same way; their JS bundles are now split out and only fetched
+// when a user actually interacts with them.
 import {
   GenerateAllVoicesButton,
   GenerateAllClipsButton,
   SceneClipCard,
   RenderFinalButton,
   CaptionPresetPicker,
+  VoicePicker,
+  MusicPicker,
 } from './client-bits';
-import { MusicPicker } from './music-picker';
 import { DEFAULT_CAPTION_PRESET_ID, type CaptionPresetId } from '@ugc-video/shared';
 import { deriveSceneRouting } from '@/lib/animation/scene-routing';
 

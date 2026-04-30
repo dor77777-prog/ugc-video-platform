@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
+import Image from 'next/image';
 
 // Custom events used by GenerateAllButton ↔ SceneCard so each tile can
 // poll its own state during a batch run. router.refresh() in Next.js 15
@@ -546,11 +547,12 @@ export function SceneCard(props: SceneCardProps) {
         {/* Image area */}
         <div className="relative aspect-[9/16] rounded-md bg-muted overflow-hidden border border-border">
           {hasImage && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
+            <Image
               src={effectiveImageUrl!}
               alt={`Scene ${props.sceneOrder + 1}`}
-              className="w-full h-full object-cover"
+              fill
+              sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+              className="object-cover"
             />
           )}
           {!hasImage && !showGeneratingOverlay && (

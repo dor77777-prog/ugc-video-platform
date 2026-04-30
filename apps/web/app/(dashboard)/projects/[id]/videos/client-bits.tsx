@@ -7,6 +7,34 @@ import {
   useState,
 } from 'react';
 import { useRouter } from 'next/navigation';
+import Image from 'next/image';
+import dynamic from 'next/dynamic';
+
+// V14.3-B — VoicePicker (312 lines) + MusicPicker (352 lines) are heavy
+// client components used only AFTER the user reaches step 5 / opens a
+// `<details>` disclosure. Lazy-loading them via next/dynamic with
+// ssr:false moves their JS into separate chunks that are fetched only
+// when actually rendered, shaving ~50KB off the initial videos-page
+// bundle. Server-render pages can't pass ssr:false directly in Next 15
+// — wrappers live here in a 'use client' module instead.
+export const VoicePicker = dynamic(
+  () => import('./voice-picker').then((m) => ({ default: m.VoicePicker })),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="text-xs text-muted-foreground p-3">טוען בורר קולות…</div>
+    ),
+  },
+);
+export const MusicPicker = dynamic(
+  () => import('./music-picker').then((m) => ({ default: m.MusicPicker })),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="text-xs text-muted-foreground p-3">טוען בורר מוזיקה…</div>
+    ),
+  },
+);
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -692,11 +720,12 @@ export function SceneClipCard(props: SceneClipCardProps) {
           /* Fallback: scene image (or empty state) */
           <div className="relative aspect-[9/16] rounded-md overflow-hidden bg-muted border border-border">
             {props.imageUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
+              <Image
                 src={props.imageUrl}
                 alt={`Scene ${props.sceneOrder + 1}`}
-                className="w-full h-full object-cover"
+                fill
+                sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+                className="object-cover"
               />
             ) : (
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-center p-4">

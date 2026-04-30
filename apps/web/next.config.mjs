@@ -65,6 +65,19 @@ const nextConfig = {
   outputFileTracingExcludes: {
     '*': ['apps/web/public/**', './public/**'],
   },
+  // V14.3-A — allow next/image to optimize the R2 CDN host. Avatar
+  // PNGs + scene PNGs + voice samples + music tracks all live there;
+  // optimizing them reduces avatar thumbnails (1024px → 56px) and
+  // scene tiles (1024×1792 → ~360px wide) by ~80% on average.
+  images: {
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: 'pub-eb116bdbeab8486f96ecf7c4fbc1014a.r2.dev',
+        pathname: '/**',
+      },
+    ],
+  },
 };
 
 export default nextConfig;

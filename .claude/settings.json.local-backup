@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ps -E -p 85279)",
+      "Bash(ln -sf ../../.env /Users/dorperetz/Downloads/ugc-video-platform/apps/web/.env)",
+      "Bash(node -e ' *)",
+      "Bash(pkill -f 'next dev')",
+      "Bash(:)",
+      "Bash(curl -s http://localhost:3000/api/health)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code} %{size_download} bytes\\\\n\" 'http://localhost:3000/uploads/scenes_cmoic58du00019kqzvnx7zf9r/cmoic7dyv00079kqz7ay2k7ra-1777363419268.png')",
+      "Bash(npm run *)",
+      "Bash(nohup npm *)",
+      "Bash(disown)",
+      "Bash(echo \"started PID=$!\")",
+      "Bash(lsof -i :3000 -sTCP:LISTEN -P -n)",
+      "Read(//private/tmp/**)",
+      "Bash(pkill -f \"next dev\")"
+    ]
+  }
+}

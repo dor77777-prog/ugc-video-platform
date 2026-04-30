@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import Image from 'next/image';
 import { notFound } from 'next/navigation';
 import { prisma } from '@/lib/db';
 import { getOrCreateAppUser } from '@/lib/auth/sync-user';
@@ -70,10 +71,11 @@ export default async function ScenesPage({
         <CardContent className="p-4 flex items-center gap-4">
           {avatar ? (
             <>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
+              <Image
                 src={avatar.imageUrl}
                 alt={avatar.name}
+                width={56}
+                height={56}
                 className="w-14 h-14 rounded-lg object-cover border border-border"
               />
               <div className="flex-1">
