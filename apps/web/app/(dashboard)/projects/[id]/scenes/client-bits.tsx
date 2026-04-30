@@ -35,6 +35,7 @@ import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import { ProgressBar } from '@/components/ui/progress-bar';
 import { ElapsedTimer } from '@/components/ui/elapsed-timer';
+import { AudioPreview } from '@/components/ui/audio-preview';
 import { cn } from '@/lib/utils';
 import { isPageVisible } from '@/lib/utils/visibility';
 import {
@@ -311,11 +312,22 @@ interface SceneCardProps {
   // try/finally. Survives page refresh so the user keeps seeing the
   // overlay even if they reload mid-generation.
   imageInFlightAt: string | null;
+  // V14.6 — voice props on scenes page so user can regen voice without
+  // navigating to step 5. Voice prereqs are textHebrew (always present
+  // by step 4) + a project voiceId (set via VoicePicker on this page).
+  voiceUrl: string | null;
+  voiceDurationSeconds: number | null;
+  voiceGenerationCount: number;
+  voiceInFlightAt: string | null;
+  voiceSelected: boolean;
 }
 
 // 3 min budget — Image gen is fast (gpt-image-1 ~30s) but we leave headroom
 // for network blips so a stale flag doesn't pin the overlay forever.
 const IMAGE_IN_FLIGHT_TTL_MS = 3 * 60 * 1000;
+// Voice gen is faster (~5-15s) but ElevenLabs occasional hiccups extend
+// it; 90s ceiling matches the per-scene budget in GenerateAllVoicesButton.
+const VOICE_IN_FLIGHT_TTL_MS = 90 * 1000;
 function isFresh(at: string | null, ttlMs: number): boolean {
   if (!at) return false;
   return Date.now() - new Date(at).getTime() < ttlMs;
@@ -596,6 +608,80 @@ export function SceneCard(props: SceneCardProps) {
     });
   };
 
+  // V14.6 — voice state machine for the per-scene "regenerate voice"
+  // button. Mirrors the image flow (clientPolls server-side flag, then
+  // falls back to a /api/scenes/[id] poll burst). Voice is independent
+  // of image: regenerating the image does NOT touch voice and vice
+  // versa.
+  const [voicePending, setVoicePending] = useState(false);
+  const [voiceError, setVoiceError] = useState<string | null>(null);
+  const [liveVoiceUrl, setLiveVoiceUrl] = useState<string | null>(null);
+  const effectiveVoiceUrl = liveVoiceUrl ?? props.voiceUrl;
+  const hasVoice = !!effectiveVoiceUrl;
+  const voiceInFlightServer = isFresh(props.voiceInFlightAt, VOICE_IN_FLIGHT_TTL_MS);
+  const showVoiceWorking = voicePending || voiceInFlightServer;
+
+  const handleRegenerateVoice = useCallback(async () => {
+    if (voicePending || !props.voiceSelected) return;
+    setVoicePending(true);
+    setVoiceError(null);
+    try {
+      const res = await fetch(`/api/scenes/${props.sceneId}/voice`, {
+        method: 'POST',
+      });
+      const body = (await res.json().catch(() => null)) as
+        | { success?: boolean; error?: string; voiceUrl?: string | null }
+        | null;
+      if (!body) {
+        setVoiceError('יצירת הקול נכשלה: תגובה לא תקינה מהשרת');
+        return;
+      }
+      if (body.success) {
+        if (body.voiceUrl) setLiveVoiceUrl(body.voiceUrl);
+        router.refresh();
+      } else {
+        setVoiceError(body.error ?? 'יצירת הקול נכשלה');
+      }
+    } catch (err) {
+      setVoiceError(`שגיאה: ${(err as Error).message}`);
+    } finally {
+      setVoicePending(false);
+    }
+  }, [voicePending, props.voiceSelected, props.sceneId, router]);
+
+  // Poll for the new voice URL while a regen is in-flight server-side.
+  // Same shape as the image-flight effect above.
+  const initialVoiceUrlRef = useRef(props.voiceUrl);
+  useEffect(() => {
+    if (!voiceInFlightServer) return;
+    const baselineUrl = initialVoiceUrlRef.current;
+    const id = setInterval(async () => {
+      if (!isPageVisible()) return;
+      try {
+        const res = await fetch(`/api/scenes/${propsRef.current.sceneId}`, {
+          cache: 'no-store',
+        });
+        if (!res.ok) return;
+        const json = (await res.json()) as {
+          voiceUrl: string | null;
+          voiceInFlightAt: string | null;
+        };
+        if (json.voiceUrl && json.voiceUrl !== baselineUrl) {
+          setLiveVoiceUrl(json.voiceUrl);
+          initialVoiceUrlRef.current = json.voiceUrl;
+          clearInterval(id);
+          router.refresh();
+        } else if (!json.voiceInFlightAt) {
+          clearInterval(id);
+          router.refresh();
+        }
+      } catch {
+        /* keep trying */
+      }
+    }, 3000);
+    return () => clearInterval(id);
+  }, [voiceInFlightServer, router]);
+
   return (
     <Card className={cn(hasImage && 'border-accent/40')}>
       <CardContent className="p-5 space-y-4">
@@ -754,6 +840,60 @@ export function SceneCard(props: SceneCardProps) {
         {state?.error && (
           <div className="text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded-md p-2">
             {state.error}
+          </div>
+        )}
+
+        {/* V14.6 — voice section: status + preview + regenerate. Hidden
+            when no voice is selected for the project (the picker at the
+            top of the page is the prereq). */}
+        {props.voiceSelected && (
+          <div className="pt-3 border-t border-border space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 text-xs">
+                <span className="text-muted-foreground">קריינות:</span>
+                {showVoiceWorking ? (
+                  <span className="flex items-center gap-1 text-primary">
+                    <span className="animate-pulse">🎙</span>
+                    <span>יוצר…</span>
+                  </span>
+                ) : hasVoice ? (
+                  <span className="text-emerald-600 dark:text-emerald-400">
+                    ✓ נוצרה
+                  </span>
+                ) : (
+                  <span className="text-muted-foreground">לא נוצרה</span>
+                )}
+                {props.voiceGenerationCount > 0 && !showVoiceWorking && (
+                  <span className="text-muted-foreground">
+                    · {props.voiceGenerationCount} ניסיונות
+                  </span>
+                )}
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                variant={hasVoice ? 'outline' : 'default'}
+                disabled={showVoiceWorking}
+                onClick={handleRegenerateVoice}
+              >
+                {showVoiceWorking
+                  ? 'יוצר…'
+                  : hasVoice
+                    ? '↻ צור מחדש (1 קרדיט)'
+                    : '🎙 צור קול (1 קרדיט)'}
+              </Button>
+            </div>
+            {hasVoice && (
+              <AudioPreview
+                src={effectiveVoiceUrl!}
+                durationSeconds={props.voiceDurationSeconds}
+              />
+            )}
+            {voiceError && (
+              <div className="text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded-md p-2">
+                {voiceError}
+              </div>
+            )}
           </div>
         )}
       </CardContent>

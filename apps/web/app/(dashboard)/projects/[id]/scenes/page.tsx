@@ -178,6 +178,12 @@ export default async function ScenesPage({
             imageUrl={scene.imageUrl}
             imageGenerationCount={scene.imageGenerationCount}
             imageInFlightAt={scene.imageInFlightAt ? scene.imageInFlightAt.toISOString() : null}
+            // V14.6 — voice props for per-scene regen controls.
+            voiceUrl={scene.voiceUrl}
+            voiceDurationSeconds={scene.voiceDurationSeconds}
+            voiceGenerationCount={scene.voiceGenerationCount}
+            voiceInFlightAt={scene.voiceInFlightAt ? scene.voiceInFlightAt.toISOString() : null}
+            voiceSelected={!!voicePreset}
           />
         ))}
       </div>
