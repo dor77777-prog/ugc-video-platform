@@ -12,6 +12,15 @@ const nextConfig = {
       dynamic: 0,
     },
   },
+  // ffmpeg-static MUST stay external — Next.js's webpack server bundle
+  // otherwise tries to copy the binary into .next/server/chunks/ as if
+  // it were a JS chunk. At runtime the package's path constant points
+  // back to node_modules, but the bundler-rewritten copy under
+  // chunks/ffmpeg is what actually ships in the function — so spawn()
+  // hits ENOENT. Externalizing keeps the original node_modules path
+  // intact and outputFileTracingIncludes below ensures the binary is
+  // bundled in the function's filesystem.
+  serverExternalPackages: ['ffmpeg-static'],
   // ffmpeg-static ships a platform-specific binary inside node_modules.
   // Next.js's file tracer skips it because the path is resolved at runtime
   // via a string export. Force-include the binary so Vercel bundles it
