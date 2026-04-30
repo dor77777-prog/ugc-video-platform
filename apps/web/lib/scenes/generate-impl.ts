@@ -17,6 +17,7 @@ import {
 import { LlmConfigError } from '@/lib/llm/scripts';
 import { getStorage } from '@/lib/storage';
 import { recordApiCallStart, recordApiCallComplete, recordApiCall } from '@/lib/usage/log';
+import { attributeOpenAiImageCost } from '@/lib/usage/cost-attribution';
 import { priceOpenAiImage } from '@/lib/usage/pricing';
 import { buildCreditMutationOps } from '@/lib/usage/credits';
 import { checkRateLimit, RateLimitedError } from '@/lib/usage/rate-limit';
@@ -241,8 +242,15 @@ async function generateSceneImageImplInner(
     operation: 'image_gen',
     model: process.env.OPENAI_IMAGE_MODEL || 'gpt-image-2',
     units: 1,
+    estimatedCostUsd: attributeOpenAiImageCost({
+      model: process.env.OPENAI_IMAGE_MODEL || 'gpt-image-2',
+      quality: 'medium',
+      size: aspectRatio === '9:16' ? '1024x1792' : '1024x1024',
+    }).estimatedCostUsd,
     userId,
     projectId: project.id,
+    sceneId,
+    metadata: { quality: 'medium', aspectRatio },
   });
   let result;
   try {
@@ -329,12 +337,20 @@ async function generateSceneImageImplInner(
     return { success: false, error: `יצירת התמונה נכשלה: ${errMsg}` };
   }
 
+  const imageAttribution = attributeOpenAiImageCost({
+    model: result.model,
+    quality: result.quality,
+    size: result.size,
+  });
   await recordApiCallComplete(imageCallId, {
     success: true,
     model: result.model,
-    costUsd: priceOpenAiImage(result.model, result.quality, result.size),
+    costUsd: imageAttribution.costUsd,
+    estimatedCostUsd: imageAttribution.estimatedCostUsd,
+    actualCostUsd: imageAttribution.actualCostUsd,
     units: 1,
     durationMs: result.durationMs,
+    metadata: { ...imageAttribution.metadata, source: imageAttribution.source },
   });
   imageLog.info('gpt-image-2 returned', {
     model: result.model,

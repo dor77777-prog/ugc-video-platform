@@ -1,6 +1,12 @@
 'use client';
 
-import { useEffect, useState, useTransition } from 'react';
+// V13.2 — in-flight section now polls /api/admin/costs/in-flight
+// directly every 4s instead of full-page router.refresh(). The
+// summary/recent-calls components have their own polling cadence,
+// so a 4s tick here only re-runs the small in-flight query (covered
+// by the (status, createdAt) composite index).
+
+import { useCallback, useEffect, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -41,10 +47,13 @@ export interface InFlightRow {
 
 // Live tile of currently-running provider calls. We:
 //   1. Tick the elapsed timer every second so the user sees the call age.
-//   2. Re-query via router.refresh() every 5 seconds so completed rows
-//      drop off and new ones appear without a manual reload.
-export function InFlightCallsSection({ rows }: { rows: InFlightRow[] }) {
+//   2. Poll /api/admin/costs/in-flight every 4s for fresh rows. Faster
+//      than the rest of the dashboard because in-flight calls finish
+//      mid-poll and the operator wants to see "started"/"finished"
+//      transitions in near-real-time.
+export function InFlightCallsSection({ rows: initial }: { rows: InFlightRow[] }) {
   const router = useRouter();
+  const [rows, setRows] = useState<InFlightRow[]>(initial);
   const [now, setNow] = useState<number>(() => Date.now());
 
   // Per-second clock for elapsed display.
@@ -53,13 +62,28 @@ export function InFlightCallsSection({ rows }: { rows: InFlightRow[] }) {
     return () => clearInterval(id);
   }, []);
 
-  // Re-fetch the page every 5s so we pick up newly-finished/started rows.
-  // 5s is a fair compromise — the page is server-rendered force-dynamic,
-  // so each refresh hits the DB without much overhead.
+  const refresh = useCallback(async () => {
+    try {
+      const res = await fetch('/api/admin/costs/in-flight', { cache: 'no-store' });
+      if (!res.ok) return;
+      const json = (await res.json()) as { rows: InFlightRow[] };
+      setRows(
+        json.rows.map((r) => ({
+          ...r,
+          createdAt: new Date(r.createdAt as unknown as string),
+        })),
+      );
+    } catch {
+      /* observability only — keep previous data */
+    }
+  }, []);
+
   useEffect(() => {
-    const id = setInterval(() => router.refresh(), 5000);
+    const id = setInterval(() => {
+      if (document.visibilityState === 'visible') void refresh();
+    }, 4000);
     return () => clearInterval(id);
-  }, [router]);
+  }, [refresh]);
 
   if (rows.length === 0) {
     return (

@@ -15,6 +15,7 @@ import { getStorage } from '@/lib/storage';
 import { recordApiCallStart, recordApiCallComplete } from '@/lib/usage/log';
 import { logStage, flushSceneLogBuffer } from '@/lib/logging/log';
 import { priceElevenLabsTts } from '@/lib/usage/pricing';
+import { attributeElevenLabsTtsCost } from '@/lib/usage/cost-attribution';
 import { buildCreditMutationOps } from '@/lib/usage/credits';
 import { checkRateLimit, RateLimitedError } from '@/lib/usage/rate-limit';
 import { checkSpendCap, SpendCapExceededError } from '@/lib/usage/spend-cap';
@@ -169,8 +170,11 @@ async function generateSceneVoiceImplInner(
     operation: 'tts',
     model: 'eleven_v3',
     units: text.length,
+    estimatedCostUsd: priceElevenLabsTts('eleven_v3', text.length),
     userId,
     projectId: project.id,
+    sceneId,
+    metadata: { characters: text.length, voiceId: preset.voiceId },
   });
   try {
     result = await generateHebrewVoiceover({
@@ -230,15 +234,31 @@ async function generateSceneVoiceImplInner(
     return { success: false, error: `יצירת הקול נכשלה: ${errMsg}` };
   }
 
+  // V13.2 — actual cost comes from real character count; metadata
+  // captures the audio bytes + alignment chars so /admin/scenes/[id]/debug
+  // and the recent-calls table can drill down without re-fetching.
+  const ttsAttribution = attributeElevenLabsTtsCost({
+    model: result.model,
+    characters: text.length,
+  });
   await recordApiCallComplete(ttsCallId, {
     success: true,
     model: result.model,
-    costUsd: priceElevenLabsTts(result.model, text.length),
+    costUsd: ttsAttribution.costUsd,
+    estimatedCostUsd: ttsAttribution.estimatedCostUsd,
+    actualCostUsd: ttsAttribution.actualCostUsd,
     // Characters is the metered unit on ElevenLabs ($0.10/1K for v2/v3,
     // $0.05/1K for Flash/Turbo). Stored in `units` so the admin dashboard
     // can show it alongside cost as "X chars" per call.
     units: text.length,
     durationMs: Date.now() - ttsStartedAt,
+    metadata: {
+      ...ttsAttribution.metadata,
+      audioBytes: result.audioBytes.byteLength,
+      alignmentChars: result.characterTimings?.length ?? 0,
+      durationSeconds: result.durationSeconds,
+      source: ttsAttribution.source,
+    },
   });
 
   voiceLog.info('elevenlabs returned', {

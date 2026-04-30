@@ -59,6 +59,12 @@ import { muxVoiceOntoVideo, readUrlAsBuffer, MuxError } from '@/lib/scenes/mux-a
 import { getStorage } from '@/lib/storage';
 import { recordApiCall, recordApiCallStart, recordApiCallComplete } from '@/lib/usage/log';
 import {
+  attributeOpenAiTextCost,
+  attributeKlingI2vCost,
+  attributePixVerseLipSyncCost,
+  attributeLocalComposeCost,
+} from '@/lib/usage/cost-attribution';
+import {
   priceKling,
   klingPricingKeyForModel,
   priceOpenAiText,
@@ -394,6 +400,7 @@ async function generateSceneClipImplInner(
       model: process.env.OPENAI_MOTION_VISION_MODEL ?? 'gpt-4o-mini',
       userId,
       projectId,
+      sceneId,
     });
     const motionAnalysisStartedAt = Date.now();
     try {
@@ -404,17 +411,21 @@ async function generateSceneClipImplInner(
         sceneGenerationType: routing.sceneGenerationType,
       });
       const durationMs = Date.now() - motionAnalysisStartedAt;
+      const motionAttribution = attributeOpenAiTextCost({
+        model: process.env.OPENAI_MOTION_VISION_MODEL ?? 'gpt-4o-mini',
+        inputTokens: motionAnalysis.usage.inputTokens,
+        outputTokens: motionAnalysis.usage.outputTokens,
+      });
       await recordApiCallComplete(motionAnalysisCallId, {
         success: true,
         model: process.env.OPENAI_MOTION_VISION_MODEL ?? 'gpt-4o-mini',
-        costUsd: priceOpenAiText(
-          process.env.OPENAI_MOTION_VISION_MODEL ?? 'gpt-4o-mini',
-          motionAnalysis.usage.inputTokens,
-          motionAnalysis.usage.outputTokens,
-        ),
+        costUsd: motionAttribution.costUsd,
+        estimatedCostUsd: motionAttribution.estimatedCostUsd,
+        actualCostUsd: motionAttribution.actualCostUsd,
         inputTokens: motionAnalysis.usage.inputTokens,
         outputTokens: motionAnalysis.usage.outputTokens,
         durationMs,
+        metadata: { ...motionAttribution.metadata, source: motionAttribution.source },
       });
       motionLog.info('analysis returned', {
         primaryAction: motionAnalysis.primaryAction,
@@ -550,8 +561,14 @@ async function generateSceneClipImplInner(
     operation: 'i2v',
     model: process.env.KLING_IMAGE_TO_VIDEO_MODEL ?? 'kling-v3-omni',
     units: 1,
+    estimatedCostUsd: attributeKlingI2vCost({
+      modelUsed: process.env.KLING_IMAGE_TO_VIDEO_MODEL ?? 'kling-v3-omni',
+      durationSeconds: clipDuration,
+    }).estimatedCostUsd,
     userId,
     projectId,
+    sceneId,
+    metadata: { durationSeconds: clipDuration, hasProductRef: !!productRefUrl },
   });
   try {
     i2vResult = await klingProvider.generateImageToVideo({
@@ -592,12 +609,26 @@ async function generateSceneClipImplInner(
   }
 
   const i2vDurationMs = Date.now() - i2vStartedAt;
+  const i2vAttribution = attributeKlingI2vCost({
+    modelUsed: i2vResult.modelUsed,
+    durationSeconds: i2vResult.durationSeconds,
+    // Kling does NOT expose token_count today. If they ever do, pass it
+    // here as `tokensUsed` and the attribution helper will switch from
+    // observed-constant ($0.79/clip) to actual_usage (tokens × $0.546).
+  });
   await recordApiCallComplete(i2vCallId, {
     success: true,
     model: i2vResult.modelUsed,
-    costUsd: priceKling(klingPricingKeyForModel(i2vResult.modelUsed)),
+    costUsd: i2vAttribution.costUsd,
+    estimatedCostUsd: i2vAttribution.estimatedCostUsd,
+    actualCostUsd: i2vAttribution.actualCostUsd,
     units: 1,
     durationMs: i2vDurationMs,
+    metadata: {
+      ...i2vAttribution.metadata,
+      source: i2vAttribution.source,
+      durationSecondsActual: i2vResult.durationSeconds,
+    },
   });
   klingLog.info('i2v returned', {
     model: i2vResult.modelUsed,
@@ -703,8 +734,13 @@ async function generateSceneClipImplInner(
         operation: 'lipsync',
         model: 'pixverse-lip-sync',
         units: 1,
+        estimatedCostUsd: attributePixVerseLipSyncCost({
+          durationSeconds: finalDuration,
+        }).estimatedCostUsd,
         userId,
         projectId,
+        sceneId,
+        metadata: { durationSeconds: finalDuration, faceVisibility: routing.faceVisibility },
       });
       try {
         pixverseLog.info('calling lipsync provider', {
@@ -723,15 +759,24 @@ async function generateSceneClipImplInner(
         finalDuration = lsResult.durationSeconds;
         lipSyncTaskId = lsResult.providerJobId;
         const lsDurationMs = Date.now() - lipsyncStartedAt;
+        const lipsyncAttribution = attributePixVerseLipSyncCost({
+          durationSeconds: finalDuration,
+          // PixVerse doesn't return credit_consumed today. If they
+          // ever do, pass it here and the helper will switch to actual.
+        });
         await recordApiCallComplete(lipsyncCallId, {
           success: true,
           model: lsResult.modelUsed,
-          // Route to the right provider's cost function. Previously
-          // hardcoded to priceKling, which under-reported PixVerse +
-          // Sync.so calls in /admin/costs.
-          costUsd: priceLipSync(lsResult.providerName, finalDuration),
+          costUsd: lipsyncAttribution.costUsd,
+          estimatedCostUsd: lipsyncAttribution.estimatedCostUsd,
+          actualCostUsd: lipsyncAttribution.actualCostUsd,
           units: 1,
           durationMs: lsDurationMs,
+          metadata: {
+            ...lipsyncAttribution.metadata,
+            providerJobId: lsResult.providerJobId,
+            source: lipsyncAttribution.source,
+          },
         });
         // Trust completion data, ignore status field — see comment in
         // lib/animation/lipsync/pixverse.ts about the unreliability of
@@ -791,15 +836,19 @@ async function generateSceneClipImplInner(
     } catch (err) {
       const errMsg = err instanceof MuxError ? err.message : (err as Error).message;
       muxErrorMessage = errMsg;
+      const muxAttribution = attributeLocalComposeCost({ operation: 'mux' });
       await recordApiCall({
         provider: 'ffmpeg',
         operation: 'mux',
         model: 'ffmpeg-local',
-        costUsd: 0,
+        costUsd: muxAttribution.costUsd,
+        estimatedCostUsd: muxAttribution.estimatedCostUsd,
         success: false,
         errorMessage: `audio mux failed: ${errMsg}`,
         userId,
         projectId,
+        sceneId,
+        metadata: { ...muxAttribution.metadata, errorMessage: errMsg },
       });
     }
   }
@@ -1118,13 +1167,19 @@ export async function regenLipSyncOnlyImpl(
     const audioPublicUrl = scene.voiceUrl;
 
     const startedAt = Date.now();
+    const lipsyncOnlyDurationSec = scene.clipDurationSeconds ?? scene.durationSeconds ?? 5;
     const callId = await recordApiCallStart({
       provider: lipsyncProvider.name,
       operation: 'lipsync',
       model: 'pixverse-lip-sync',
       units: 1,
+      estimatedCostUsd: attributePixVerseLipSyncCost({
+        durationSeconds: lipsyncOnlyDurationSec,
+      }).estimatedCostUsd,
       userId,
       projectId,
+      sceneId,
+      metadata: { durationSeconds: lipsyncOnlyDurationSec, retryMode: 'lipsync_only' },
     });
 
     let lsResult;
@@ -1138,12 +1193,23 @@ export async function regenLipSyncOnlyImpl(
         // here, the provider can degrade gracefully.
         faceVisibility: 'clear_front_facing' as never,
       });
+      const retryAttribution = attributePixVerseLipSyncCost({
+        durationSeconds: lipsyncOnlyDurationSec,
+      });
       await recordApiCallComplete(callId, {
         success: true,
         model: lsResult.modelUsed,
-        costUsd: priceLipSync(lsResult.providerName, scene.clipDurationSeconds ?? 5),
+        costUsd: retryAttribution.costUsd,
+        estimatedCostUsd: retryAttribution.estimatedCostUsd,
+        actualCostUsd: retryAttribution.actualCostUsd,
         units: 1,
         durationMs: Date.now() - startedAt,
+        metadata: {
+          ...retryAttribution.metadata,
+          providerJobId: lsResult.providerJobId,
+          source: retryAttribution.source,
+          retryMode: 'lipsync_only',
+        },
       });
     } catch (err) {
       const errMsg = (err as Error).message;

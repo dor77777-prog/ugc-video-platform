@@ -1,25 +1,38 @@
 # tachles · STATUS
 
-Living document. Last update: **2026-04-30** (V13.1 — ffmpeg cold-start
-download from CDN to `/tmp` because Vercel can't bundle the static
-binary on this monorepo + protective refund: a non-lipsync scene
-whose mux fails now skips clipUrl persistence + sets `status='failed'`
-+ doesn't charge the user. Earlier today: V13 PR9 — `npm test`
-master runner ships. Cumulative V13 surface: PR1 removed the
-post-generation Image QA auto-regen loop; PR2 strengthened the
-upstream Image Brief with Israeli realism / hands physics / mirror
-safety / product reference lock / product-demo contact-proof rules;
-PR3 added the deterministic Animation Plan + `buildKlingPromptFromPlan`;
-PR4 added a stage-tagged logger with sensitive-data masking; PR5
-shipped the curated Hebrew error map; PR6 added the
-`v13_scene_state_log` migration (status / lastErrorCode /
-lastErrorMessage / generationLogJson) + `apps/web/lib/scenes/scene-status.ts`;
-PR7 wired state transitions in every pipeline impl + persisted
-the per-scene log buffer + shipped four wizard UX components
-(`SceneCardStatusBadge` / `SceneErrorDetails` / `SceneLogViewer` /
-`WizardWarningsPanel`); PR8 surfaced everything on
+Living document. Last update: **2026-04-30** (V13.2 — admin /admin/costs
+accuracy + auto-refresh + DB performance hardening. Per-call cost
+attribution moved into `lib/usage/cost-attribution.ts` (one helper per
+provider; prefers actual usage, falls back to formulas/constants;
+never derived from balance deltas). New columns on `ApiCall`:
+`estimatedCostUsd`, `actualCostUsd`, `metadata` (JSON), `renderJobId`,
+`sceneId` + 9 new composite indexes. New `ProviderBalanceSnapshot`
+model + 60s in-process cache (`lib/providers/balance-snapshot.ts`).
+Five new admin API routes — `/api/admin/costs/{summary, recent-calls,
+in-flight, provider-balances, operation-stats}` — guarded by
+`requireAdminApi()` (401/403 JSON for API routes, vs page-level
+redirect). Three new client components on `/admin/costs` polling at
+20s/4s/8s with date + provider + operation + status filters and
+last-updated chip. Migration `20260430120000_v13_2_costs_hardening`
+adds 13 indexes total across ApiCall / CreditTransaction / RenderJob /
+Project / ProviderBalanceSnapshot. Verification: new
+`apps/web/scripts/test-v13-pr10.ts` runs 31 assertions (390+ across
+all V13 PRs). tsc clean. V13.1 — ffmpeg cold-start download from CDN to
+`/tmp` because Vercel can't bundle the static binary on this monorepo
++ protective refund: a non-lipsync scene whose mux fails now skips
+clipUrl persistence + sets `status='failed'` + doesn't charge the user.
+Earlier today: V13 PR9 — `npm test` master runner ships. Cumulative
+V13 surface: PR1 removed the post-generation Image QA auto-regen loop;
+PR2 strengthened the upstream Image Brief with Israeli realism / hands
+physics / mirror safety / product reference lock / product-demo
+contact-proof rules; PR3 added the deterministic Animation Plan +
+`buildKlingPromptFromPlan`; PR4 added a stage-tagged logger with
+sensitive-data masking; PR5 shipped the curated Hebrew error map; PR6
+added the `v13_scene_state_log` migration; PR7 wired state transitions
+in every pipeline impl + persisted the per-scene log buffer + shipped
+four wizard UX components; PR8 surfaced everything on
 `/admin/scenes/[id]/debug`; PR9 wraps the 8 verification scripts behind
-a single `npm test` command. 360+ assertions pass. tsc clean.).
+a single `npm test` command.).
 
 This is the deep spec — what each subsystem actually does, where it
 lives, what's real vs mocked, and known issues. For a high-level pitch
@@ -187,6 +200,12 @@ ugc-video-platform/
 16. `20260429095553_v7_pixverse_face_gate` — full PixVerse + face-gate columns
 17. `20260429164500_v10_scene_captions` — wordTimingsJson + captionChunksJson + captionsGeneratedAt
 18. `20260429170000_v11_image_qa` — imageBriefJson + imageQaJson + imageRegenAttempts + needsManualReview
+19. `20260430085802_v13_scene_state_log` — Scene.status / lastErrorCode / lastErrorMessage / generationLogJson
+20. `20260430120000_v13_2_costs_hardening` — V13.2 admin-costs hardening:
+    - `ApiCall.estimatedCostUsd` / `actualCostUsd` / `metadata` / `renderJobId` / `sceneId`
+    - `CreditTransaction.refType`
+    - New `ProviderBalanceSnapshot` table (provider / balanceType / balanceValue / balanceUnit / estimatedUsdValue / rawJson / status / errorMessage / fetchedAt)
+    - 13 new indexes covering admin-cost queries: `ApiCall(provider, operation, createdAt)` · `(provider, status, createdAt)` · `completedAt` · `(userId, createdAt)` · `(projectId, createdAt)` · `(renderJobId, createdAt)` · `(sceneId, createdAt)`; `CreditTransaction(refType, ref)`; `RenderJob(status, createdAt)` · `(projectId, createdAt)` · `completedAt`; `Project(userId, createdAt)`; `ProviderBalanceSnapshot(provider, fetchedAt)`. Performance targets: recent-50 < 300ms p95, in-flight < 200ms p95, summary < 500ms p95, no normal admin query emits `[SLOW QUERY] >500ms`.
 
 `Project.productData` and `Script.rawJson` carry many additional fields
 without dedicated columns (intelligence bundle, music profile, captions
@@ -229,6 +248,20 @@ plastic in JSON for evolving creative metadata.
 ### ✅ ApiCall logging (two-phase)
 - [`lib/usage/log.ts`](apps/web/lib/usage/log.ts) — `recordApiCallStart` inserts `status='in_progress'` immediately; `recordApiCallComplete` flips to `success`/`failed` with cost + duration + tokens.
 - Lets `/admin/costs` show **live** in-flight calls with elapsed timer. The dashboard also warns on stuck calls (>3min with no completion).
+- **V13.2** — completions also write `estimatedCostUsd` / `actualCostUsd` / `metadata` (JSON, safe usage payload only — never auth headers) and link the row to `renderJobId` / `sceneId` when known. `costUsd` mirrors `actualCostUsd ?? estimatedCostUsd`. Per-row drilldown at `/admin/scenes/[id]/debug` reads these directly.
+
+### ✅ Cost attribution (V13.2) ([`lib/usage/cost-attribution.ts`](apps/web/lib/usage/cost-attribution.ts))
+- One helper per provider — `attributeOpenAiTextCost`, `attributeOpenAiImageCost`, `attributeElevenLabsTtsCost`, `attributeKlingI2vCost`, `attributePixVerseLipSyncCost`, `attributePixVerseMediaUploadCost`, `attributeLocalComposeCost`. Each returns `{ costUsd, estimatedCostUsd, actualCostUsd?, source, metadata }`.
+- Three rules in order: (1) provider-reported usage (tokens / chars / credits) when available → `source='actual_usage'`; (2) configured formula or constant → `source='estimate'` or `'observed_constant'`; (3) **never** balance deltas. The deliberately-throwing `FORBIDDEN_balanceDeltaAttribution()` exists so a verification test can keep the invariant honest.
+- Why not balance deltas? Multiple in-flight calls bleed into each other (race condition under concurrency), the /balance endpoints rate-limit hard (free-tier ElevenLabs already 429s on 60s polling), and tests become non-deterministic.
+- Provider live balances are observability + reconciliation only (`lib/providers/balance-snapshot.ts`, 60s in-process cache, soft-fail per provider, persisted to `ProviderBalanceSnapshot` for trends).
+
+### ✅ Admin /admin/costs (V13.2 polling)
+- Five new admin API routes — `GET /api/admin/costs/{summary, recent-calls, in-flight, provider-balances, operation-stats}` — guarded by `requireAdminApi()` from [`lib/auth/admin-api.ts`](apps/web/lib/auth/admin-api.ts) which returns JSON 401/403 (page-level `requireAdmin()` redirects, which API routes can't do).
+- Polling cadence: summary 20s · recent-calls 8s · in-flight 4s · provider-balances 60s. Each section is its own client component that pauses on `document.visibilityState !== 'visible'` and shows last-updated chip + manual ↻ refresh.
+- Filters on recent-calls: provider · operation · status · since · until. Allowlists are static (no SQL injection vector — closed sets in route.ts). Heavy `metadata` JSON is opt-in via `?expand=metadata`; per-row drilldown lazy-fetches it.
+- Server-side caches: summary 15s · operation-stats 30s. A burst of admin tabs polling at the client cadence collapses into ONE DB aggregate per cache window.
+- DB indexes covering the hot paths — see "Migrations" below.
 
 ### ✅ Scraper ([`lib/scraper/`](apps/web/lib/scraper/))
 - Tier 1: Shopify endpoint (`/products/<handle>.json`) + JSON-LD `Product` schema + Open Graph + microdata.

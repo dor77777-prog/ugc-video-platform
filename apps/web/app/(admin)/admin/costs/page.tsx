@@ -3,6 +3,8 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { InFlightCallsSection } from './in-flight';
+import { RecentCallsTable } from './recent-calls';
+import { SummaryKpis } from './summary-kpis';
 import { PROVIDER_CATALOG } from '@/lib/usage/pricing';
 import {
   CREDIT_LIST_VALUE_USD,
@@ -219,12 +221,19 @@ export default async function AdminUsagePage() {
         </p>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <Kpi label="היום" value={fmtUSD(today._sum.costUsd)} sublabel={`${today._count._all} קריאות`} />
-        <Kpi label="7 ימים אחרונים" value={fmtUSD(week._sum.costUsd)} sublabel={`${week._count._all} קריאות`} />
-        <Kpi label="30 ימים אחרונים" value={fmtUSD(month._sum.costUsd)} sublabel={`${month._count._all} קריאות`} />
-        <Kpi label="סך הכל" value={fmtUSD(allTime._sum.costUsd)} sublabel={`${allTime._count._all} קריאות`} accent />
-      </div>
+      {/* V13.2 — KPI tiles poll /api/admin/costs/summary every 20s. The
+          SSR pass seeds the initial values so the dashboard renders
+          instantly; the client takes over for updates. */}
+      <SummaryKpis
+        initial={{
+          today: { sum: today._sum.costUsd ?? 0, count: today._count._all },
+          week: { sum: week._sum.costUsd ?? 0, count: week._count._all },
+          month: { sum: month._sum.costUsd ?? 0, count: month._count._all },
+          allTime: { sum: allTime._sum.costUsd ?? 0, count: allTime._count._all },
+          failedToday,
+          fetchedAt: new Date().toISOString(),
+        }}
+      />
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <Kpi
@@ -1135,70 +1144,35 @@ export default async function AdminUsagePage() {
         </div>
       )}
 
-      <div>
-        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">
-          50 קריאות אחרונות
-        </h2>
-        <Card>
-          <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>זמן</TableHead>
-                  <TableHead>ספק</TableHead>
-                  <TableHead>פעולה</TableHead>
-                  <TableHead>מודל</TableHead>
-                  <TableHead>יחידות</TableHead>
-                  <TableHead>משך</TableHead>
-                  <TableHead>עלות</TableHead>
-                  <TableHead>משתמש</TableHead>
-                  <TableHead>סטטוס</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {recent.map((c) => (
-                  <TableRow key={c.id}>
-                    <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
-                      {c.createdAt.toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short' })}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline">{PROVIDER_LABEL[c.provider] ?? c.provider}</Badge>
-                    </TableCell>
-                    <TableCell className="text-sm">{OPERATION_LABEL[c.operation] ?? c.operation}</TableCell>
-                    <TableCell className="font-mono text-xs" dir="ltr">{c.model ?? '—'}</TableCell>
-                    <TableCell className="font-mono text-xs whitespace-nowrap">
-                      {formatUnits(c.provider, c.operation, c.inputTokens, c.outputTokens, c.units)}
-                    </TableCell>
-                    <TableCell className="font-mono text-xs">
-                      {c.durationMs != null ? `${(c.durationMs / 1000).toFixed(1)}s` : '—'}
-                    </TableCell>
-                    <TableCell className="font-mono">{fmtUSD(c.costUsd)}</TableCell>
-                    <TableCell dir="ltr" className="text-xs text-muted-foreground">
-                      {c.user?.email ?? '—'}
-                    </TableCell>
-                    <TableCell>
-                      {c.success ? (
-                        <Badge variant="success">OK</Badge>
-                      ) : (
-                        <Badge variant="destructive" title={c.errorMessage ?? undefined}>
-                          fail
-                        </Badge>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))}
-                {recent.length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={9} className="text-center text-muted-foreground py-8">
-                      אין קריאות עדיין. ברגע שמישהו ייצר תסריט / תמונה — זה יופיע כאן.
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      </div>
+      {/* V13.2 — recent calls table is now a client component that polls
+          /api/admin/costs/recent-calls every 8s, supports
+          provider/operation/status/date filters, and lazy-loads metadata
+          per-row via ?expand=metadata. Initial 50 are SSR-rendered. */}
+      <RecentCallsTable
+        initial={recent.map((c) => ({
+          id: c.id,
+          provider: c.provider,
+          operation: c.operation,
+          model: c.model,
+          status: c.status,
+          success: c.success,
+          costUsd: c.costUsd,
+          estimatedCostUsd: (c as { estimatedCostUsd: number | null }).estimatedCostUsd ?? null,
+          actualCostUsd: (c as { actualCostUsd: number | null }).actualCostUsd ?? null,
+          inputTokens: c.inputTokens,
+          outputTokens: c.outputTokens,
+          units: c.units,
+          durationMs: c.durationMs,
+          errorMessage: c.errorMessage,
+          createdAt: c.createdAt.toISOString(),
+          completedAt: c.completedAt ? c.completedAt.toISOString() : null,
+          userId: c.userId,
+          projectId: c.projectId,
+          renderJobId: (c as { renderJobId: string | null }).renderJobId ?? null,
+          sceneId: (c as { sceneId: string | null }).sceneId ?? null,
+          user: c.user,
+        }))}
+      />
     </div>
   );
 }
@@ -1284,32 +1258,5 @@ function fmtUSD(v: number | null | undefined): string {
   return `$${v.toFixed(2)}`;
 }
 
-// Display the metered unit per provider so the cost is interpretable at a
-// glance: OpenAI text shows token in/out, ElevenLabs shows characters,
-// Kling shows resource units, etc.
-function formatUnits(
-  provider: string,
-  operation: string,
-  inputTokens: number | null,
-  outputTokens: number | null,
-  units: number | null,
-): string {
-  if (provider === 'openai' && operation === 'script_gen') {
-    if (inputTokens != null || outputTokens != null) {
-      return `${inputTokens ?? 0} → ${outputTokens ?? 0} tok`;
-    }
-  }
-  if (provider === 'openai' && operation === 'image_gen') {
-    return units ? `${units} img` : '1 img';
-  }
-  if (provider === 'elevenlabs') {
-    if (units) return `${units} chars`;
-  }
-  if (provider === 'kling') {
-    if (units) return `${units} task`;
-  }
-  if (inputTokens != null || outputTokens != null) {
-    return `${inputTokens ?? 0} / ${outputTokens ?? 0}`;
-  }
-  return units != null ? String(units) : '—';
-}
+// V13.2 — formatUnits moved into the client component
+// app/(admin)/admin/costs/recent-calls.tsx alongside the live table.

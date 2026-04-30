@@ -35,20 +35,25 @@ const nextConfig = {
   serverExternalPackages: ['ffmpeg-static'],
   // ffmpeg-static ships a platform-specific binary inside node_modules.
   // Next.js's file tracer skips it because the path is resolved at runtime
-  // via a string export. Force-include the binary so Vercel bundles it
-  // with the scene clip API route (which calls muxVoiceOntoVideo).
+  // via a string export. Force-include the binary on every route that
+  // could reach muxVoiceOntoVideo (clip route + the scripts/regen-prompt
+  // path that occasionally calls it indirectly). Paths are relative to
+  // outputFileTracingRoot above (monorepo root) — npm hoists the dep
+  // there in this workspace, NOT under apps/web/node_modules.
   //
   // We deliberately do NOT include ffprobe-static here — duration probing
   // moved to the pure-JS music-metadata package (~300KB) so we can stay
   // under Vercel's 250MB function size limit.
   outputFileTracingIncludes: {
     '/api/scenes/[id]/clip': [
-      './node_modules/ffmpeg-static/ffmpeg',
-      './node_modules/ffmpeg-static/index.js',
-      './node_modules/ffmpeg-static/package.json',
-      '../../node_modules/ffmpeg-static/ffmpeg',
-      '../../node_modules/ffmpeg-static/index.js',
-      '../../node_modules/ffmpeg-static/package.json',
+      'node_modules/ffmpeg-static/**',
+    ],
+    // Belt-and-braces: include in the scenes/[id] catch-all bundle too.
+    // Vercel's function-collapsing sometimes merges several routes into
+    // one .func; if it picks a different keyed route as the "owner" the
+    // binary needs to be available there as well.
+    '/api/scenes/[id]/**': [
+      'node_modules/ffmpeg-static/**',
     ],
   },
   // public/ contains 159MB of static assets (avatar PNGs, music tracks,

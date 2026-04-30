@@ -125,12 +125,17 @@ model CreditTransaction {
   amount    Int
   reason    String   // e.g. "scene_clip" / "refund:lipsync_failed" / "admin_grant"
   ref       String?  // sceneId / projectId / apiCallId for traceability
+  // V13.2 — refType complements `ref` so admin can filter "all
+  // refunds tied to scenes" without parsing reason strings. Both
+  // nullable so older rows still load.
+  refType   String?  // 'scene' | 'project' | 'render' | 'api_call' | 'admin'
   adminId   String?  // user id that issued the transaction (NULL for auto)
   metadata  Json?
   createdAt DateTime @default(now())
 
   @@index([userId, createdAt])
   @@index([reason, createdAt])
+  @@index([refType, ref])
 }
 
 // One row per outbound call to a paid provider (OpenAI, ElevenLabs, Kling, etc).
@@ -140,7 +145,18 @@ model ApiCall {
   provider      String
   operation     String
   model         String?
+  // Final attributed cost in USD. Sourced from provider response usage
+  // (tokens, characters) when available, else from configured formulas
+  // / constants. Never derived from balance-deltas — see V13.2 docs on
+  // why per-call balance attribution is unsafe under concurrency.
   costUsd       Float    @default(0)
+  // V13.2 — split estimate vs actual when both are available. estimate
+  // is the static-formula number we'd fall back to; actual is what the
+  // provider actually billed (if their response exposes usage). costUsd
+  // mirrors actualCostUsd when set, else estimatedCostUsd. Both
+  // nullable so historical rows still load.
+  estimatedCostUsd Float?
+  actualCostUsd    Float?
   inputTokens   Int?
   outputTokens  Int?
   units         Int?
@@ -157,9 +173,21 @@ model ApiCall {
   status        String   @default("success")  // "in_progress" | "success" | "failed"
   completedAt   DateTime?                      // NULL while in_progress
 
+  // V13.2 — safe-to-store raw provider usage metadata. JSON so schema
+  // doesn't need a migration when a provider exposes a new dimension
+  // (e.g. PixVerse credit_consumed, Kling token_count, OpenAI tier).
+  // NEVER store auth headers / api keys here — only payload fields.
+  metadata      Json?
+
   userId    String?
   user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
   projectId String?
+  // V13.2 — link calls to a render or scene when known. Lets the
+  // /admin/scenes/[id]/debug page show the actual provider calls
+  // for the scene (instead of guessing by createdAt window) and
+  // lets admin filter recent calls by render/scene.
+  renderJobId String?
+  sceneId     String?
 
   createdAt DateTime @default(now())
 
@@ -167,8 +195,36 @@ model ApiCall {
   @@index([operation, createdAt])
   @@index([createdAt])
   @@index([status, createdAt])
+  @@index([provider, operation, createdAt])
+  @@index([provider, status, createdAt])
+  @@index([completedAt])
+  @@index([userId, createdAt])
+  @@index([projectId, createdAt])
+  @@index([renderJobId, createdAt])
+  @@index([sceneId, createdAt])
   @@index([userId])
   @@index([projectId])
+}
+
+// V13.2 — snapshot of provider live balance for trend / reconciliation.
+// Filled by `/api/admin/costs/provider-balances` on a ≥60s cache TTL.
+// NEVER read before/after a paid provider call as a way to attribute
+// per-call cost — that approach is unsafe under concurrency and creates
+// rate-limit pressure. See lib/providers/balance-snapshot.ts.
+model ProviderBalanceSnapshot {
+  id                 String   @id @default(cuid())
+  provider           String   // openai | elevenlabs | kling | pixverse
+  balanceType        String   // 'credits' | 'units' | 'characters' | 'usd_spent'
+  balanceValue       Float    // amount remaining (or spent, for OpenAI)
+  balanceUnit        String   // 'kling_units' | 'pixverse_credits' | 'characters' | 'usd'
+  estimatedUsdValue  Float?   // computed in app code (e.g. units × $/unit)
+  rawJson            Json?    // safe raw response (no auth headers)
+  status             String   @default("ok") // 'ok' | 'error'
+  errorMessage       String?
+  fetchedAt          DateTime @default(now())
+
+  @@index([provider, fetchedAt])
+  @@index([fetchedAt])
 }
 
 model Project {
@@ -190,6 +246,7 @@ model Project {
 
   @@index([userId])
   @@index([status])
+  @@index([userId, createdAt])
 }
 
 model Script {
@@ -432,6 +489,9 @@ model RenderJob {
   @@index([projectId])
   @@index([userId])
   @@index([status])
+  @@index([status, createdAt])
+  @@index([projectId, createdAt])
+  @@index([completedAt])
 }
 
 model Asset {

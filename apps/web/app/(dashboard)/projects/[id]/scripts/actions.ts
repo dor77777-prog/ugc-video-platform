@@ -8,6 +8,7 @@ import { getOrCreateAppUser } from '@/lib/auth/sync-user';
 import { generateScripts, LlmConfigError, type GeneratedScript } from '@/lib/llm/scripts';
 import { recordApiCallStart, recordApiCallComplete } from '@/lib/usage/log';
 import { priceOpenAiText } from '@/lib/usage/pricing';
+import { attributeOpenAiTextCost } from '@/lib/usage/cost-attribution';
 import { buildCreditMutationOps } from '@/lib/usage/credits';
 import { checkRateLimit, RateLimitedError } from '@/lib/usage/rate-limit';
 import { checkSpendCap, SpendCapExceededError } from '@/lib/usage/spend-cap';
@@ -292,14 +293,26 @@ export async function generateScriptsAction(
   }
 
   // Successful call — close the in-progress row with computed cost.
+  const scriptAttribution = attributeOpenAiTextCost({
+    model: usage.model,
+    inputTokens: usage.inputTokens,
+    outputTokens: usage.outputTokens,
+  });
   await recordApiCallComplete(scriptCallId, {
     success: true,
     model: usage.model,
-    costUsd: priceOpenAiText(usage.model, usage.inputTokens, usage.outputTokens),
+    costUsd: scriptAttribution.costUsd,
+    estimatedCostUsd: scriptAttribution.estimatedCostUsd,
+    actualCostUsd: scriptAttribution.actualCostUsd,
     inputTokens: usage.inputTokens,
     outputTokens: usage.outputTokens,
     units: generated.length,
     durationMs: usage.durationMs,
+    metadata: {
+      ...scriptAttribution.metadata,
+      source: scriptAttribution.source,
+      scriptsGenerated: generated.length,
+    },
   });
 
   // Scripts have already been persisted by the onScriptReady callback
