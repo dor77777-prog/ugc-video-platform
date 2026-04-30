@@ -8,6 +8,7 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db';
 import { findAvatar, describeAvatar } from '@/lib/avatars/catalog';
+import { computeLockedOutfit } from '@/lib/avatars/outfit';
 import {
   generateSceneImage,
   SceneImageSafetyError,
@@ -154,6 +155,33 @@ async function generateSceneImageImplInner(
   const categoryId = typeof data.category === 'string' ? data.category : null;
   const totalScenes = await prisma.scene.count({ where: { scriptId: scene.scriptId } });
 
+  // V14 PR3 — outfit lock. Compute once on first scene generation that has
+  // an avatar, persist to Project.productData.lockedOutfit, then reuse
+  // verbatim across every scene of the same project so consistency-anchor
+  // sees a stable outfit string. Race-safe under concurrent first scenes:
+  // computeLockedOutfit is deterministic, so two parallel writers produce
+  // the same string.
+  let lockedOutfit: string | null =
+    typeof data.lockedOutfit === 'string' ? data.lockedOutfit : null;
+  if (!lockedOutfit && selectedAvatar) {
+    lockedOutfit = computeLockedOutfit({
+      gender: selectedAvatar.gender,
+      style: selectedAvatar.style,
+      archetype: selectedAvatar.archetype,
+      religiousRegister: selectedAvatar.religiousRegister,
+      productCategory: categoryId,
+    });
+    try {
+      await prisma.project.update({
+        where: { id: project.id },
+        data: { productData: { ...data, lockedOutfit } as Prisma.InputJsonValue },
+      });
+    } catch {
+      // Non-fatal: outfit lock is a quality lever, not a correctness gate.
+      // The next scene gen recomputes the same deterministic string.
+    }
+  }
+
   // V11 — pull the Product Intelligence bundle off productData. Used
   // by the deterministic Image Brief Builder (which replaces the old
   // narration → image prompt path) and by the QA evaluator below.
@@ -195,6 +223,7 @@ async function generateSceneImageImplInner(
     showFace: (scene as { showFace?: boolean | null }).showFace ?? null,
     intelligence,
     isProblemScene: isProblem,
+    outfitDescriptionLocked: lockedOutfit,
   });
   briefLog.info('brief built', {
     mustShowCount: brief.mustShow.length,
