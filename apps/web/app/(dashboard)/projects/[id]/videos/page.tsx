@@ -5,17 +5,14 @@ import { getOrCreateAppUser } from '@/lib/auth/sync-user';
 import { findVoicePreset } from '@/lib/voice/voice-presets';
 import { Card, CardContent } from '@/components/ui/card';
 import { Stepper } from '@/components/wizard/stepper';
-// V14.3-B — VoicePicker / MusicPicker are exported from client-bits
-// as next/dynamic lazy wrappers (ssr: false). The page still renders
-// the same way; their JS bundles are now split out and only fetched
-// when a user actually interacts with them.
+// V14.3-B — MusicPicker is exported from client-bits as a
+// next/dynamic lazy wrapper (ssr: false). VoicePicker is no longer
+// imported here — V14.7 moved all voice UI to step 4 (scenes page).
 import {
-  GenerateAllVoicesButton,
   GenerateAllClipsButton,
   SceneClipCard,
   RenderFinalButton,
   CaptionPresetPicker,
-  VoicePicker,
   MusicPicker,
 } from './client-bits';
 import { DEFAULT_CAPTION_PRESET_ID, type CaptionPresetId } from '@ugc-video/shared';
@@ -142,35 +139,37 @@ export default async function VideosPage({
         </Card>
       )}
 
-      {/* Voice picker — required prerequisite for all voice generation */}
-      {!voicePreset ? (
-        <Card>
-          <CardContent className="p-6">
-            <VoicePicker projectId={projectId} initialVoiceId={null} />
+      {/* V14.7 — voice picker + voice batch button moved to step 4
+          (scenes page). This page only shows clip generation and final
+          render. The voice-pick state is read-only here for context. */}
+      {voicePreset && (
+        <Card className="bg-accent/10 border-accent/30">
+          <CardContent className="p-3 flex items-center gap-3 text-xs">
+            <span className="text-muted-foreground">קול נבחר:</span>
+            <span className="font-semibold">{voicePreset.displayName}</span>
+            <span className="text-muted-foreground">
+              ({voicePreset.gender === 'female' ? 'אישה' : 'גבר'} · {voicePreset.ageRange}
+              )
+            </span>
+            <Link
+              href={`/projects/${projectId}/scenes`}
+              className="ms-auto text-primary underline"
+            >
+              שנה קול בשלב הסצנות →
+            </Link>
           </CardContent>
         </Card>
-      ) : (
-        <Card className="bg-accent/10 border-accent/30">
-          <CardContent className="p-4 flex items-center gap-4 flex-wrap">
-            <div className="flex-1">
-              <div className="text-xs text-muted-foreground">קול נבחר</div>
-              <div className="font-semibold">{voicePreset.displayName}</div>
-              <div className="text-[11px] text-muted-foreground">
-                {voicePreset.gender === 'female' ? 'אישה' : 'גבר'} · {voicePreset.ageRange}{' '}
-                · {voicePreset.energy}
-              </div>
-            </div>
-            <details className="text-xs">
-              <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
-                החלף קול
-              </summary>
-              <div className="mt-3 min-w-[300px] md:min-w-[600px]">
-                <VoicePicker projectId={projectId} initialVoiceId={voicePreset.id} />
-                <p className="text-[11px] text-muted-foreground mt-2">
-                  ⚠ אחרי החלפה — תצטרך לרגנר את ה-voice-overs ואז את הקליפים.
-                </p>
-              </div>
-            </details>
+      )}
+      {!voicePreset && (
+        <Card className="border-amber-500/30 bg-amber-500/5">
+          <CardContent className="p-4 text-sm">
+            ⚠ עדיין לא נבחר קול.{' '}
+            <Link
+              href={`/projects/${projectId}/scenes`}
+              className="font-semibold text-primary underline"
+            >
+              חזור לשלב הסצנות וסמן קול →
+            </Link>
           </CardContent>
         </Card>
       )}
@@ -179,15 +178,8 @@ export default async function VideosPage({
           lipsync route, decided automatically by the face-detection
           gate. There is no user-facing choice. */}
 
-      {/* Batch buttons — voices first, then clips */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <GenerateAllVoicesButton
-          scenes={sceneInfos}
-          creditsBalance={dbUser.creditsBalance}
-          voiceSelected={!!voicePreset}
-        />
-        <GenerateAllClipsButton scenes={sceneInfos} creditsBalance={dbUser.creditsBalance} />
-      </div>
+      {/* V14.7 — voice batch removed; only the clip batch remains. */}
+      <GenerateAllClipsButton scenes={sceneInfos} creditsBalance={dbUser.creditsBalance} />
 
       {/* Per-scene grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -205,6 +197,7 @@ export default async function VideosPage({
             <SceneClipCard
               key={scene.id}
               sceneId={scene.id}
+              projectId={projectId}
               sceneOrder={scene.sceneOrder}
               totalScenes={scenes.length}
               sceneGoal={scene.sceneGoal ?? null}

@@ -8,6 +8,7 @@ import {
 } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
+import Link from 'next/link';
 import dynamic from 'next/dynamic';
 
 // V14.3-B — VoicePicker (312 lines) + MusicPicker (352 lines) are heavy
@@ -352,6 +353,8 @@ export function GenerateAllClipsButton({
 
 interface SceneClipCardProps {
   sceneId: string;
+  // V14.7 — used by the "no voice yet" link back to the scenes page.
+  projectId: string;
   sceneOrder: number;
   totalScenes: number;
   sceneGoal: string | null;
@@ -752,43 +755,26 @@ export function SceneClipCard(props: SceneClipCardProps) {
           </div>
         )}
 
-        {/* Voice row — keep the existing audio playable during a regen so
-            the user can A/B compare. A small "regenerating" badge sits on
-            top of the player; the spinner-only view is only used when
-            there's NO existing voice yet (first generation). */}
+        {/* Voice row — V14.7 read-only on this page. All voice generation
+            + regeneration moved to step 4 (scenes page). The user lands
+            here with voice already produced; we only show the audio
+            preview. If voice is somehow missing (e.g. step-4 batch
+            failed), surface a link back to the scenes page. */}
         <div className="space-y-2">
           {hasVoice ? (
-            <>
-              <div className="relative">
-                <AudioPreview
-                  src={effectiveVoiceUrl!}
-                  durationSeconds={props.voiceDurationSeconds ?? null}
-                />
-                {showVoiceWorking && (
-                  <div className="absolute top-1 right-1 z-20 rounded bg-primary text-primary-foreground text-[10px] px-1.5 py-0.5 flex items-center gap-1 shadow-md ring-1 ring-white/20">
-                    <span className="animate-pulse">🎙️</span>
-                    <span>מתחדש…</span>
-                    <ElapsedTimer keyValue={props.sceneId + props.voiceGenerationCount} />
-                  </div>
-                )}
-              </div>
-              <form action={voiceFormAction}>
-                <Button
-                  type="submit"
-                  size="sm"
-                  variant="outline"
-                  className="w-full"
-                  disabled={!canGenerateVoice || showVoiceWorking}
-                  title={
-                    !props.voiceSelected
-                      ? 'בחר קול בראש העמוד לפני שמרגנרים voice-over'
-                      : 'יוצר voice חדש לפי הקול הנוכחי שנבחר ב-VoicePicker'
-                  }
-                >
-                  {showVoiceWorking ? 'מתחדש…' : '↻ צור voice-over מחדש'}
-                </Button>
-              </form>
-            </>
+            <div className="relative">
+              <AudioPreview
+                src={effectiveVoiceUrl!}
+                durationSeconds={props.voiceDurationSeconds ?? null}
+              />
+              {showVoiceWorking && (
+                <div className="absolute top-1 right-1 z-20 rounded bg-primary text-primary-foreground text-[10px] px-1.5 py-0.5 flex items-center gap-1 shadow-md ring-1 ring-white/20">
+                  <span className="animate-pulse">🎙️</span>
+                  <span>מתחדש…</span>
+                  <ElapsedTimer keyValue={props.sceneId + props.voiceGenerationCount} />
+                </div>
+              )}
+            </div>
           ) : showVoiceWorking ? (
             <div className="rounded-md border border-primary/30 bg-primary/[0.04] p-3 flex items-center gap-3">
               <span className="text-xl animate-shimmer-overlay">🎙️</span>
@@ -800,21 +786,15 @@ export function SceneClipCard(props: SceneClipCardProps) {
               </div>
             </div>
           ) : (
-            <form action={voiceFormAction}>
-              <Button
-                type="submit"
-                size="sm"
-                variant="outline"
-                disabled={!canGenerateVoice}
-                className="w-full"
+            <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-2 text-[11px] text-muted-foreground">
+              ⚠ אין voice-over —{' '}
+              <Link
+                href={`/projects/${props.projectId}/scenes`}
+                className="text-primary underline"
               >
-                {props.voiceSelected ? '🎙️ צור voice-over' : '🎙️ בחר קול לפני יצירת voice'}
-              </Button>
-            </form>
-          )}
-          {voiceState?.error && (
-            <div className="text-[11px] text-destructive bg-destructive/10 border border-destructive/20 rounded-md px-2 py-1.5">
-              {voiceState.error}
+                חזור לשלב הסצנות לייצור הקול
+              </Link>
+              .
             </div>
           )}
         </div>
