@@ -1,8 +1,13 @@
-// Static avatar catalog — 16 distinct AI-generated Israeli portraits.
+// Static avatar catalog — 25 distinct AI-generated Israeli portraits.
 // The image files are produced by scripts/generate-avatar-portraits.ts (one-time
 // gpt-image-2 generation) and saved to apps/web/public/avatars/{id}.png.
 // gpt-image-2 preserves identity reliably when references are AI-generated
 // (unlike real-people stock photos, where its safety policies cause drift).
+
+import type {
+  PersonaArchetype,
+  ReligiousRegister,
+} from '@/lib/scene-planning/israeli-realism-rules';
 
 export type AvatarGender = 'male' | 'female';
 export type AvatarAgeRange = '18-20' | '20-25' | '25-30' | '30-40' | '40-50' | '50+';
@@ -16,6 +21,12 @@ export interface AvatarProfile {
   style: AvatarStyle;
   imageUrl: string;
   region: string; // descriptor used by the prompt builder
+  // V14 PR1 — the avatar IS the character. Persona archetype + religious
+  // register are the two CueContext inputs that downstream scene planning
+  // (chooseIsraeliCues) needs and can't infer from {gender, age, region}
+  // alone. Required + explicit for all 25 entries; never nullable.
+  archetype: PersonaArchetype;
+  religiousRegister: ReligiousRegister;
 }
 
 // V12.2 — avatars are served from Cloudflare R2 in production (the
@@ -28,39 +39,39 @@ const local = (id: string) => `${R2_PUBLIC}/avatars/${id}.png`;
 
 export const AVATAR_CATALOG: AvatarProfile[] = [
   // Female · 20-30
-  { id: 'noa', name: 'נועה', gender: 'female', ageRange: '20-25', style: 'casual', region: 'Tel Aviv', imageUrl: local('noa') },
-  { id: 'shira', name: 'שירה', gender: 'female', ageRange: '20-25', style: 'sporty', region: 'Tel Aviv', imageUrl: local('shira') },
-  { id: 'tamar', name: 'תמר', gender: 'female', ageRange: '25-30', style: 'casual', region: 'Tel Aviv', imageUrl: local('tamar') },
-  { id: 'maya', name: 'מאיה', gender: 'female', ageRange: '25-30', style: 'lifestyle', region: 'Haifa', imageUrl: local('maya') },
+  { id: 'noa', name: 'נועה', gender: 'female', ageRange: '20-25', style: 'casual', region: 'Tel Aviv', imageUrl: local('noa'), archetype: 'young_tel_aviv', religiousRegister: 'secular' },
+  { id: 'shira', name: 'שירה', gender: 'female', ageRange: '20-25', style: 'sporty', region: 'Tel Aviv', imageUrl: local('shira'), archetype: 'young_tel_aviv', religiousRegister: 'secular' },
+  { id: 'tamar', name: 'תמר', gender: 'female', ageRange: '25-30', style: 'casual', region: 'Tel Aviv', imageUrl: local('tamar'), archetype: 'young_tel_aviv', religiousRegister: 'secular' },
+  { id: 'maya', name: 'מאיה', gender: 'female', ageRange: '25-30', style: 'lifestyle', region: 'Haifa', imageUrl: local('maya'), archetype: 'young_tel_aviv', religiousRegister: 'secular' },
   // Female · 30-50
-  { id: 'liat', name: 'ליאת', gender: 'female', ageRange: '30-40', style: 'professional', region: 'Tel Aviv', imageUrl: local('liat') },
-  { id: 'ortal', name: 'אורטל', gender: 'female', ageRange: '30-40', style: 'casual', region: 'Ramat Gan', imageUrl: local('ortal') },
-  { id: 'einat', name: 'עינת', gender: 'female', ageRange: '40-50', style: 'professional', region: 'Tel Aviv', imageUrl: local('einat') },
-  { id: 'galit', name: 'גלית', gender: 'female', ageRange: '50+', style: 'lifestyle', region: 'Jerusalem', imageUrl: local('galit') },
+  { id: 'liat', name: 'ליאת', gender: 'female', ageRange: '30-40', style: 'professional', region: 'Tel Aviv', imageUrl: local('liat'), archetype: 'aspirational_modern', religiousRegister: 'secular' },
+  { id: 'ortal', name: 'אורטל', gender: 'female', ageRange: '30-40', style: 'casual', region: 'Ramat Gan', imageUrl: local('ortal'), archetype: 'family_suburban', religiousRegister: 'secular' },
+  { id: 'einat', name: 'עינת', gender: 'female', ageRange: '40-50', style: 'professional', region: 'Tel Aviv', imageUrl: local('einat'), archetype: 'aspirational_modern', religiousRegister: 'secular' },
+  { id: 'galit', name: 'גלית', gender: 'female', ageRange: '50+', style: 'lifestyle', region: 'Jerusalem', imageUrl: local('galit'), archetype: 'mature_traditional', religiousRegister: 'traditional' },
   // Male · 20-30
-  { id: 'yoav', name: 'יואב', gender: 'male', ageRange: '20-25', style: 'casual', region: 'Tel Aviv', imageUrl: local('yoav') },
-  { id: 'omri', name: 'עומרי', gender: 'male', ageRange: '20-25', style: 'sporty', region: 'Tel Aviv', imageUrl: local('omri') },
-  { id: 'ron', name: 'רון', gender: 'male', ageRange: '25-30', style: 'casual', region: 'Tel Aviv', imageUrl: local('ron') },
-  { id: 'ido', name: 'עידו', gender: 'male', ageRange: '25-30', style: 'lifestyle', region: 'Haifa', imageUrl: local('ido') },
+  { id: 'yoav', name: 'יואב', gender: 'male', ageRange: '20-25', style: 'casual', region: 'Tel Aviv', imageUrl: local('yoav'), archetype: 'young_tel_aviv', religiousRegister: 'secular' },
+  { id: 'omri', name: 'עומרי', gender: 'male', ageRange: '20-25', style: 'sporty', region: 'Tel Aviv', imageUrl: local('omri'), archetype: 'young_tel_aviv', religiousRegister: 'secular' },
+  { id: 'ron', name: 'רון', gender: 'male', ageRange: '25-30', style: 'casual', region: 'Tel Aviv', imageUrl: local('ron'), archetype: 'young_tel_aviv', religiousRegister: 'secular' },
+  { id: 'ido', name: 'עידו', gender: 'male', ageRange: '25-30', style: 'lifestyle', region: 'Haifa', imageUrl: local('ido'), archetype: 'young_tel_aviv', religiousRegister: 'secular' },
   // Male · 30-50
-  { id: 'eran', name: 'ערן', gender: 'male', ageRange: '30-40', style: 'professional', region: 'Tel Aviv', imageUrl: local('eran') },
-  { id: 'avi', name: 'אבי', gender: 'male', ageRange: '30-40', style: 'casual', region: 'Ramat Gan', imageUrl: local('avi') },
-  { id: 'gil', name: 'גיל', gender: 'male', ageRange: '40-50', style: 'professional', region: 'Tel Aviv', imageUrl: local('gil') },
-  { id: 'moshe', name: 'משה', gender: 'male', ageRange: '50+', style: 'lifestyle', region: 'Jerusalem', imageUrl: local('moshe') },
+  { id: 'eran', name: 'ערן', gender: 'male', ageRange: '30-40', style: 'professional', region: 'Tel Aviv', imageUrl: local('eran'), archetype: 'aspirational_modern', religiousRegister: 'secular' },
+  { id: 'avi', name: 'אבי', gender: 'male', ageRange: '30-40', style: 'casual', region: 'Ramat Gan', imageUrl: local('avi'), archetype: 'family_suburban', religiousRegister: 'secular' },
+  { id: 'gil', name: 'גיל', gender: 'male', ageRange: '40-50', style: 'professional', region: 'Tel Aviv', imageUrl: local('gil'), archetype: 'aspirational_modern', religiousRegister: 'secular' },
+  { id: 'moshe', name: 'משה', gender: 'male', ageRange: '50+', style: 'lifestyle', region: 'Jerusalem', imageUrl: local('moshe'), archetype: 'mature_traditional', religiousRegister: 'traditional' },
 
   // ── New diverse Israeli additions ──────────────────────────────────────────
   // Female · 18-30
-  { id: 'yael', name: 'יעל', gender: 'female', ageRange: '18-20', style: 'casual', region: 'Be\'er Sheva', imageUrl: local('yael') },
-  { id: 'adi', name: 'עדי', gender: 'female', ageRange: '20-25', style: 'sporty', region: 'Tel Aviv', imageUrl: local('adi') },
-  { id: 'inbar', name: 'ענבר', gender: 'female', ageRange: '20-25', style: 'lifestyle', region: 'Tel Aviv', imageUrl: local('inbar') },
-  { id: 'avigail', name: 'אביגיל', gender: 'female', ageRange: '25-30', style: 'professional', region: 'Modi\'in', imageUrl: local('avigail') },
+  { id: 'yael', name: 'יעל', gender: 'female', ageRange: '18-20', style: 'casual', region: 'Be\'er Sheva', imageUrl: local('yael'), archetype: 'periphery_practical', religiousRegister: 'secular' },
+  { id: 'adi', name: 'עדי', gender: 'female', ageRange: '20-25', style: 'sporty', region: 'Tel Aviv', imageUrl: local('adi'), archetype: 'young_tel_aviv', religiousRegister: 'secular' },
+  { id: 'inbar', name: 'ענבר', gender: 'female', ageRange: '20-25', style: 'lifestyle', region: 'Tel Aviv', imageUrl: local('inbar'), archetype: 'young_tel_aviv', religiousRegister: 'secular' },
+  { id: 'avigail', name: 'אביגיל', gender: 'female', ageRange: '25-30', style: 'professional', region: 'Modi\'in', imageUrl: local('avigail'), archetype: 'family_suburban', religiousRegister: 'traditional' },
   // Female · 30-50
-  { id: 'sapir', name: 'ספיר', gender: 'female', ageRange: '30-40', style: 'casual', region: 'Tel Aviv', imageUrl: local('sapir') },
-  { id: 'hila', name: 'הילה', gender: 'female', ageRange: '40-50', style: 'lifestyle', region: 'Galilee', imageUrl: local('hila') },
+  { id: 'sapir', name: 'ספיר', gender: 'female', ageRange: '30-40', style: 'casual', region: 'Tel Aviv', imageUrl: local('sapir'), archetype: 'family_suburban', religiousRegister: 'secular' },
+  { id: 'hila', name: 'הילה', gender: 'female', ageRange: '40-50', style: 'lifestyle', region: 'Galilee', imageUrl: local('hila'), archetype: 'outdoorsy', religiousRegister: 'secular' },
   // Male · 18-50
-  { id: 'tomer', name: 'תומר', gender: 'male', ageRange: '18-20', style: 'casual', region: 'Eilat', imageUrl: local('tomer') },
-  { id: 'itay', name: 'איתי', gender: 'male', ageRange: '30-40', style: 'casual', region: 'Haifa', imageUrl: local('itay') },
-  { id: 'yosef', name: 'יוסף', gender: 'male', ageRange: '50+', style: 'lifestyle', region: 'Jerusalem', imageUrl: local('yosef') },
+  { id: 'tomer', name: 'תומר', gender: 'male', ageRange: '18-20', style: 'casual', region: 'Eilat', imageUrl: local('tomer'), archetype: 'outdoorsy', religiousRegister: 'secular' },
+  { id: 'itay', name: 'איתי', gender: 'male', ageRange: '30-40', style: 'casual', region: 'Haifa', imageUrl: local('itay'), archetype: 'family_suburban', religiousRegister: 'secular' },
+  { id: 'yosef', name: 'יוסף', gender: 'male', ageRange: '50+', style: 'lifestyle', region: 'Jerusalem', imageUrl: local('yosef'), archetype: 'mature_traditional', religiousRegister: 'traditional' },
 ];
 
 export function findAvatar(id: string | null | undefined): AvatarProfile | null {

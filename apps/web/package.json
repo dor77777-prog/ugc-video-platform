@@ -7,8 +7,9 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "test": "tsx scripts/test-v13-all.ts",
-    "test:v13": "tsx scripts/test-v13-all.ts"
+    "test": "tsx scripts/test-v13-all.ts && tsx scripts/test-v14-all.ts",
+    "test:v13": "tsx scripts/test-v13-all.ts",
+    "test:v14": "tsx scripts/test-v14-all.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1038.0",
