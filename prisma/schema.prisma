@@ -463,6 +463,10 @@ model Scene {
 
   @@unique([scriptId, sceneOrder])
   @@index([scriptId])
+  // V14.1c — scene state-machine + admin drill-down filtering hits
+  // `status` directly. Without this index, /admin/scenes?status=failed
+  // and any future state-filter query does a full Scene scan.
+  @@index([status])
 }
 
 model RenderJob {

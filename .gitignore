@@ -8,6 +8,11 @@ out/
 .env
 .env.local
 .env.*.local
+# `vercel env pull` lands here — contains live production secrets.
+.env.production.tmp
+.env.production
+.env.preview
+.env.development.local
 
 # Prisma generated
 .prisma/
