@@ -12,6 +12,7 @@ import {
   detectMirrorRisk,
 } from '../lib/scene-planning/scene-rules';
 import { buildImageBrief } from '../lib/image-briefs/image-brief-builder';
+import { buildScenePrompt } from '@ugc-video/prompts';
 
 let failures = 0;
 function ok(name: string) {
@@ -190,6 +191,89 @@ function assert(cond: boolean, name: string, detail = '') {
   assert(
     typeof handsBrief.ruleBlocks !== 'undefined' && Array.isArray(handsBrief.ruleBlocks),
     '[PR2.2] ImageBrief.ruleBlocks is an array',
+  );
+}
+
+// ── PR2.3 — Product reference lock language ─────────────────────────────
+{
+  // Product scene with avatar — should include the lock language.
+  const productPrompt = buildScenePrompt({
+    productName: 'TestProduct',
+    sceneVisualBrief: 'hands using the product over a vanity',
+    sceneOrder: 1,
+    totalScenes: 4,
+    sceneType: 'product_demo',
+    aspectRatio: '9:16',
+    avatarPresent: true,
+    productPresent: true,
+    avatarDescription: 'a 32-year-old Israeli woman',
+    primarySubject: 'product_in_use',
+    mustShowProduct: true,
+    productVisibilityPriority: 'high',
+    isProblemScene: false,
+  });
+  assert(
+    productPrompt.includes('PRODUCT REFERENCE LOCK'),
+    '[PR2.3] product scene prompt contains PRODUCT REFERENCE LOCK section',
+  );
+  assert(
+    /same shape, same color, same proportions/.test(productPrompt),
+    '[PR2.3] product scene prompt enforces shape/color/proportion match',
+  );
+  assert(
+    /Do NOT invent a different product/.test(productPrompt),
+    '[PR2.3] product scene prompt forbids inventing a different product',
+  );
+  assert(
+    /Do NOT replace it with a generic bottle/.test(productPrompt),
+    '[PR2.3] product scene prompt forbids generic bottle replacement',
+  );
+
+  // Problem scene — should NOT include the lock + should NOT mention product.
+  const problemPrompt = buildScenePrompt({
+    productName: 'TestProduct',
+    sceneVisualBrief: 'a tired person staring at a messy bathroom counter',
+    sceneOrder: 0,
+    totalScenes: 4,
+    sceneType: 'problem_visual',
+    aspectRatio: '9:16',
+    avatarPresent: true,
+    productPresent: true, // hero image exists, but problem scenes ignore it
+    avatarDescription: 'a 32-year-old Israeli woman',
+    isProblemScene: true,
+  });
+  assert(
+    !problemPrompt.includes('PRODUCT REFERENCE LOCK'),
+    '[PR2.3] problem scene prompt does NOT include PRODUCT REFERENCE LOCK',
+  );
+  assert(
+    !problemPrompt.includes('Image 2 = the PRODUCT'),
+    '[PR2.3] problem scene prompt does NOT introduce Image 2 as the product',
+  );
+  assert(
+    /Problem scene — the product is NOT in this frame/.test(problemPrompt),
+    '[PR2.3] problem scene prompt explicitly states the product is absent',
+  );
+  assert(
+    !/PRODUCT VISIBILITY:/.test(problemPrompt),
+    '[PR2.3] problem scene prompt skips PRODUCT VISIBILITY guard',
+  );
+
+  // No-avatar product scene — lock should still appear.
+  const noAvatarProduct = buildScenePrompt({
+    productName: 'TestProduct',
+    sceneVisualBrief: 'product on a kitchen counter, morning light',
+    sceneOrder: 3,
+    totalScenes: 4,
+    sceneType: 'cta_visual',
+    aspectRatio: '9:16',
+    avatarPresent: false,
+    productPresent: true,
+    isProblemScene: false,
+  });
+  assert(
+    noAvatarProduct.includes('PRODUCT REFERENCE LOCK'),
+    '[PR2.3] no-avatar product scene also includes PRODUCT REFERENCE LOCK',
   );
 }
 

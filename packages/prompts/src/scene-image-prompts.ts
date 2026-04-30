@@ -42,6 +42,10 @@ export interface SceneImagePromptInput {
   productVisibilityPriority?: string; // high | medium | low
   cameraFocus?: string; // face | product | action
   showFace?: boolean;
+  // V13 PR2.3 — true when the scene is a problem / failed-method /
+  // before-state scene. Problem scenes don't carry the product reference
+  // image and don't mention the product — the pain is the subject.
+  isProblemScene?: boolean;
 }
 
 // Camera/lens specs are added up-front so gpt-image-2 commits to a phone-camera
@@ -166,6 +170,22 @@ const HIGH_PRODUCT_VISIBILITY = [
   '- The product remains in frame at every moment — never cropped out.',
 ].join('\n');
 
+// V13 PR2.3 — Product reference lock. Applied to every scene where the
+// product is in-frame (productPresent && !isProblemScene). gpt-image-2
+// loves to "interpret" the product into a generic stand-in (a different
+// bottle shape, a different color, an invented applicator head) when
+// the scene brief drags its attention elsewhere; this block forces it
+// to mirror Image 2 byte-for-byte. The brief builder also pushes
+// mustShow/mustAvoid lists into the prompt — this is the ground-truth
+// fallback for them.
+const PRODUCT_REFERENCE_LOCK = [
+  'PRODUCT REFERENCE LOCK (Image 2 is the source of truth):',
+  '- The product in this frame must closely match Image 2: same shape, same color, same proportions, same applicator/head/cap design, same label placement, same overall silhouette.',
+  '- Do NOT invent a different product. Do NOT replace it with a generic bottle, jar, tube, or device. Do NOT swap the applicator type.',
+  '- Label text and brand mark from Image 2 must remain readable and unchanged. No invented labels, no Latin alphabet substitutions, no logo redesign.',
+  '- The active part of the product (whichever end is used) must physically touch the intended surface exactly as the brief describes — not float above it, not hover beside it.',
+].join('\n');
+
 // Israeli visual realism — applied to EVERY scene by default, regardless
 // of scene type. The product is for the Israeli market, the creator is
 // Israeli, the home is Israeli — but gpt-image-2's default for "kitchen
@@ -200,6 +220,13 @@ export function buildScenePrompt(input: SceneImagePromptInput): string {
   const hideFace = input.showFace === false;
   const highVisibility = input.productVisibilityPriority === 'high';
 
+  // V13 PR2.3 — problem scenes don't carry the product reference image
+  // and don't mention the product. The pain is the subject; forcing the
+  // product into a "frustrated trying to fix this without the product"
+  // shot defeats the proof.
+  const isProblemScene = !!input.isProblemScene;
+  const productInFrame = productPresent && !isProblemScene;
+
   if (input.avatarPresent) {
     // Pick an opener that matches the committed primary subject. Without
     // this, every prompt reads "scene OF THE PERSON" and gpt-image-2
@@ -209,6 +236,12 @@ export function buildScenePrompt(input: SceneImagePromptInput): string {
         ? `${opener} — product-led UGC frame featuring the product (Image 2). The creator from Image 1 is NOT the subject of this frame; their face is out of view (hands or torso may appear as supporting context). The scene:`
         : `${opener} — product-led UGC frame: the product (Image 2) is the visual hero, the creator from Image 1 appears only as supporting context behind / beside the product. The scene:`
       : `${opener} of the EXACT person from Image 1, in this scene:`;
+
+    const productLine = productInFrame
+      ? `Image 2 = the PRODUCT. Keep its packaging, label, color, and shape exactly accurate. The product is in the frame, held or placed naturally — not pasted in. Hand grip on the product follows the rules in REALISM CHECK below.`
+      : isProblemScene
+        ? `(Problem scene — the product is NOT in this frame. Do not draw the product, do not paste it in as a hint, do not float it in the corner. The pain itself is the subject of this frame.)`
+        : `(No product image is provided — describe the product naturally if the brief calls for it. No on-image text.)`;
 
     return [
       subjectOpener,
@@ -223,14 +256,13 @@ export function buildScenePrompt(input: SceneImagePromptInput): string {
       `- If the scene description above mentions any character traits (age, gender, ethnicity, hair color, skin tone), IGNORE them. Image 1 is the only source of truth.`,
       `- Do NOT generate a different person.`,
       ``,
-      productPresent
-        ? `Image 2 = the PRODUCT. Keep its packaging, label, color, and shape exactly accurate. The product is in the frame, held or placed naturally — not pasted in. Hand grip on the product follows the rules in REALISM CHECK below.`
-        : `(No product image is provided — describe the product naturally if the brief calls for it. No on-image text.)`,
+      productLine,
       ``,
+      productInFrame ? PRODUCT_REFERENCE_LOCK : '',
       isProductLed ? PRODUCT_LED_GUARD : '',
       hideFace ? PRODUCT_LED_NO_FACE : '',
       highVisibility ? HIGH_PRODUCT_VISIBILITY : '',
-      input.mustShowProduct === true && !isProductLed
+      input.mustShowProduct === true && !isProductLed && productInFrame
         ? 'PRODUCT VISIBILITY: the product MUST remain visible in the frame — do not crop it out, do not let it disappear.'
         : '',
       ``,
@@ -255,13 +287,16 @@ export function buildScenePrompt(input: SceneImagePromptInput): string {
     input.sceneVisualBrief,
     ``,
     framingHint ?? '',
-    productPresent
+    productInFrame
       ? `Image 1 = the PRODUCT. Keep its packaging, label, color, and shape exactly. Visible in the frame, held or placed naturally.`
-      : '',
+      : isProblemScene
+        ? `(Problem scene — the product is NOT in this frame. The pain itself is the subject.)`
+        : '',
+    productInFrame ? PRODUCT_REFERENCE_LOCK : '',
     ISRAELI_REALISM_BOILERPLATE,
     REALISM_CHECK,
     `Style: candid UGC phone-camera aesthetic, photorealistic, natural daylight, real-person imperfect, no on-image text, no logos, no watermark.`,
-    input.productName ? `Product: ${input.productName}.` : '',
+    productInFrame && input.productName ? `Product: ${input.productName}.` : '',
     input.safetyTokens ? `Content safety: ${input.safetyTokens}` : '',
   ]
     .filter((l) => l && l !== '')

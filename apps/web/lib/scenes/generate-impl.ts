@@ -241,6 +241,8 @@ async function generateSceneImageImplInner(
           undefined,
         cameraFocus: (scene as { cameraFocus?: string | null }).cameraFocus ?? undefined,
         showFace: (scene as { showFace?: boolean | null }).showFace ?? undefined,
+        // V13 PR2.3 — problem scenes don't carry the product in-frame.
+        isProblemScene: isProblem,
       },
       quality: 'medium',
     });
