@@ -36,6 +36,10 @@ import { Textarea } from '@/components/ui/textarea';
 import { ProgressBar } from '@/components/ui/progress-bar';
 import { ElapsedTimer } from '@/components/ui/elapsed-timer';
 import { AudioPreview } from '@/components/ui/audio-preview';
+import {
+  AIThinking,
+  IMAGE_GEN_PHASES,
+} from '@/components/ui/ai-thinking';
 import { cn } from '@/lib/utils';
 import { isPageVisible } from '@/lib/utils/visibility';
 import {
@@ -274,15 +278,22 @@ export function GenerateAllButton({
       : `✨ צור ${queue.length} סצנות`;
 
   return (
-    <Card className="border-primary/40 bg-primary/[0.04]">
+    <Card className="glass border-primary/40 bg-primary/[0.04] shadow-glow card-hover animate-fade-in-up">
       <CardContent className="p-5 flex flex-col md:flex-row items-start md:items-center gap-4 justify-between">
-        <div className="space-y-1 flex-1">
+        <div className="space-y-2 flex-1">
           <div className="text-base font-semibold">{headline}</div>
           <div className="text-xs text-muted-foreground">{subline}</div>
           {pending && (
-            <div className="pt-2">
-              <ProgressBar variant="primary" />
-            </div>
+            <>
+              <div className="pt-2">
+                <ProgressBar variant="primary" />
+              </div>
+              {/* V17 — AI thinking phases. Replaces the static spinner
+                  with the actual pipeline narrative the user is paying
+                  for. Uses IMAGE_GEN_PHASES because images dominate the
+                  wall-clock; voice runs in parallel and finishes first. */}
+              <AIThinking phases={IMAGE_GEN_PHASES} active={pending} compact className="pt-1" />
+            </>
           )}
           {error && (
             <div className="text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded-md p-2 mt-2">
@@ -290,7 +301,7 @@ export function GenerateAllButton({
             </div>
           )}
         </div>
-        <Button onClick={run} disabled={pending || !canRun} size="lg">
+        <Button onClick={run} disabled={pending || !canRun} size="lg" className="shadow-glow">
           {buttonLabel}
         </Button>
       </CardContent>
@@ -321,6 +332,19 @@ interface SceneCardProps {
   voiceInFlightAt: string | null;
   voiceSelected: boolean;
 }
+
+// V17 — prompt tweak chips shown under the prompt textarea on
+// SceneCard. Each chip appends an English fragment to the draft so
+// the user can iterate without typing English themselves. Chips
+// match the gpt-image-2 prompt vocabulary used by buildImageBrief.
+const PROMPT_TWEAK_CHIPS: Array<{ label: string; append: string }> = [
+  { label: '🎨 רקע פשוט', append: 'simple uncluttered background, soft natural lighting' },
+  { label: '📷 זווית קרובה', append: 'tight close-up framing, shallow depth of field' },
+  { label: '☀️ אור טבעי', append: 'natural daylight from a window, no harsh shadows' },
+  { label: '🌃 ערב חמים', append: 'warm evening light, golden-hour mood' },
+  { label: '🇮🇱 פרט ישראלי', append: 'subtle Israeli home detail visible (kettle / mezuzah / soft framing)' },
+  { label: '😊 חיוך טבעי', append: 'natural relaxed smile, candid expression' },
+];
 
 // 3 min budget — Image gen is fast (gpt-image-1 ~30s) but we leave headroom
 // for network blips so a stale flag doesn't pin the overlay forever.
@@ -780,6 +804,29 @@ export function SceneCard(props: SceneCardProps) {
               rows={4}
               className="text-xs"
             />
+            {/* V17 — prompt suggestion chips. Click appends a tweak to
+                the current draft so the user can iterate without typing
+                English. Suggestions are deterministic English fragments
+                that the gpt-image-2 prompt builder understands well. */}
+            <div className="flex flex-wrap gap-1.5" dir="ltr">
+              {PROMPT_TWEAK_CHIPS.map((chip) => (
+                <button
+                  key={chip.label}
+                  type="button"
+                  className="text-[11px] px-2 py-1 rounded-full bg-primary/8 text-primary hover:bg-primary/15 border border-primary/20 transition-colors"
+                  title={chip.append}
+                  onClick={() =>
+                    setDraftPrompt((prev) =>
+                      prev.trim().endsWith('.') || prev.trim().endsWith(',')
+                        ? `${prev} ${chip.append}.`
+                        : `${prev}. ${chip.append}.`,
+                    )
+                  }
+                >
+                  {chip.label}
+                </button>
+              ))}
+            </div>
             <div className="flex gap-2 justify-end" dir="ltr">
               <Button
                 type="button"
