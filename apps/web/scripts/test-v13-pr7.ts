@@ -203,6 +203,65 @@ const clipImpl = fs.readFileSync(path.join(WEB, 'lib/scenes/clip-impl.ts'), 'utf
   );
 }
 
+// ── PR7.4 — Log viewer + warnings panel exist + render the right things ─
+{
+  const viewerPath = path.resolve(WEB, 'components/wizard/scene-log-viewer.tsx');
+  const warningsPath = path.resolve(WEB, 'components/wizard/wizard-warnings-panel.tsx');
+  assert(fs.existsSync(viewerPath), '[PR7.4] scene-log-viewer.tsx file exists');
+  assert(fs.existsSync(warningsPath), '[PR7.4] wizard-warnings-panel.tsx file exists');
+
+  const viewer = fs.readFileSync(viewerPath, 'utf8');
+  assert(/'use client'/.test(viewer), '[PR7.4] log viewer is a client component');
+  assert(/dir="rtl"/.test(viewer), '[PR7.4] log viewer sets dir="rtl"');
+  assert(/[א-ת]/.test(viewer), '[PR7.4] log viewer contains Hebrew text');
+  // Stage label coverage — every stage emitted by PR4.2 / PR4.3 must
+  // have a Hebrew translation in STAGE_HEBREW.
+  for (const stage of [
+    'image-brief',
+    'image-gen',
+    'voice',
+    'motion-analysis',
+    'kling',
+    'face-gate',
+    'pixverse',
+    'render',
+    'clip',
+  ]) {
+    // JS object literal: dashed keys quoted, plain keys unquoted.
+    const pattern = new RegExp(`(?:^|\\s)['"]?${stage.replace('-', '\\-')}['"]?:`, 'm');
+    assert(
+      pattern.test(viewer),
+      `[PR7.4] STAGE_HEBREW covers stage "${stage}"`,
+    );
+  }
+  // Reverse-chronological order (newest first)
+  assert(
+    /\.reverse\(\)/.test(viewer),
+    '[PR7.4] log viewer renders entries in reverse-chronological order',
+  );
+  // Empty-state message
+  assert(
+    /אין רשומות/.test(viewer),
+    '[PR7.4] log viewer renders Hebrew empty-state when entries.length === 0',
+  );
+
+  const warnings = fs.readFileSync(warningsPath, 'utf8');
+  assert(/'use client'/.test(warnings), '[PR7.4] warnings panel is a client component');
+  assert(/dir="rtl"/.test(warnings), '[PR7.4] warnings panel sets dir="rtl"');
+  // Hebrew title
+  assert(/אזהרות/.test(warnings), '[PR7.4] warnings panel renders Hebrew "אזהרות"');
+  // Hidden when empty
+  assert(
+    /warnings\.length === 0/.test(warnings) && /return null/.test(warnings),
+    '[PR7.4] warnings panel returns null when warnings list is empty',
+  );
+  // Per-scene prefix when sceneNumber is set
+  assert(
+    /סצנה /.test(warnings),
+    '[PR7.4] warnings panel adds "סצנה N" prefix when sceneNumber is set',
+  );
+}
+
 console.log('');
 if (failures === 0) {
   console.log('PR7 verification: ALL CHECKS PASSED');
