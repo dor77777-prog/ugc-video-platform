@@ -4,10 +4,11 @@ import { notFound } from 'next/navigation';
 import { prisma } from '@/lib/db';
 import { getOrCreateAppUser } from '@/lib/auth/sync-user';
 import { findAvatar } from '@/lib/avatars/catalog';
+import { findVoicePreset } from '@/lib/voice/voice-presets';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Stepper } from '@/components/wizard/stepper';
-import { SceneCard, GenerateAllButton } from './client-bits';
+import { SceneCard, GenerateAllButton, VoicePicker } from './client-bits';
 
 export default async function ScenesPage({
   params,
@@ -50,6 +51,16 @@ export default async function ScenesPage({
 
   const scenes = selected.scenes;
   const allDone = scenes.length > 0 && scenes.every((s) => !!s.imageUrl);
+
+  // V14.2-B — voice gen prereqs for parallel run on "Generate all".
+  // VoicePicker now lives on this page (step 4), so the user picks
+  // voice while choosing scene images. The "Generate all" batch loop
+  // then fires voice gen for every scene that lacks voiceUrl in
+  // parallel with image gen. textHebrew is guaranteed by script-gen.
+  const voiceId =
+    typeof productData.voiceId === 'string' ? (productData.voiceId as string) : null;
+  const voicePreset = findVoicePreset(voiceId);
+  const voiceQueue = scenes.filter((s) => !s.voiceUrl);
 
   return (
     <div className="p-6 md:p-10 max-w-7xl space-y-8">
@@ -98,14 +109,58 @@ export default async function ScenesPage({
         </CardContent>
       </Card>
 
+      {/* Voice picker — V14.2-B moved here from videos/step 5 so the
+          user picks voice while choosing scene images, and voice gen
+          can run in parallel with image gen on "Generate all". */}
+      {!voicePreset ? (
+        <Card>
+          <CardContent className="p-6 space-y-3">
+            <div className="space-y-1">
+              <div className="text-sm font-semibold">בחירת קול</div>
+              <div className="text-xs text-muted-foreground">
+                הקול יופעל אוטומטית במקביל ליצירת התמונות. תוכל להחליף בכל שלב.
+              </div>
+            </div>
+            <VoicePicker projectId={projectId} initialVoiceId={null} />
+          </CardContent>
+        </Card>
+      ) : (
+        <Card className="bg-accent/10 border-accent/30">
+          <CardContent className="p-4 flex items-center gap-4 flex-wrap">
+            <div className="flex-1">
+              <div className="text-xs text-muted-foreground">קול נבחר</div>
+              <div className="font-semibold">{voicePreset.displayName}</div>
+              <div className="text-[11px] text-muted-foreground">
+                {voicePreset.gender === 'female' ? 'אישה' : 'גבר'} ·{' '}
+                {voicePreset.ageRange} · {voicePreset.energy}
+              </div>
+            </div>
+            <details className="text-xs">
+              <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
+                החלף קול
+              </summary>
+              <div className="mt-3 min-w-[300px] md:min-w-[600px]">
+                <VoicePicker projectId={projectId} initialVoiceId={voicePreset.id} />
+                <p className="text-[11px] text-muted-foreground mt-2">
+                  ⚠ אחרי החלפה — תצטרך לרגנר את ה-voice-overs.
+                </p>
+              </div>
+            </details>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Generate-all banner — only shows when at least one scene is missing */}
       <GenerateAllButton
         scenes={scenes.map((s) => ({
           id: s.id,
           sceneOrder: s.sceneOrder,
           hasImage: !!s.imageUrl,
+          hasVoice: !!s.voiceUrl,
         }))}
         creditsBalance={dbUser.creditsBalance}
+        voicePresetId={voiceId}
+        voicesPending={voiceQueue.length}
       />
 
       {/* Scene grid */}

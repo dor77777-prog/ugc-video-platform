@@ -3,6 +3,23 @@
 import { useCallback, useEffect, useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
+import dynamic from 'next/dynamic';
+
+// V14.2-B — lazy VoicePicker on the scenes page. Same module that the
+// videos page uses; here it appears at step 4 so the user picks their
+// voice while choosing scene images, and the "Generate all" batch
+// kicks off voice gen in parallel with image gen. ssr:false so the
+// 312-line picker JS only loads when the user actually opens the
+// picker (most flows pick voice once and never reopen).
+export const VoicePicker = dynamic(
+  () => import('../videos/voice-picker').then((m) => ({ default: m.VoicePicker })),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="text-xs text-muted-foreground p-3">טוען בורר קולות…</div>
+    ),
+  },
+);
 
 // Custom events used by GenerateAllButton ↔ SceneCard so each tile can
 // poll its own state during a batch run. router.refresh() in Next.js 15
@@ -38,6 +55,8 @@ interface SceneInfo {
   id: string;
   sceneOrder: number;
   hasImage: boolean;
+  // V14.2-B — voice prereq tracking for the parallel batch run.
+  hasVoice?: boolean;
 }
 
 // Race a promise against a timeout so the UI never blocks indefinitely on
@@ -67,9 +86,17 @@ function raceWithTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
 export function GenerateAllButton({
   scenes,
   creditsBalance,
+  voicePresetId,
+  voicesPending,
 }: {
   scenes: SceneInfo[];
   creditsBalance: number;
+  // V14.2-B — when a voice preset is set on the project (avatar
+  // selection sets a default), the batch loop ALSO fires voice gen for
+  // every scene that lacks voiceUrl, in parallel with image gen. This
+  // gets the user to step 5 with voice already done.
+  voicePresetId?: string | null;
+  voicesPending?: number;
 }) {
   const router = useRouter();
   // We deliberately do NOT use useTransition here — router.refresh() inside
@@ -86,11 +113,15 @@ export function GenerateAllButton({
   const [error, setError] = useState<string | null>(null);
 
   const queue = scenes.filter((s) => !s.hasImage);
+  const voiceQueue = scenes.filter((s) => !s.hasVoice);
   const allDone = scenes.length > 0 && queue.length === 0;
 
   if (allDone) return null;
 
-  const cost = queue.length;
+  // V14.2-B — credits charged: 1 per missing image + 1 per missing voice
+  // (only when voicePresetId is set and there are voices to gen).
+  const willGenerateVoices = !!voicePresetId && (voicesPending ?? voiceQueue.length) > 0;
+  const cost = queue.length + (willGenerateVoices ? voiceQueue.length : 0);
   const canRun = creditsBalance >= cost;
 
   const run = async () => {
@@ -175,6 +206,25 @@ export function GenerateAllButton({
         setProgress({ done, total: queue.length, failed });
       };
 
+      // V14.2-B — kick off voice gen for all scenes that lack voiceUrl
+      // IN PARALLEL with the image batch. Voice doesn't depend on the
+      // image; both fetch via /api/scenes/[id]/{generate,voice} which
+      // run independently on the server. We don't await this — the
+      // voice batch races to completion in the background and the next
+      // page (videos) sees the results when the user gets there. Voice
+      // gen errors are silent here; voice-impl logs to ApiCall and the
+      // user can retry per-scene from the videos page.
+      const voicePromise = willGenerateVoices
+        ? Promise.all(
+            voiceQueue.map((s) =>
+              fetch(`/api/scenes/${s.id}/voice`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+              }).catch(() => null),
+            ),
+          )
+        : Promise.resolve();
+
       for (let i = 0; i < queue.length; i += PARALLELISM) {
         if (abortRest) break;
         const chunk = queue.slice(i, i + PARALLELISM);
@@ -184,6 +234,15 @@ export function GenerateAllButton({
         // image swap doesn't depend on this refresh succeeding.
         router.refresh();
       }
+
+      // Wait for the voice batch to finish before clearing the spinner
+      // so the user knows everything is done. Voice is much faster than
+      // image (~5-15s vs 30-60s) so this usually adds zero wall-clock.
+      try {
+        await voicePromise;
+      } catch {
+        /* voice errors don't fail the image batch */
+      }
     } finally {
       setPending(false);
       if (typeof window !== 'undefined') {
@@ -192,18 +251,33 @@ export function GenerateAllButton({
     }
   };
 
+  // V14.2-B — explain the parallel run in the cost copy. When voice is
+  // included, the credits sum is image + voice and the headline says so.
+  const voiceCount = willGenerateVoices ? voiceQueue.length : 0;
+  const headline = pending
+    ? willGenerateVoices
+      ? 'יוצר תמונות + קריינות במקביל…'
+      : 'יוצר את כל הסצנות…'
+    : willGenerateVoices
+      ? 'צור תמונות + קריינות בלחיצה אחת'
+      : 'צור את כל הסצנות בלחיצה אחת';
+  const subline = pending
+    ? `${progress.done + progress.failed} מתוך ${progress.total} ${progress.failed > 0 ? `(${progress.failed} נכשלו) ` : ''}— תמונות מופיעות בהדרגה למטה${willGenerateVoices ? '. הקריינות נוצרת ברקע' : ''}`
+    : willGenerateVoices
+      ? `${queue.length} תמונות + ${voiceCount} קריינויות = ${cost} קרדיטים. (יש לך ${creditsBalance})`
+      : `${queue.length} סצנות חסרות. ${cost} קרדיטים סך הכל. (יש לך ${creditsBalance})`;
+  const buttonLabel = pending
+    ? 'מייצר…'
+    : willGenerateVoices
+      ? `✨ צור ${queue.length} תמונות + ${voiceCount} קריינויות`
+      : `✨ צור ${queue.length} סצנות`;
+
   return (
     <Card className="border-primary/40 bg-primary/[0.04]">
       <CardContent className="p-5 flex flex-col md:flex-row items-start md:items-center gap-4 justify-between">
         <div className="space-y-1 flex-1">
-          <div className="text-base font-semibold">
-            {pending ? 'יוצר את כל הסצנות…' : 'צור את כל הסצנות בלחיצה אחת'}
-          </div>
-          <div className="text-xs text-muted-foreground">
-            {pending
-              ? `${progress.done + progress.failed} מתוך ${progress.total} ${progress.failed > 0 ? `(${progress.failed} נכשלו) ` : ''}— הסצנות מופיעות בהדרגה למטה`
-              : `${queue.length} סצנות חסרות. ${queue.length} קרדיטים סך הכל. (יש לך ${creditsBalance})`}
-          </div>
+          <div className="text-base font-semibold">{headline}</div>
+          <div className="text-xs text-muted-foreground">{subline}</div>
           {pending && (
             <div className="pt-2">
               <ProgressBar variant="primary" />
@@ -216,7 +290,7 @@ export function GenerateAllButton({
           )}
         </div>
         <Button onClick={run} disabled={pending || !canRun} size="lg">
-          {pending ? 'מייצר…' : `✨ צור ${queue.length} סצנות`}
+          {buttonLabel}
         </Button>
       </CardContent>
     </Card>
