@@ -316,7 +316,11 @@ export async function fetchOpenAIBalance(): Promise<
 
   try {
     const ac = new AbortController();
-    const timer = setTimeout(() => ac.abort(), 8000);
+    // OpenAI's /v1/organization/costs aggregates 30 days × hundreds of
+    // line items and routinely takes 10-15s. 8s is too tight; the
+    // AbortController used to fire mid-response and surface as
+    // "OpenAI fetch failed: This operation was aborted" on /admin/costs.
+    const timer = setTimeout(() => ac.abort(), 20000);
     const res = await fetch(
       `https://api.openai.com/v1/organization/costs?start_time=${start30d}&bucket_width=1d&limit=31`,
       {

@@ -18,10 +18,13 @@ import {
 import { fetchAllProviderBalances } from '@/lib/providers/balance';
 
 export const dynamic = 'force-dynamic';
-// Cache the live-balance section for 60s — avoids hammering Kling +
-// PixVerse on every admin page refresh, but keeps the data fresh
-// enough to be actionable.
-export const revalidate = 60;
+// Cache the live-balance section for 5 min. The earlier 60s window
+// hammered ElevenLabs hard enough that /v1/user/subscription started
+// returning HTTP 429 rate_limited on free-tier accounts (each Vercel
+// region's first hit triggers a fresh call). Billing data is fine
+// stale by a few minutes; the trade-off favors not falling back to
+// the local-spend card when we have a perfectly good live call.
+export const revalidate = 300;
 
 const PROVIDER_LABEL: Record<string, string> = {
   openai: 'OpenAI',
