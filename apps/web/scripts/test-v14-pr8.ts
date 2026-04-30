@@ -7,20 +7,20 @@
 // surrounding paragraph direction (LTR by default in ASS) when no
 // explicit isolate is set.
 //
-// Fix: wrap each Hebrew-containing caption in U+2067 RLI ... U+2069
-// PDI before emitting to the Dialogue line. Pure-LTR captions are
+// Fix: wrap each Hebrew-containing caption in U+202B RLE ... U+2069
+// PDF before emitting to the Dialogue line. Pure-LTR captions are
 // untouched.
 //
 // This test asserts:
-//   1. wrapHebrewBidi wraps Hebrew text in RLI...PDI
+//   1. wrapHebrewBidi wraps Hebrew text in RLE...PDF
 //   2. wrapHebrewBidi NO-OPS pure ASCII / English text
 //   3. wrapHebrewBidi handles mixed-script (Hebrew + English) by
 //      wrapping the whole thing
-//   4. sanitizeAssText does NOT strip RLI/PDI (the chars survive a
+//   4. sanitizeAssText does NOT strip RLE/PDF (the chars survive a
 //      round trip through the sanitizer)
-//   5. buildAssFromChunks emits Hebrew Dialogue lines with RLI/PDI
+//   5. buildAssFromChunks emits Hebrew Dialogue lines with RLE/PDF
 //   6. buildAssFromChunks emits English-only Dialogue lines WITHOUT
-//      RLI/PDI (no-op for LTR)
+//      RLE/PDF (no-op for LTR)
 
 import {
   buildAssFromChunks,
@@ -29,8 +29,8 @@ import {
 } from '@ugc-video/shared';
 import type { CaptionChunk } from '@ugc-video/shared';
 
-const RLI = '⁧';
-const PDI = '⁩';
+const RLE = '‫';
+const PDF = '‬';
 
 let failures = 0;
 function ok(name: string) {
@@ -49,12 +49,12 @@ function assert(cond: boolean, name: string, detail = '') {
 {
   const wrapped = wrapHebrewBidi('שלום לכולם.');
   assert(
-    wrapped.startsWith(RLI),
-    '[V14 PR8.1] wrapHebrewBidi prepends U+2067 RLI to Hebrew text',
+    wrapped.startsWith(RLE),
+    '[V14 PR8.1] wrapHebrewBidi prepends U+202B RLE to Hebrew text',
   );
   assert(
-    wrapped.endsWith(PDI),
-    '[V14 PR8.1] wrapHebrewBidi appends U+2069 PDI to Hebrew text',
+    wrapped.endsWith(PDF),
+    '[V14 PR8.1] wrapHebrewBidi appends U+202C PDF to Hebrew text',
   );
   assert(
     wrapped.includes('שלום לכולם.'),
@@ -78,17 +78,17 @@ function assert(cond: boolean, name: string, detail = '') {
 {
   const wrapped = wrapHebrewBidi('Hello אחותי, how are you?');
   assert(
-    wrapped.startsWith(RLI) && wrapped.endsWith(PDI),
-    '[V14 PR8.3] mixed Hebrew+English text gets the RLI/PDI wrapping',
+    wrapped.startsWith(RLE) && wrapped.endsWith(PDF),
+    '[V14 PR8.3] mixed Hebrew+English text gets the RLE/PDF wrapping',
   );
 }
 
-// ── 4. sanitizeAssText preserves RLI / PDI ─────────────────────────────
+// ── 4. sanitizeAssText preserves RLE / PDF ─────────────────────────────
 {
   const wrapped = wrapHebrewBidi('תקשיבי שנייה.');
   const sanitized = sanitizeAssText(wrapped);
   assert(
-    sanitized.startsWith(RLI) && sanitized.endsWith(PDI),
+    sanitized.startsWith(RLE) && sanitized.endsWith(PDF),
     '[V14 PR8.4] sanitizeAssText does NOT strip U+2067/U+2069',
   );
   assert(
@@ -110,10 +110,10 @@ function assert(cond: boolean, name: string, detail = '') {
     } as unknown as CaptionChunk,
   ];
   const ass = buildAssFromChunks(chunks);
-  // Dialogue lines should contain the RLI bytes wrapping the Hebrew.
+  // Dialogue lines should contain the RLE bytes wrapping the Hebrew.
   assert(
-    ass.includes(RLI) && ass.includes(PDI),
-    '[V14 PR8.5] buildAssFromChunks emits RLI/PDI for Hebrew chunks',
+    ass.includes(RLE) && ass.includes(PDF),
+    '[V14 PR8.5] buildAssFromChunks emits RLE/PDF for Hebrew chunks',
   );
   assert(
     /Dialogue:.*שלום לכולם\./.test(ass),
@@ -121,7 +121,7 @@ function assert(cond: boolean, name: string, detail = '') {
   );
 }
 
-// ── 6. Pure-English chunks emit no RLI/PDI (no-op for LTR) ─────────────
+// ── 6. Pure-English chunks emit no RLE/PDF (no-op for LTR) ─────────────
 {
   const chunks: CaptionChunk[] = [
     {
@@ -135,8 +135,8 @@ function assert(cond: boolean, name: string, detail = '') {
   ];
   const ass = buildAssFromChunks(chunks);
   assert(
-    !ass.includes(RLI) && !ass.includes(PDI),
-    '[V14 PR8.6] pure-LTR caption produces NO RLI/PDI in the ASS file',
+    !ass.includes(RLE) && !ass.includes(PDF),
+    '[V14 PR8.6] pure-LTR caption produces NO RLE/PDF in the ASS file',
   );
   assert(
     /Dialogue:.*Hello world\./.test(ass),

@@ -258,27 +258,25 @@ export const ffmpegCompositionProvider: CompositionProvider & {
           // sample rate / channel layout as the main audio, then
           // gain + fade.
           //
-          // V14 PR9 — when musicStartOffsetSec > 0 we trim the head of
-          // the looped track BEFORE the duration trim. The looped
-          // input is effectively "infinite" so we don't risk running
-          // out of audio: we seek <offset>s into the loop, then take
-          // the next <totalDurationSec> seconds. The loop wraps
-          // continuously inside that window if the underlying track
-          // is shorter than (offset + totalDurationSec).
-          const musicFilters: string[] = [];
-          if (musicStartOffsetSec > 0) {
-            musicFilters.push(
-              `atrim=start=${musicStartOffsetSec.toFixed(3)}`,
-              'asetpts=N/SR/TB',
-            );
-          }
-          musicFilters.push(
-            `atrim=duration=${totalDurationSec.toFixed(3)}`,
+          // V14 PR9 — start-offset support. The earlier two-stage
+          // implementation (atrim=start, then asetpts, then a second
+          // atrim=duration) produced a SILENT track on offset>0 in
+          // production — the `asetpts` reset between two atrims
+          // confused the loop pipeline. Replaced with the combined
+          // `atrim=start=X:end=X+totalDuration` form: a single trim
+          // that selects the exact window from the looped stream.
+          // Then asetpts, aresample, aformat, volume, fades. One atrim,
+          // one PTS reset — much more stable.
+          const musicTrimEnd = musicStartOffsetSec + totalDurationSec;
+          const musicFilters: string[] = [
+            musicStartOffsetSec > 0
+              ? `atrim=start=${musicStartOffsetSec.toFixed(3)}:end=${musicTrimEnd.toFixed(3)}`
+              : `atrim=duration=${totalDurationSec.toFixed(3)}`,
             'asetpts=N/SR/TB',
             'aresample=44100',
             'aformat=channel_layouts=stereo',
             `volume=${musicVolume.toFixed(4)}`,
-          );
+          ];
           if (fadeInSec > 0) {
             musicFilters.push(`afade=t=in:st=0:d=${fadeInSec.toFixed(3)}`);
           }
