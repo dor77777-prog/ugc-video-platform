@@ -474,7 +474,7 @@ const VALID_REGISTERS: ReadonlySet<ReligiousRegister> = new Set([
     intelligence: null,
   });
   assert(
-    brief.israeliContextInstruction.includes('Israeli Type H electrical socket'),
+    brief.israeliContextInstruction.includes('Israeli Type H wall socket'),
     '[V14 PR1.10] brief.israeliContextInstruction carries the Type H positive line verbatim',
   );
   assert(
@@ -482,7 +482,7 @@ const VALID_REGISTERS: ReadonlySet<ReligiousRegister> = new Set([
     '[V14 PR1.10] finalImagePrompt still labels its ISRAELI CONTEXT section',
   );
   assert(
-    brief.finalImagePrompt.includes('Israeli Type H electrical socket'),
+    brief.finalImagePrompt.includes('Israeli Type H wall socket'),
     '[V14 PR1.10] finalImagePrompt contains the Type H positive cue line verbatim',
   );
   assert(

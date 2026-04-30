@@ -98,27 +98,55 @@ const CATEGORY_ORDER: readonly IsraeliCueCategory[] = [
 
 export const CUES: Record<string, IsraeliCue> = {
   // sockets_switches ─────────────────────────────────────────────────────────
+  // Authoritative reference: a real Israeli SI 32 / Type H socket has THREE
+  // ROUND holes (not rectangular slots) arranged in a triangular pattern —
+  // two holes on the upper-left and upper-right, one hole centered below
+  // them. The faceplate is white-or-ivory plastic, square/rectangular with
+  // rounded corners, slightly raised from the wall. Modern Israeli outlets
+  // are SI 32 round-pin (post-2007 revision) — the holes are round, not the
+  // older rectangular pattern. The user reported gpt-image-2 was generating
+  // UK / US shapes when the cue said "rectangular slots"; replaced with the
+  // correct round-hole + triangular-pattern phrasing — verified against real
+  // photos.
   'socket.type_h': {
     id: 'socket.type_h',
     category: 'sockets_switches',
     positive:
-      'Israeli Type H electrical socket: white square wall plate with three angled rectangular slots forming a triangle pattern (two diagonal slots on top, one slot on bottom), often paired with a built-in switch on the right',
+      'Israeli Type H wall socket (SI 32): white or ivory plastic faceplate, square or rectangular with rounded corners, slightly raised off the wall. THREE ROUND HOLES arranged in a triangular pattern — two round holes on the upper-left and upper-right, one round hole centered below them. The holes are perfectly circular, dark/black inside (recessed), NOT rectangular slots. The face inside the frame is round or slightly elliptical and recessed.',
     negative:
-      'NOT US Type B outlet (two parallel vertical slots + round ground), NOT EU/Type F Schuko (two round holes + side ground clips), NOT UK/Type G (three large rectangular pins)',
+      'NOT US/Type B outlet (two parallel vertical RECTANGULAR slots + round ground hole), NOT EU/Type F Schuko (two round holes only + side ground clips), NOT UK/Type G (three LARGE RECTANGULAR slots in T-pattern), NOT industrial pin sockets, NOT USB-only outlets, NOT angled rectangular slot patterns of any kind — the Israeli holes are round circles, not slots.',
+  },
+  'socket.type_h_triple_gang': {
+    id: 'socket.type_h_triple_gang',
+    category: 'sockets_switches',
+    positive:
+      'Israeli triple-gang wall socket: three Type H modules side-by-side in a single wide rectangular white plastic faceplate. Each module shows the canonical Israeli pattern — three round holes in a triangle (two upper + one lower-centered). The outer faceplate is wide, white, smooth glossy plastic, with three sub-modules clearly divided. Common in modern Israeli kitchens, home offices, and renovated apartments.',
+    negative:
+      'NOT three separate single sockets aligned (must read as one wide three-gang faceplate), NOT US duplex outlets (two parallel slot pairs), NOT UK three-rectangular-pin row.',
   },
   'switch.israeli_rocker': {
     id: 'switch.israeli_rocker',
     category: 'sockets_switches',
     positive:
-      'Israeli wall light switch: white square plastic plate with a single wide rocker, sometimes a small status LED dot',
-    negative: 'NOT US toggle flip switches, NOT British dolly switches',
+      'Common Israeli household light switch: white plastic faceplate with rounded corners, slightly raised off the wall. One to three large rectangular-rocker buttons mounted side-by-side (single / double / triple gang); each button has a slightly convex glossy face and clicks on press. Plain, domestic, simple — the everyday Israeli apartment fixture, not a luxury hotel switch. Sometimes a tiny LED dot near the corner.',
+    negative:
+      'NOT US toggle flip switches (small lever), NOT British dolly switches, NOT black hotel-style luxury switches unless specifically requested, NOT round push-buttons.',
+  },
+  'switch.israeli_smart_metallic': {
+    id: 'switch.israeli_smart_metallic',
+    category: 'sockets_switches',
+    positive:
+      'Modern Israeli smart-home light switch: wide rectangular brushed-metal or silver faceplate, three narrow vertical rectangular rocker buttons mounted side-by-side in a row. Each button has fine decorative grooves. Sometimes a small Wi-Fi wave icon in the corner indicating wireless control. Reads as premium / smart-home / new Israeli build.',
+    negative:
+      'NOT a generic black control panel, NOT a single-button US-style toggle, NOT a touch-screen smart panel without physical rockers.',
   },
   'powerstrip.israeli_white': {
     id: 'powerstrip.israeli_white',
     category: 'sockets_switches',
     positive:
-      'White-bodied Israeli power strip with Type H sockets and a red illuminated toggle switch on the end',
-    negative: 'NOT US-style power strip with parallel-slot outlets',
+      'White-bodied Israeli power strip with Type H sockets along the top — each socket showing the canonical three round holes in a triangular pattern. A red illuminated rocker switch sits on the end. Plain plastic body, slightly glossy, common to every Israeli home.',
+    negative:
+      'NOT US-style power strip with parallel-slot outlets, NOT a UK-style strip with rectangular-pin outlets.',
   },
 
   // architecture ────────────────────────────────────────────────────────────
@@ -493,7 +521,10 @@ export const CUES: Record<string, IsraeliCue> = {
 // model auto-fills when not pushed elsewhere.
 export const UNIVERSAL_NEGATIVES: readonly string[] = [
   'NOT American suburban context',
-  'NOT US wall outlets (NEMA 5-15)',
+  'NOT US wall outlets (NEMA 5-15) with two parallel vertical rectangular slots',
+  'NOT UK three-rectangular-pin outlets',
+  'NOT EU Schuko outlets with only two round holes',
+  'NOT any wall outlet with rectangular slots — Israeli outlets always have THREE ROUND holes in a triangular pattern',
   'NOT US street signs',
   'NOT US license plates',
   'NOT yellow school bus',
