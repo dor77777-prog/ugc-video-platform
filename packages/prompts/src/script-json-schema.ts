@@ -76,7 +76,16 @@ const PRIMARY_SUBJECTS = [
 
 const PRODUCT_VISIBILITY_PRIORITY = ['high', 'medium', 'low'] as const;
 
-const CAMERA_FOCUS = ['face', 'product', 'action', 'environment'] as const;
+// V14 PR2 added 'selfie_in_mirror' so the script can commit a scene to the
+// mirror-selfie technique upstream and the brief builder can deterministically
+// dispatch the mirror_selfie_snippet (FRAME_PROMPT_TECHNIQUES.md §1).
+const CAMERA_FOCUS = [
+  'face',
+  'product',
+  'action',
+  'environment',
+  'selfie_in_mirror',
+] as const;
 
 // V5 Israeli-realism vocabulary. The image prompt always prepends a
 // generic Israeli-realism boilerplate, but committing the LLM to a

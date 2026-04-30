@@ -26,6 +26,10 @@ import {
   buildMirrorSafetyRule,
   buildContactProofRule,
 } from '@/lib/scene-planning/scene-rules';
+import {
+  chooseFrameTechniqueSnippets,
+  type SnippetOutput as FrameSnippetOutput,
+} from '@/lib/image-briefs/frame-technique-snippets';
 
 export interface ImageBrief {
   sceneNumber: number;
@@ -49,6 +53,10 @@ export interface ImageBrief {
   contactProofRequired: boolean;
   /** V13 PR2.2 — extra prompt blocks appended after the universal sections. */
   ruleBlocks: string[];
+  /** V14 PR2 — IDs of frame-technique snippets that fired for this scene.
+   *  Surfaced for telemetry + admin debug so we can see which snippets
+   *  influenced the prompt. */
+  frameTechniqueSnippetIds: string[];
   negativeConstraints: string[];
   finalImagePrompt: string;
 }
@@ -80,6 +88,17 @@ export interface BuildImageBriefInput {
   intelligence: ProductIntelligence | null;
   /** Whether this is a problem scene — if so we relax product visibility. */
   isProblemScene?: boolean;
+  /** V14 PR2 — used by the consistency anchor snippet so a single-scene ad
+   *  doesn't get a noisy "same person across all frames" instruction. */
+  totalScenesInScript?: number;
+  /** V14 PR2 — opt-in. When the scene has a window or a reflective surface
+   *  the script is committed to (kettle, glass door, computer screen),
+   *  fires the safe-reflection snippet so the model doesn't try to render
+   *  a recognizable second scene. Off by default. */
+  hasReflectiveSurfaceInFrame?: boolean;
+  /** V14 PR2 — outfit description locked at project level (PR3+ work).
+   *  When provided, the consistency anchor quotes it verbatim. */
+  outfitDescriptionLocked?: string | null;
 }
 
 const TALKING_TYPES = new Set([
@@ -287,6 +306,35 @@ export function buildImageBrief(input: BuildImageBriefInput): ImageBrief {
     ruleBlocks.push(r.promptText);
   }
 
+  // ── V14 PR2 — Frame-technique snippets ────────────────────────────────
+  // Pure additive layer on top of the V13 PR2 rules. The snippets target
+  // specific failure modes the generic rules don't cover: mirror-selfie
+  // geometry, anatomical product grip, the "same person across the whole
+  // ad" anchor. See docs/v14/FRAME_PROMPT_TECHNIQUES.md.
+  const productForm = inferProductForm(dossier, visual);
+  const frameSnippets: FrameSnippetOutput[] = chooseFrameTechniqueSnippets({
+    cameraFocus: input.cameraFocus,
+    sceneGenerationType: input.sceneGenerationType,
+    primarySubject: input.primarySubject ?? null,
+    mustShowProduct: input.mustShowProduct ?? null,
+    faceVisibility: input.faceVisibility,
+    cameraDirection: input.cameraDirection ?? null,
+    totalScenes: input.totalScenes,
+    outfitDescriptionLocked: input.outfitDescriptionLocked ?? null,
+    productName: dossier?.productName ?? null,
+    productForm,
+    productHeightCm: null, // V14 PR2: dossier doesn't carry height yet — PR3+ may add
+    productColor: visual?.objectDescription ?? null,
+    productMaterialFinish: visual?.textureAndMaterial ?? null,
+    windowOrReflectiveSurfaceVisible: input.hasReflectiveSurfaceInFrame === true,
+  });
+  const frameTechniqueSnippetIds: string[] = [];
+  for (const snippet of frameSnippets) {
+    frameTechniqueSnippetIds.push(snippet.id);
+    ruleBlocks.push(snippet.positive);
+    for (const neg of snippet.negativeLines) mustAvoid.push(neg);
+  }
+
   // ── Visual priority ───────────────────────────────────────────────────
   const visualPriorityOrder = (() => {
     if (isProblem) return ['the problem itself', 'environment that grounds the problem', 'subject\'s reaction'];
@@ -335,9 +383,35 @@ export function buildImageBrief(input: BuildImageBriefInput): ImageBrief {
     mirrorRisk,
     contactProofRequired,
     ruleBlocks,
+    frameTechniqueSnippetIds,
     negativeConstraints: dedupeKeepOrder(negativeConstraints),
     finalImagePrompt,
   };
+}
+
+// V14 PR2 — best-effort form inference from existing dossier/visual fields.
+// Falls back to "bottle" when nothing meaningful is available; the snippet
+// prefers running with weak data over not running at all.
+function inferProductForm(
+  dossier: ProductDossier | null,
+  visual: ProductVisualAnalysis | null,
+): string | null {
+  const candidates: string[] = [];
+  if (dossier?.packagingType) candidates.push(dossier.packagingType.toLowerCase());
+  if (dossier?.category) candidates.push(dossier.category.toLowerCase());
+  if (dossier?.productType) candidates.push(dossier.productType.toLowerCase());
+  if (visual?.objectDescription) candidates.push(visual.objectDescription.toLowerCase());
+  const text = candidates.join(' ');
+  if (!text) return null;
+  if (/\btube\b/.test(text)) return 'tube';
+  if (/\bjar\b/.test(text)) return 'jar';
+  if (/\bbox\b|\bcarton\b/.test(text)) return 'box';
+  if (/\bcan\b/.test(text)) return 'can';
+  if (/\bsachet\b|\bpouch\b/.test(text)) return 'sachet';
+  if (/\bstick\b/.test(text)) return 'stick';
+  if (/\bdevice\b|\bgadget\b|\btool\b/.test(text)) return 'device';
+  if (/\bbottle\b|\bspray\b|\bpump\b|\bdropper\b/.test(text)) return 'bottle';
+  return 'bottle';
 }
 
 function renderFinalPrompt(p: {
