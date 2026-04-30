@@ -13,6 +13,7 @@ import {
 } from '@/lib/voice/elevenlabs';
 import { getStorage } from '@/lib/storage';
 import { recordApiCallStart, recordApiCallComplete } from '@/lib/usage/log';
+import { logStage } from '@/lib/logging/log';
 import { priceElevenLabsTts } from '@/lib/usage/pricing';
 import { buildCreditMutationOps } from '@/lib/usage/credits';
 import { checkRateLimit, RateLimitedError } from '@/lib/usage/rate-limit';
@@ -146,8 +147,14 @@ async function generateSceneVoiceImplInner(
     return { success: false, error: 'טקסט הסצנה ריק — אין מה להקריא.' };
   }
 
+  const voiceLog = logStage('voice', sceneId);
   let result;
   const ttsStartedAt = Date.now();
+  voiceLog.info('calling elevenlabs', {
+    voiceId: preset.voiceId,
+    chars: text.length,
+    withTimestamps: true,
+  });
   const ttsCallId = await recordApiCallStart({
     provider: 'elevenlabs',
     operation: 'tts',
@@ -176,21 +183,25 @@ async function generateSceneVoiceImplInner(
     });
   } catch (err) {
     const errMsg = (err as Error).message;
+    const durationMs = Date.now() - ttsStartedAt;
     await recordApiCallComplete(ttsCallId, {
       success: false,
       errorMessage: errMsg,
-      durationMs: Date.now() - ttsStartedAt,
+      durationMs,
     });
     if (err instanceof VoiceConfigError) {
+      voiceLog.error('config error', { errMsg, durationMs });
       return { success: false, error: err.message, configError: true };
     }
     if (err instanceof VoiceTimeoutError) {
+      voiceLog.error('timed out', { durationMs });
       return {
         success: false,
         error: 'ElevenLabs לא הגיב בזמן. נסה שוב.',
         timedOut: true,
       };
     }
+    voiceLog.error('failed', { errMsg, durationMs });
     return { success: false, error: `יצירת הקול נכשלה: ${errMsg}` };
   }
 
@@ -205,6 +216,14 @@ async function generateSceneVoiceImplInner(
     durationMs: Date.now() - ttsStartedAt,
   });
 
+  voiceLog.info('elevenlabs returned', {
+    model: result.model,
+    audioBytes: result.audioBytes.byteLength,
+    alignmentChars: result.characterTimings?.length ?? 0,
+    durationSeconds: result.durationSeconds,
+    durationMs: Date.now() - ttsStartedAt,
+  });
+
   // Persist MP3 to storage.
   const storage = await getStorage();
   const filename = `${scene.id}-${Date.now()}.mp3`;
@@ -214,6 +233,7 @@ async function generateSceneVoiceImplInner(
     data: result.audioBytes,
     contentType: 'audio/mpeg',
   });
+  voiceLog.info('persisted', { url });
 
   // V6: voice keeps first-regen-free policy via FIRST_REGEN_FREE map.
   // (image + voice keep this UX; clips dropped it for margin reasons.)

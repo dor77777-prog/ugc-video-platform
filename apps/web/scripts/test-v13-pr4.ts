@@ -51,7 +51,7 @@ function captureOff() {
     '[PR4.1] info() emits exactly one console line',
   );
   assert(
-    captured[0].line.startsWith('[kling:scn_abc]'),
+    !!captured[0] && captured[0].line.startsWith('[kling:scn_abc]'),
     '[PR4.1] info() prefixes line with [stage:scope] tag',
     `got: ${JSON.stringify(captured[0])}`,
   );
@@ -179,6 +179,58 @@ async function main() {
       captured.some((c) => c.level === 'error' && /✗ i2v_call/.test(c.line) && /boom/.test(c.line)),
       '[PR4.1] span() emits "✗ <label> (NNms): <err>" on failure',
       `got: ${JSON.stringify(captured.map((c) => c.line))}`,
+    );
+  }
+
+  // ── PR4.2 — Stage logs wired into image-brief / image-gen / voice ────
+  {
+    const fs = require('node:fs') as typeof import('node:fs');
+    const path = require('node:path') as typeof import('node:path');
+
+    const generateImpl = fs.readFileSync(
+      path.resolve(__dirname, '../lib/scenes/generate-impl.ts'),
+      'utf8',
+    );
+    assert(
+      /logStage\(['"]image-brief['"]\s*,\s*sceneId\)/.test(generateImpl),
+      "[PR4.2] generate-impl.ts uses logStage('image-brief', sceneId)",
+    );
+    assert(
+      /logStage\(['"]image-gen['"]\s*,\s*sceneId\)/.test(generateImpl),
+      "[PR4.2] generate-impl.ts uses logStage('image-gen', sceneId)",
+    );
+    assert(
+      /briefLog\.info\(['"]brief built['"]/.test(generateImpl),
+      '[PR4.2] generate-impl.ts logs "brief built" with brief metrics',
+    );
+    assert(
+      /imageLog\.info\(['"]gpt-image-2 returned['"]/.test(generateImpl),
+      '[PR4.2] generate-impl.ts logs "gpt-image-2 returned" with model + duration',
+    );
+    assert(
+      /imageLog\.error\(/.test(generateImpl),
+      '[PR4.2] generate-impl.ts logs errors via image-gen logger',
+    );
+
+    const voiceImpl = fs.readFileSync(
+      path.resolve(__dirname, '../lib/scenes/voice-impl.ts'),
+      'utf8',
+    );
+    assert(
+      /logStage\(['"]voice['"]\s*,\s*sceneId\)/.test(voiceImpl),
+      "[PR4.2] voice-impl.ts uses logStage('voice', sceneId)",
+    );
+    assert(
+      /voiceLog\.info\(['"]calling elevenlabs['"]/.test(voiceImpl),
+      '[PR4.2] voice-impl.ts logs "calling elevenlabs" before TTS call',
+    );
+    assert(
+      /voiceLog\.info\(['"]elevenlabs returned['"]/.test(voiceImpl),
+      '[PR4.2] voice-impl.ts logs "elevenlabs returned" with audio + alignment metrics',
+    );
+    assert(
+      /voiceLog\.error\(/.test(voiceImpl),
+      '[PR4.2] voice-impl.ts logs errors via voice logger',
     );
   }
 

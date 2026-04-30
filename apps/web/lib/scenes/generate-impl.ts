@@ -28,6 +28,7 @@ import {
   type ImageBrief,
 } from '@/lib/image-briefs/image-brief-builder';
 import type { ProductIntelligence } from '@/lib/product-intelligence';
+import { logStage } from '@/lib/logging/log';
 
 const COST_PER_SCENE_IMAGE = PER_OPERATION_CREDITS.image; // 2 credits
 
@@ -156,6 +157,15 @@ async function generateSceneImageImplInner(
   // image model receives a contract instead of a poem.
   const sceneGenType = (scene as { sceneGenerationType?: string | null }).sceneGenerationType ?? '';
   const isProblem = isProblemSceneType(sceneGenType);
+  const briefLog = logStage('image-brief', sceneId);
+  const imageLog = logStage('image-gen', sceneId);
+  briefLog.info('building brief', {
+    sceneType: sceneGenType,
+    isProblem,
+    hasIntelligence: !!intelligence,
+    hasHero: !!heroImageUrl,
+    hasAvatar: !!selectedAvatar,
+  });
   let brief: ImageBrief = buildImageBrief({
     sceneNumber: scene.sceneOrder + 1,
     totalScenes,
@@ -173,6 +183,15 @@ async function generateSceneImageImplInner(
     showFace: (scene as { showFace?: boolean | null }).showFace ?? null,
     intelligence,
     isProblemScene: isProblem,
+  });
+  briefLog.info('brief built', {
+    mustShowCount: brief.mustShow.length,
+    mustAvoidCount: brief.mustAvoid.length,
+    promptChars: brief.finalImagePrompt.length,
+    handsPhysicsRequired: brief.handsPhysicsRequired,
+    mirrorRisk: brief.mirrorRisk,
+    contactProofRequired: brief.contactProofRequired,
+    ruleBlocks: brief.ruleBlocks.length,
   });
 
   // If the scene will be lip-synced downstream, the still must look like
@@ -201,6 +220,11 @@ async function generateSceneImageImplInner(
   // imageRegenAttempts / needsManualReview columns remain nullable for
   // backwards compatibility but are no longer written here.
   const imageStartedAt = Date.now();
+  imageLog.info('calling gpt-image-2', {
+    model: process.env.OPENAI_IMAGE_MODEL || 'gpt-image-2',
+    silentTalkingPlate,
+    refs: { product: !!heroImageUrl, avatar: !!selectedAvatar },
+  });
   const imageCallId = await recordApiCallStart({
     provider: 'openai',
     operation: 'image_gen',
@@ -248,15 +272,18 @@ async function generateSceneImageImplInner(
     });
   } catch (err) {
     const errMsg = (err as Error).message;
+    const durationMs = Date.now() - imageStartedAt;
     await recordApiCallComplete(imageCallId, {
       success: false,
       errorMessage: errMsg,
-      durationMs: Date.now() - imageStartedAt,
+      durationMs,
     });
     if (err instanceof LlmConfigError) {
+      imageLog.error('config error', { errMsg, durationMs });
       return { success: false, error: err.message };
     }
     if (err instanceof SceneImageTimeoutError) {
+      imageLog.error('timed out', { durationMs });
       return {
         success: false,
         error: 'OpenAI לא הגיב תוך 3 דקות לסצנה זו. נסה שוב — אם זה חוזר על עצמו, יש עומס/תקלה אצלם.',
@@ -264,6 +291,7 @@ async function generateSceneImageImplInner(
       };
     }
     if (err instanceof SceneImageSafetyError) {
+      imageLog.warn('safety rejected', { errMsg, durationMs });
       return {
         success: false,
         error:
@@ -271,6 +299,7 @@ async function generateSceneImageImplInner(
         safetyBlocked: true,
       };
     }
+    imageLog.error('failed', { errMsg, durationMs });
     return { success: false, error: `יצירת התמונה נכשלה: ${errMsg}` };
   }
 
@@ -280,6 +309,14 @@ async function generateSceneImageImplInner(
     costUsd: priceOpenAiImage(result.model, result.quality, result.size),
     units: 1,
     durationMs: result.durationMs,
+  });
+  imageLog.info('gpt-image-2 returned', {
+    model: result.model,
+    quality: result.quality,
+    size: result.size,
+    durationMs: result.durationMs,
+    safetyRetryApplied: result.safetyRetryApplied,
+    bytes: Buffer.byteLength(result.base64, 'base64'),
   });
 
   // Persist the generated frame.
@@ -293,6 +330,7 @@ async function generateSceneImageImplInner(
     contentType: 'image/png',
   });
   const url = persisted.url;
+  imageLog.info('persisted', { url });
 
   // V6: image keeps first-regen-free policy via FIRST_REGEN_FREE map.
   // (image + voice keep this UX; clips dropped it for margin reasons.)
