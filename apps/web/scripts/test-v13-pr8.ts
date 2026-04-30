@@ -57,7 +57,7 @@ if (fs.existsSync(PAGE)) {
     ['motion', 'ניתוח תנועה'],
     ['history', 'היסטוריית ייצור'],
     ['intelligence', 'Product Intelligence'],
-  ]) {
+  ] as const) {
     assert(
       page.includes(label),
       `[PR8] section "${section}" rendered (Hebrew label "${label}")`,
