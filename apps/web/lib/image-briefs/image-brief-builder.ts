@@ -17,6 +17,7 @@ import type {
   ProductVisualAnalysis,
   ProductIntelligence,
 } from '@/lib/product-intelligence';
+import { buildIsraeliRealismBlock } from '@/lib/scene-planning/israeli-realism-rules';
 
 export interface ImageBrief {
   sceneNumber: number;
@@ -131,14 +132,11 @@ export function buildImageBrief(input: BuildImageBriefInput): ImageBrief {
     for (const v of visual.mustAvoidForDemo) mustAvoid.push(v);
     for (const v of visual.likelyModelMistakes) mustAvoid.push(v);
   }
-  // Universal mustAvoid items — apply to every scene.
-  mustAvoid.push(
-    'foreign suburban / oversized US-style kitchen',
-    'foreign-looking outlets, switches, or plug sockets',
-    'random English signage that doesn\'t match an Israeli setting',
-    'stock-photo polish — over-clean staged composition',
-    'studio portrait look on selfie/talking-head scenes',
-  );
+  // Universal Israeli-realism guards — extracted to a dedicated module
+  // so every brief and (later) every scene-plan applies the same rules.
+  const israeliRealism = buildIsraeliRealismBlock({ isTalking, isProblem });
+  for (const item of israeliRealism.mustAvoid) mustAvoid.push(item);
+  for (const item of israeliRealism.mustShow) mustShow.push(item);
 
   // ── Environment ──────────────────────────────────────────────────────
   const environmentDetails: string[] = [];
@@ -190,12 +188,7 @@ export function buildImageBrief(input: BuildImageBriefInput): ImageBrief {
   const realismInstruction =
     'mobile-first UGC, single consistent natural light source, realistic skin texture, slightly imperfect — never the over-polished stock-photo look';
 
-  const israeliContextInstruction = [
-    'every visible interior must feel like a believable Israeli home (modern apartment is fine, foreign suburban is NOT)',
-    'visible wall outlets / switches / plug sockets must be Israeli-pattern (Type H)',
-    'any visible text or signage must be Hebrew or neutral — no random English shop signs',
-    'apartment proportions must be realistic Israeli scale, not oversized US kitchens',
-  ].join('; ');
+  const israeliContextInstruction = israeliRealism.promptText;
 
   // ── Product accuracy (the centerpiece for proof scenes) ───────────────
   const productAccuracyInstruction = (() => {
