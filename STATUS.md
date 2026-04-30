@@ -361,7 +361,7 @@ GET    /api/projects/[id]/scripts/list          Stream scripts as they persist (
 
 GET    /api/scenes/[id]                         Live scene state polled by SceneCard during batch
 PUT    /api/scenes/[id]                         Update visual prompt etc.
-POST   /api/scenes/[id]/generate                Generate image (deterministic brief → gpt-image-2 → optional QA loop)
+POST   /api/scenes/[id]/generate                Generate image (deterministic brief → gpt-image-2, single-pass — V13 PR1 removed the QA loop)
 POST   /api/scenes/[id]/regen-prompt            Ask LLM for a fresh visualPromptEnglish variant — does NOT generate the image
 POST   /api/scenes/[id]/voice                   Generate voice (ElevenLabs with timestamps)
 POST   /api/scenes/[id]/clip                    Generate clip (Kling i2v + face-gate + PixVerse / mux)

@@ -13,7 +13,7 @@ Hebrew-first AI platform for generating Israeli UGC product video ads from a pro
 
 ```
 URL → scrape → product intelligence → script (gpt-5.4-mini)
-    → scene images (gpt-image-2 + optional QA loop)
+    → scene images (gpt-image-2, single-pass — V13 PR1 removed the QA loop)
     → voice (ElevenLabs eleven_v3 with-timestamps)
     → clips (Kling Omni v3 + PixVerse LipSync via face-gate)
     → final composition (ffmpeg: concat + music + ASS captions)
@@ -298,7 +298,7 @@ POST   /api/projects/[id]/render                Enqueue final composition (BullM
 
 GET    /api/scenes/[id]                         Live scene state (used by polling SceneCard)
 PUT    /api/scenes/[id]                         Update scene fields (visual prompt, etc.)
-POST   /api/scenes/[id]/generate                Generate scene image (image brief + gpt-image-2 + optional QA)
+POST   /api/scenes/[id]/generate                Generate scene image (image brief + gpt-image-2, single-pass)
 POST   /api/scenes/[id]/regen-prompt            Ask LLM for a fresh image prompt variant
 POST   /api/scenes/[id]/voice                   Generate per-scene voice
 POST   /api/scenes/[id]/clip                    Generate per-scene clip (Kling i2v + PixVerse)

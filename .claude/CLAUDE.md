@@ -17,7 +17,7 @@ Hebrew-first AI platform for Israeli UGC product video ads.
 | Queue | Redis Cloud free tier (prod) · local Redis (dev) |
 | Storage | Cloudflare R2 (prod, S3-compatible) · local `public/uploads/` (dev) |
 | Auth | Supabase Auth — `ADMIN_EMAILS` env auto-promotes first user |
-| AI | OpenAI (gpt-5.4-mini scripts, gpt-image-2 scenes, gpt-4o-mini vision QA/face-gate) |
+| AI | OpenAI (gpt-5.4-mini scripts, gpt-image-2 scenes, gpt-4o-mini vision for face-gate / motion-analysis / product-visual-analysis — V13 PR1 removed the post-gen QA loop) |
 | Voice | ElevenLabs `eleven_v3` with-timestamps |
 | Video | Kling Omni v3 i2v + PixVerse LipSync |
 | Composition | ffmpeg on worker host → upload MP4 to R2 |
