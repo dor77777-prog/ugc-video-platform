@@ -290,6 +290,40 @@ function assert(cond: boolean, name: string, detail = '') {
   );
 }
 
+// ── PR3.3 — clip-impl.ts plumbs the plan correctly ─────────────────────
+{
+  const fs = require('node:fs') as typeof import('node:fs');
+  const path = require('node:path') as typeof import('node:path');
+  const clipImpl = fs.readFileSync(
+    path.resolve(__dirname, '../lib/scenes/clip-impl.ts'),
+    'utf8',
+  );
+  assert(
+    clipImpl.includes('buildAnimationPlan'),
+    '[PR3.3] clip-impl.ts imports/uses buildAnimationPlan',
+  );
+  assert(
+    clipImpl.includes('buildKlingPromptFromPlan'),
+    '[PR3.3] clip-impl.ts uses buildKlingPromptFromPlan (plan-driven path)',
+  );
+  assert(
+    !clipImpl.includes('buildKlingMotionPrompt('),
+    '[PR3.3] clip-impl.ts no longer calls the legacy buildKlingMotionPrompt',
+  );
+  assert(
+    clipImpl.includes('detectHandsPhysicsRequired'),
+    '[PR3.3] clip-impl.ts plumbs detectHandsPhysicsRequired into the plan',
+  );
+  assert(
+    clipImpl.includes('detectMirrorRisk'),
+    '[PR3.3] clip-impl.ts plumbs detectMirrorRisk into the plan',
+  );
+  assert(
+    clipImpl.includes('detectContactProofRequired'),
+    '[PR3.3] clip-impl.ts plumbs detectContactProofRequired into the plan',
+  );
+}
+
 console.log('');
 if (failures === 0) {
   console.log('PR3 verification: ALL CHECKS PASSED');

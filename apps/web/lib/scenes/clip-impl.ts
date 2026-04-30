@@ -21,8 +21,14 @@
 import { prisma } from '@/lib/db';
 import {
   klingProvider,
-  buildKlingMotionPrompt,
+  buildKlingPromptFromPlan,
 } from '@/lib/animation/kling';
+import { buildAnimationPlan } from '@/lib/animation/animation-plan-builder';
+import {
+  detectHandsPhysicsRequired,
+  detectMirrorRisk,
+  detectContactProofRequired,
+} from '@/lib/scene-planning/scene-rules';
 import {
   getLipSyncProvider,
   LipSyncProviderError,
@@ -414,21 +420,42 @@ async function generateSceneClipImplInner(
     }
   }
 
-  const motionPrompt = buildKlingMotionPrompt({
-    cameraDirection: scene.cameraDirection,
-    performanceNote: scene.performanceNote,
-    sceneType: scene.sceneType,
-    requiresLipSync: routing.requiresLipSync,
+  // V13 PR3.3 — build the AnimationPlan once, then render the Kling
+  // prompt FROM the plan. The plan is the contract; the prompt is just
+  // its rendered form. This route also pulls the V13 PR2 brief flags
+  // (handsPhysicsRequired / mirrorRisk / contactProofRequired) through
+  // detection on the same scene fields so the motion contract matches
+  // the still contract.
+  const animationPlan = buildAnimationPlan({
     sceneGenerationType: routing.sceneGenerationType,
-    motionAnalysis,
-    // V4 product-first metadata. Read straight off the Scene row
-    // (LLM-committed values when present, else null fallback).
+    requiresLipSync: routing.requiresLipSync,
     primarySubject: (scene as { primarySubject?: string | null }).primarySubject ?? null,
     mustShowProduct: (scene as { mustShowProduct?: boolean | null }).mustShowProduct ?? null,
     productVisibilityPriority:
       (scene as { productVisibilityPriority?: string | null }).productVisibilityPriority ?? null,
     cameraFocus: (scene as { cameraFocus?: string | null }).cameraFocus ?? null,
     showFace: (scene as { showFace?: boolean | null }).showFace ?? null,
+    motionAnalysis,
+    handsPhysicsRequired: detectHandsPhysicsRequired({
+      sceneGenerationType: routing.sceneGenerationType,
+      mustShowProduct: (scene as { mustShowProduct?: boolean | null }).mustShowProduct ?? null,
+      cameraDirection: scene.cameraDirection,
+      sceneGoal: scene.sceneGoal,
+      faceVisibility: (scene as { faceVisibility?: string | null }).faceVisibility ?? null,
+    }),
+    mirrorRisk: detectMirrorRisk({
+      sceneGenerationType: routing.sceneGenerationType,
+      mustShowProduct: (scene as { mustShowProduct?: boolean | null }).mustShowProduct ?? null,
+      cameraDirection: scene.cameraDirection,
+      sceneGoal: scene.sceneGoal,
+      faceVisibility: (scene as { faceVisibility?: string | null }).faceVisibility ?? null,
+    }),
+    contactProofRequired: detectContactProofRequired({
+      sceneGenerationType: routing.sceneGenerationType,
+    }),
+  });
+  const motionPrompt = buildKlingPromptFromPlan(animationPlan, {
+    cameraDirection: scene.cameraDirection,
   });
 
   // Multi-reference for non-talking scenes: feed Kling Omni the product
