@@ -27,6 +27,10 @@ yarn-error.log*
 .vscode/
 .idea/
 
+# Claude Code local config + backups (machine-specific, not for git).
+.claude/settings.json.local-backup
+.claude/settings.local.json
+
 # OS
 .DS_Store
 
