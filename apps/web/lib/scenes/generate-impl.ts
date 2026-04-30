@@ -29,6 +29,10 @@ import {
   isProblemSceneType,
   type ImageBrief,
 } from '@/lib/image-briefs/image-brief-builder';
+import {
+  SceneVariationLedger,
+  chooseScrollStopperIndex,
+} from '@/lib/image-briefs/scene-variation-ledger';
 import type { ProductIntelligence } from '@/lib/product-intelligence';
 import { logStage, flushSceneLogBuffer } from '@/lib/logging/log';
 
@@ -153,7 +157,46 @@ async function generateSceneImageImplInner(
     typeof data.selectedAvatarId === 'string' ? data.selectedAvatarId : null,
   );
   const categoryId = typeof data.category === 'string' ? data.category : null;
-  const totalScenes = await prisma.scene.count({ where: { scriptId: scene.scriptId } });
+
+  // V14 PR4 — load sibling scenes so we can build a SceneVariationLedger
+  // (diversity diagnostic) AND pick the scroll-stopper. One small select
+  // per scene gen; the result is used for diagnostic counts and the
+  // scroll-stopper decision, not for any cross-scene mutation.
+  const siblings = await prisma.scene.findMany({
+    where: { scriptId: scene.scriptId },
+    select: {
+      sceneOrder: true,
+      cameraFocus: true,
+      sceneGenerationType: true,
+      primarySubject: true,
+      faceVisibility: true,
+      sceneGoal: true,
+    },
+    orderBy: { sceneOrder: 'asc' },
+  });
+  const totalScenes = siblings.length;
+  const variationLedger = SceneVariationLedger.fromRecords(
+    siblings
+      .filter((s) => s.sceneOrder !== scene.sceneOrder)
+      .map((s) => ({
+        sceneOrder: s.sceneOrder,
+        cameraFocus: s.cameraFocus,
+        sceneGenerationType: s.sceneGenerationType,
+        primarySubject: s.primarySubject,
+        faceVisibility: s.faceVisibility,
+      })),
+  );
+  const finalSceneGoal = siblings[siblings.length - 1]?.sceneGoal ?? null;
+  const scrollStopperChoice = chooseScrollStopperIndex({
+    totalScenes,
+    finalSceneGoal,
+  });
+  const isScrollStopper = scrollStopperChoice.index === scene.sceneOrder;
+  const scrollStopperReason: 'hook' | 'punchline' | undefined = isScrollStopper
+    ? scrollStopperChoice.reason === 'none'
+      ? undefined
+      : scrollStopperChoice.reason
+    : undefined;
 
   // V14 PR3 — outfit lock. Compute once on first scene generation that has
   // an avatar, persist to Project.productData.lockedOutfit, then reuse
@@ -224,6 +267,9 @@ async function generateSceneImageImplInner(
     intelligence,
     isProblemScene: isProblem,
     outfitDescriptionLocked: lockedOutfit,
+    isScrollStopper,
+    scrollStopperReason,
+    variationLedger,
   });
   briefLog.info('brief built', {
     mustShowCount: brief.mustShow.length,

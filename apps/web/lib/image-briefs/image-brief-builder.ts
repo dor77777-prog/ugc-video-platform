@@ -30,6 +30,10 @@ import {
   chooseFrameTechniqueSnippets,
   type SnippetOutput as FrameSnippetOutput,
 } from '@/lib/image-briefs/frame-technique-snippets';
+import {
+  buildScrollStopperLevers,
+  type SceneVariationLedger,
+} from '@/lib/image-briefs/scene-variation-ledger';
 
 export interface ImageBrief {
   sceneNumber: number;
@@ -57,6 +61,24 @@ export interface ImageBrief {
    *  Surfaced for telemetry + admin debug so we can see which snippets
    *  influenced the prompt. */
   frameTechniqueSnippetIds: string[];
+  /** V14 PR4 — true when scroll-stopper levers were appended for this scene. */
+  scrollStopperApplied: boolean;
+  /** V14 PR4 — 'hook' / 'punchline' / null. Logged for admin debug. */
+  scrollStopperReason: 'hook' | 'punchline' | null;
+  /** V14 PR4 — diversity summary from the variation ledger when one was
+   *  passed in. Null when no ledger was provided (caller didn't load
+   *  sibling scenes). Surfaced on /admin/scenes/[id]/debug in PR6. */
+  variationDiversity:
+    | Record<
+        | 'cameraFocus'
+        | 'sceneGenerationType'
+        | 'primarySubject'
+        | 'faceVisibility'
+        | 'environmentType'
+        | 'timeOfDay',
+        { distinct: number; total: number }
+      >
+    | null;
   negativeConstraints: string[];
   finalImagePrompt: string;
 }
@@ -99,6 +121,18 @@ export interface BuildImageBriefInput {
   /** V14 PR2 — outfit description locked at project level (PR3+ work).
    *  When provided, the consistency anchor quotes it verbatim. */
   outfitDescriptionLocked?: string | null;
+  /** V14 PR4 — when true, this scene is the ad's scroll-stopper. The brief
+   *  builder appends scroll-stopper levers (tight framing, saturated color
+   *  contrast, surprising angle) as a ruleBlock. The caller is responsible
+   *  for choosing exactly one scene per ad. */
+  isScrollStopper?: boolean;
+  /** V14 PR4 — 'hook' (scene 0) or 'punchline' (final scene). Drives which
+   *  flavor of scroll-stopper levers fire. Ignored when isScrollStopper=false. */
+  scrollStopperReason?: 'hook' | 'punchline';
+  /** V14 PR4 — optional ledger of earlier scenes in the same script. The
+   *  brief builder logs diversity counts to the ImageBrief for admin debug;
+   *  PR6 will surface them on /admin/scenes/[id]/debug. */
+  variationLedger?: SceneVariationLedger | null;
 }
 
 const TALKING_TYPES = new Set([
@@ -335,6 +369,29 @@ export function buildImageBrief(input: BuildImageBriefInput): ImageBrief {
     for (const neg of snippet.negativeLines) mustAvoid.push(neg);
   }
 
+  // ── V14 PR4 — Scroll-stopper levers ────────────────────────────────────
+  // Caller (generate-impl.ts) decides which scene gets the promotion via
+  // chooseScrollStopperIndex(). Brief builder just applies the lever when
+  // told to. Default reason='hook' to keep the failure mode soft if the
+  // caller forgets.
+  let scrollStopperApplied = false;
+  let scrollStopperReason: 'hook' | 'punchline' | null = null;
+  if (input.isScrollStopper) {
+    const reason = input.scrollStopperReason ?? 'hook';
+    const levers = buildScrollStopperLevers({ reason });
+    ruleBlocks.push(levers.positive);
+    for (const neg of levers.negativeLines) mustAvoid.push(neg);
+    scrollStopperApplied = true;
+    scrollStopperReason = reason;
+  }
+
+  // ── V14 PR4 — Variation diversity (diagnostic only) ────────────────────
+  // The ledger doesn't override script choices; it just exposes counts so
+  // PR6's admin debug surface can flag low-diversity ads.
+  const variationDiversity = input.variationLedger
+    ? input.variationLedger.summary()
+    : null;
+
   // ── Visual priority ───────────────────────────────────────────────────
   const visualPriorityOrder = (() => {
     if (isProblem) return ['the problem itself', 'environment that grounds the problem', 'subject\'s reaction'];
@@ -384,6 +441,9 @@ export function buildImageBrief(input: BuildImageBriefInput): ImageBrief {
     contactProofRequired,
     ruleBlocks,
     frameTechniqueSnippetIds,
+    scrollStopperApplied,
+    scrollStopperReason,
+    variationDiversity,
     negativeConstraints: dedupeKeepOrder(negativeConstraints),
     finalImagePrompt,
   };
