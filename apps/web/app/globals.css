@@ -4,18 +4,22 @@
 
 @layer base {
   :root {
-    /* Tachles brand palette — cream + electric violet + acid lime */
+    /* V15 — refined palette. Cream-warm base + electric violet primary +
+       acid lime accent. Minor saturation bumps to read as "premium AI"
+       under the new gradient mesh backgrounds. */
     --background: 45 35% 96%;
-    --foreground: 240 8% 5%;
+    --foreground: 240 10% 4%;
 
     --card: 0 0% 100%;
-    --card-foreground: 240 8% 5%;
+    --card-foreground: 240 10% 4%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 240 8% 5%;
+    --popover-foreground: 240 10% 4%;
 
     --primary: 257 100% 58%;
     --primary-foreground: 0 0% 100%;
+    /* Soft variant of primary for tinted backgrounds. */
+    --primary-soft: 257 100% 96%;
 
     --secondary: 45 25% 92%;
     --secondary-foreground: 240 8% 5%;
@@ -25,15 +29,22 @@
 
     --accent: 73 100% 62%;
     --accent-foreground: 240 10% 4%;
+    --accent-soft: 73 70% 92%;
 
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
 
     --border: 45 15% 85%;
+    --border-subtle: 45 12% 92%;
     --input: 45 15% 88%;
     --ring: 257 100% 58%;
 
     --radius: 0.875rem;
+
+    /* Two gradient stops used by the mesh background. Pulled out so the
+       same hues drive cards, hero, and CTA surfaces consistently. */
+    --gradient-from: 257 100% 70%;
+    --gradient-to: 290 90% 75%;
   }
 }
 
@@ -44,8 +55,85 @@
   body {
     @apply bg-background text-foreground;
     font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+    /* V15 — slightly tighter default kerning at heading sizes; modern
+       AI-startup typographic look without overriding line-height. */
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  /* Heading defaults — tracking-tight reads as 2026 vs 2024's loose tracking. */
+  h1, h2, h3, h4 {
+    letter-spacing: -0.02em;
+  }
+  h1 {
+    letter-spacing: -0.025em;
   }
 }
+
+/* ==================================================================
+ * V15 — utility classes for the new design system.
+ * ================================================================== */
+
+/* Mesh gradient — soft radial-blur background used on hero / dashboard. */
+.bg-mesh {
+  background-color: hsl(var(--background));
+  background-image:
+    radial-gradient(at 12% 18%, hsl(var(--gradient-from) / 0.18) 0px, transparent 45%),
+    radial-gradient(at 88% 12%, hsl(var(--accent) / 0.14) 0px, transparent 45%),
+    radial-gradient(at 50% 90%, hsl(var(--gradient-to) / 0.12) 0px, transparent 50%);
+}
+
+/* Subtle SVG noise overlay — hand-tuned 0.025 alpha so it reads as
+   texture without competing with content. Apply on a layer above the
+   mesh, below the foreground. */
+.bg-noise::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.025;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* Glass card — backdrop-blur + semi-transparent background. Use over
+   the mesh / hero to read as elevated surface. */
+.glass {
+  @apply bg-card/70 backdrop-blur-xl border border-border-subtle;
+}
+
+/* Gradient text — for hero H1s and key numbers. */
+.text-gradient {
+  background-image: linear-gradient(
+    135deg,
+    hsl(var(--primary)) 0%,
+    hsl(var(--gradient-to)) 50%,
+    hsl(var(--accent)) 100%
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Soft glow shadow — used on primary CTA buttons + selected cards. */
+.shadow-glow {
+  box-shadow:
+    0 0 0 1px hsl(var(--primary) / 0.1),
+    0 8px 24px -8px hsl(var(--primary) / 0.35),
+    0 4px 10px -6px hsl(var(--primary) / 0.2);
+}
+
+/* Card with hover lift — adds a subtle 2px translateY + shadow grow. */
+.card-hover {
+  @apply transition-all duration-200 ease-out;
+}
+.card-hover:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 28px -10px hsl(var(--foreground) / 0.12);
+}
+
+/* ==================================================================
+ * Animations.
+ * ================================================================== */
 
 /* Indeterminate progress bar — sliding gradient. Used while we wait for an
    AI provider where we have no real progress events. */
@@ -68,4 +156,22 @@
 }
 .animate-shimmer-overlay {
   animation: tachles-shimmer-overlay 1.6s infinite ease-in-out;
+}
+
+/* V15 — slow pulse for live activity indicators (e.g. "rendering now"). */
+@keyframes tachles-soft-pulse {
+  0%, 100% { opacity: 0.5; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.15); }
+}
+.animate-soft-pulse {
+  animation: tachles-soft-pulse 2s infinite ease-in-out;
+}
+
+/* V15 — fade-in-up: stagger entry for grid cards. */
+@keyframes tachles-fade-in-up {
+  0% { opacity: 0; transform: translateY(8px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-in-up {
+  animation: tachles-fade-in-up 0.4s ease-out backwards;
 }

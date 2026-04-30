@@ -16,6 +16,8 @@ const config: Config = {
       },
       colors: {
         border: 'hsl(var(--border))',
+        // V15 — softer divider tone for low-contrast separators.
+        'border-subtle': 'hsl(var(--border-subtle))',
         input: 'hsl(var(--input))',
         ring: 'hsl(var(--ring))',
         background: 'hsl(var(--background))',
@@ -23,6 +25,7 @@ const config: Config = {
         primary: {
           DEFAULT: 'hsl(var(--primary))',
           foreground: 'hsl(var(--primary-foreground))',
+          soft: 'hsl(var(--primary-soft))',
         },
         secondary: {
           DEFAULT: 'hsl(var(--secondary))',
@@ -35,6 +38,7 @@ const config: Config = {
         accent: {
           DEFAULT: 'hsl(var(--accent))',
           foreground: 'hsl(var(--accent-foreground))',
+          soft: 'hsl(var(--accent-soft))',
         },
         destructive: {
           DEFAULT: 'hsl(var(--destructive))',
