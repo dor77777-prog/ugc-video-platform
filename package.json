@@ -13,6 +13,7 @@
     "dev:web": "npm run dev -w @ugc-video/web",
     "dev:worker": "npm run dev -w @ugc-video/worker",
     "build:web": "npm run build -w @ugc-video/web",
+    "analyze:web": "ANALYZE=true npm run build -w @ugc-video/web",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",

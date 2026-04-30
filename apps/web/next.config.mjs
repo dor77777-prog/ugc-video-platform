@@ -1,8 +1,15 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import bundleAnalyzer from '@next/bundle-analyzer';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// V14.5 — opt-in bundle analyzer. Run `ANALYZE=true npm run build:web`
+// to open the size visualization for client + server chunks.
+const withBundleAnalyzer = bundleAnalyzer({
+  enabled: process.env.ANALYZE === 'true',
+});
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
@@ -80,4 +87,4 @@ const nextConfig = {
   },
 };
 
-export default nextConfig;
+export default withBundleAnalyzer(nextConfig);
