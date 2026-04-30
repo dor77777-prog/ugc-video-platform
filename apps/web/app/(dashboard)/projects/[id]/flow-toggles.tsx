@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
+import { toast } from 'sonner';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
@@ -9,6 +10,11 @@ import {
   setProjectFlowToggle,
   type FlowToggleKey,
 } from './flow-toggle-actions';
+
+const TOGGLE_LABELS: Record<FlowToggleKey, string> = {
+  captions: 'כתוביות',
+  backgroundMusic: 'מוזיקת רקע',
+};
 
 interface FlowTogglesProps {
   projectId: string;
@@ -45,13 +51,18 @@ export function ProjectFlowToggles({
       const res = await setProjectFlowToggle(projectId, key, next);
       if (!res.ok) {
         setLocal(prev); // revert
-        setError(
-          res.error === 'not_found'
-            ? 'הפרויקט לא נמצא'
-            : 'שגיאה בעדכון ההעדפה',
-        );
+        const msg = res.error === 'not_found' ? 'הפרויקט לא נמצא' : 'שגיאה בעדכון ההעדפה';
+        setError(msg);
+        // V16 — sonner toast for the error so the user sees it even
+        // when scrolled away from the toggle bar.
+        toast.error(msg);
         return;
       }
+      // V16 — confirmation toast on success. Quick + dismissable.
+      toast.success(
+        `${TOGGLE_LABELS[key]} ${next ? 'הופעלו' : 'כובו'}`,
+        { duration: 2500 },
+      );
       // Re-render server components on the current page so the videos
       // page picks up the new captions/music state and shows or hides
       // the caption-preset picker accordingly.

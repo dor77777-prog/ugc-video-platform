@@ -1,7 +1,7 @@
 # tachles — Claude Project Context
 
 Hebrew-first AI platform for Israeli UGC product video ads.
-**Current version:** V15 (2026-05-01)
+**Current version:** V16 (2026-05-01)
 **Production:** https://tachles-lac.vercel.app
 **Output:** 9:16 MP4 ads, 15s or 30s, Hebrew voice-over + RTL captions + background music.
 
