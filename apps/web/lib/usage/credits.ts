@@ -73,4 +73,19 @@ export async function applyCreditMutation(
   m: CreditMutation,
 ): Promise<void> {
   await prisma.$transaction(buildCreditMutationOps(prisma, m));
+  // V14.2-A — drop the in-memory user cache so the next
+  // getOrCreateAppUser() call refetches the (now-changed) creditsBalance.
+  invalidateUserCacheAfterCreditMutation(m.userId);
+}
+
+// Callers that bundle credit ops into a larger $transaction (see
+// buildCreditMutationOps) MUST call this after the transaction commits;
+// otherwise the cached User row will keep the stale balance for up to
+// 10s and the wizard will display it.
+export function invalidateUserCacheAfterCreditMutation(userId: string): void {
+  // Lazy-import to avoid pulling lib/auth into pure-helper files (e.g.
+  // worker scripts that import credits.ts but never run a request).
+  void import('@/lib/auth/user-cache').then((m) =>
+    m.invalidateUserCacheById(userId),
+  );
 }

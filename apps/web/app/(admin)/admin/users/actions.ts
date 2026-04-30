@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { prisma } from '@/lib/db';
 import { requireAdmin } from '@/lib/auth/sync-user';
+import { invalidateUserCacheById } from '@/lib/auth/user-cache';
 import { PLAN_CONFIGS } from '@/lib/plans';
 
 export async function addCreditsAction(formData: FormData) {
@@ -25,6 +26,7 @@ export async function addCreditsAction(formData: FormData) {
       },
     }),
   ]);
+  invalidateUserCacheById(userId); // V14.2-A
   revalidatePath('/admin/users');
 }
 
@@ -53,6 +55,7 @@ export async function refundCreditsAction(formData: FormData) {
       },
     }),
   ]);
+  invalidateUserCacheById(userId); // V14.2-A
   revalidatePath('/admin/users');
 }
 
@@ -72,6 +75,7 @@ export async function setSpendCapAction(formData: FormData) {
     where: { id: userId },
     data: { spendCapUsd: cap },
   });
+  invalidateUserCacheById(userId); // V14.2-A
   revalidatePath('/admin/users');
 }
 
@@ -87,6 +91,9 @@ export async function toggleBanAction(formData: FormData) {
     where: { id: userId },
     data: { banned: !target.banned },
   });
+  // V14.2-A — drop cache immediately so a ban takes effect on the
+  // banned user's next request, not in 10s.
+  invalidateUserCacheById(userId);
   revalidatePath('/admin/users');
 }
 
@@ -140,5 +147,6 @@ export async function changePlanAction(formData: FormData) {
       });
     }
   });
+  invalidateUserCacheById(userId); // V14.2-A — plan / credits changed
   revalidatePath('/admin/users');
 }

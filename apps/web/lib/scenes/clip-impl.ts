@@ -70,7 +70,10 @@ import {
   priceOpenAiText,
   priceLipSync,
 } from '@/lib/usage/pricing';
-import { buildCreditMutationOps } from '@/lib/usage/credits';
+import {
+  buildCreditMutationOps,
+  invalidateUserCacheAfterCreditMutation,
+} from '@/lib/usage/credits';
 import { checkRateLimit, RateLimitedError } from '@/lib/usage/rate-limit';
 import { checkSpendCap, SpendCapExceededError } from '@/lib/usage/spend-cap';
 
@@ -1006,6 +1009,8 @@ async function generateSceneClipImplInner(
       },
     }),
   ]);
+  // V14.2-A — credits changed in the transaction above; drop cached User row.
+  invalidateUserCacheAfterCreditMutation(userId);
 
   return {
     success: true,
@@ -1254,6 +1259,8 @@ export async function regenLipSyncOnlyImpl(
         },
       }),
     ]);
+    // V14.2-A — drop cached User row after lipsync-only credit spend.
+    invalidateUserCacheAfterCreditMutation(userId);
 
     return {
       success: true,

@@ -25,7 +25,10 @@ import { getStorage } from '@/lib/storage';
 import { recordApiCallStart, recordApiCallComplete, recordApiCall } from '@/lib/usage/log';
 import { attributeOpenAiImageCost } from '@/lib/usage/cost-attribution';
 import { priceOpenAiImage } from '@/lib/usage/pricing';
-import { buildCreditMutationOps } from '@/lib/usage/credits';
+import {
+  buildCreditMutationOps,
+  invalidateUserCacheAfterCreditMutation,
+} from '@/lib/usage/credits';
 import { checkRateLimit, RateLimitedError } from '@/lib/usage/rate-limit';
 import { checkSpendCap, SpendCapExceededError } from '@/lib/usage/spend-cap';
 import { PER_OPERATION_CREDITS, FIRST_REGEN_FREE } from '@/lib/plans';
@@ -535,6 +538,10 @@ async function generateSceneImageImplInner(
       },
     }),
   ]);
+  // V14.2-A — credit mutation inside a $transaction; we must invalidate
+  // the user cache AFTER commit so router.refresh() picks up the new
+  // balance.
+  invalidateUserCacheAfterCreditMutation(userId);
 
   return {
     success: true,

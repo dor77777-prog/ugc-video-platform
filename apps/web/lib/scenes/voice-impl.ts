@@ -16,7 +16,10 @@ import { recordApiCallStart, recordApiCallComplete } from '@/lib/usage/log';
 import { logStage, flushSceneLogBuffer } from '@/lib/logging/log';
 import { priceElevenLabsTts } from '@/lib/usage/pricing';
 import { attributeElevenLabsTtsCost } from '@/lib/usage/cost-attribution';
-import { buildCreditMutationOps } from '@/lib/usage/credits';
+import {
+  buildCreditMutationOps,
+  invalidateUserCacheAfterCreditMutation,
+} from '@/lib/usage/credits';
 import { checkRateLimit, RateLimitedError } from '@/lib/usage/rate-limit';
 import { checkSpendCap, SpendCapExceededError } from '@/lib/usage/spend-cap';
 import { PER_OPERATION_CREDITS, FIRST_REGEN_FREE } from '@/lib/plans';
@@ -345,6 +348,8 @@ async function generateSceneVoiceImplInner(
       },
     }),
   ]);
+  // V14.2-A — drop cached User row so the new creditsBalance is fetched fresh.
+  invalidateUserCacheAfterCreditMutation(userId);
 
   return {
     success: true,
