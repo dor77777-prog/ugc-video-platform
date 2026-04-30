@@ -389,6 +389,21 @@ model Scene {
   imageRegenAttempts         Int        @default(0)
   needsManualReview          Boolean    @default(false)
 
+  // V13 PR6 — pipeline state machine + per-scene structured log buffer.
+  //   status              — one of SCENE_STATUSES (apps/web/lib/scenes/scene-status.ts).
+  //                         String not enum per house style; the canonical
+  //                         set is the const tuple in that file. New states
+  //                         are added by editing the helper, no migration.
+  //   lastErrorCode       — `<stage>.<reason>` from lib/errors/scene-error-messages.ts.
+  //                         Wizard renders the curated Hebrew message for it.
+  //   lastErrorMessage    — raw error text for <details> display.
+  //   generationLogJson   — array of { stage, level, message, data?, ts }
+  //                         entries. Capped at 200 per scene at flush time.
+  status                     String     @default("pending")
+  lastErrorCode              String?
+  lastErrorMessage           String?
+  generationLogJson          Json?
+
   @@unique([scriptId, sceneOrder])
   @@index([scriptId])
 }
