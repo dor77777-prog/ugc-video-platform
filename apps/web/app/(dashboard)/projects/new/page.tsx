@@ -1,7 +1,7 @@
 'use client';
 
 import Image from 'next/image';
-import { useState, useTransition } from 'react';
+import { useRef, useState, useTransition } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -258,47 +258,32 @@ export default function NewProjectWizard() {
             />
           </Field>
 
-          {/* Images */}
+          {/* Images — V26.17: drag-drop upload from the user's computer.
+              The URL-scrape flow above still populates heroImageUrl
+              when the user pasted a product URL; the user can pick
+              one of the scraped thumbnails OR drag a file in OR paste
+              a URL into the hidden fallback input. */}
           <div className="space-y-3">
             <div>
               <Label className="text-sm font-semibold">תמונה ראשית (רפרנס)</Label>
               <p className="text-xs text-muted-foreground mt-0.5">
-                התמונה הזו תשמש כרפרנס ויזואלי לכל הסצנות שייוצרו.
+                גרור תמונה מהמחשב, לחץ לבחירה, או הדבק URL.
+                התמונה תשמש כרפרנס ויזואלי לכל הסצנות שייוצרו.
               </p>
             </div>
-            <div className="flex items-start gap-4">
-              <ImagePreview src={heroImageUrl} alt="hero" />
-              <div className="flex-1 space-y-2">
-                <Input
-                  type="url"
-                  dir="ltr"
-                  placeholder="https://..."
-                  value={heroImageUrl}
-                  onChange={(e) => setHeroImageUrl(e.target.value)}
-                />
-                {scrapeResult && scrapeResult.data.images.length > 1 && (
-                  <div className="flex gap-2 flex-wrap">
-                    {scrapeResult.data.images.slice(0, 6).map((img) => (
-                      <button
-                        key={img}
-                        type="button"
-                        onClick={() => setHeroImageUrl(img)}
-                        className={cn(
-                          'w-12 h-12 rounded border-2 overflow-hidden bg-muted',
-                          heroImageUrl === img ? 'border-primary' : 'border-transparent',
-                        )}
-                      >
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={img} alt="" className="w-full h-full object-cover" />
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
+            <HeroImageUpload
+              value={heroImageUrl}
+              onChange={setHeroImageUrl}
+              scrapeThumbs={
+                scrapeResult ? scrapeResult.data.images.slice(0, 6) : []
+              }
+            />
           </div>
 
-          <AdditionalImages images={additionalImages} setImages={setAdditionalImages} />
+          <AdditionalImagesUpload
+            images={additionalImages}
+            setImages={setAdditionalImages}
+          />
 
           {/* Category — drives how the LLM writes scenes per product type */}
           <Field label="קטגוריית מוצר *" htmlFor="category">
@@ -461,39 +446,194 @@ function ScrapeResultBanner({ result }: { result: ScrapeResponse }) {
   );
 }
 
-function ImagePreview({ src, alt }: { src: string; alt: string }) {
+// V26.17 — drag-and-drop hero image upload.
+//
+// The user can:
+//   1. Drag a file from their computer into the box.
+//   2. Click the box to open the native file picker.
+//   3. Paste a URL into the small fallback input below (still useful
+//      when the URL-scrape flow already populated heroImageUrl).
+//   4. Pick one of the thumbnails the URL scraper extracted.
+async function uploadImageFile(file: File): Promise<string> {
+  const fd = new FormData();
+  fd.append('file', file);
+  const res = await fetch('/api/products/upload-image', {
+    method: 'POST',
+    body: fd,
+  });
+  const json = (await res.json()) as { url?: string; error?: string; message?: string };
+  if (!res.ok || !json.url) {
+    throw new Error(json.message ?? json.error ?? 'העלאת תמונה נכשלה');
+  }
+  return json.url;
+}
+
+function HeroImageUpload({
+  value,
+  onChange,
+  scrapeThumbs,
+}: {
+  value: string;
+  onChange: (next: string) => void;
+  scrapeThumbs: string[];
+}) {
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [dragActive, setDragActive] = useState(false);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  const onPickFile = async (file: File) => {
+    setError(null);
+    setUploading(true);
+    try {
+      const url = await uploadImageFile(file);
+      onChange(url);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const onInputChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) await onPickFile(file);
+    if (inputRef.current) inputRef.current.value = '';
+  };
+
   return (
-    <div className="w-32 h-32 rounded-md border-2 border-dashed border-border bg-muted/30 overflow-hidden flex items-center justify-center flex-shrink-0">
-      {src ? (
-        // Use plain img — we don't know the domain, can't safely add to next.config.
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={src} alt={alt} className="w-full h-full object-cover" />
-      ) : (
-        <span className="text-xs text-muted-foreground text-center px-2">אין תמונה</span>
-      )}
+    <div className="space-y-2">
+      <div className="flex items-start gap-4">
+        {/* Drop zone / preview */}
+        <button
+          type="button"
+          onClick={() => inputRef.current?.click()}
+          onDragOver={(e) => {
+            e.preventDefault();
+            setDragActive(true);
+          }}
+          onDragLeave={() => setDragActive(false)}
+          onDrop={async (e) => {
+            e.preventDefault();
+            setDragActive(false);
+            const file = e.dataTransfer.files?.[0];
+            if (file) await onPickFile(file);
+          }}
+          className={cn(
+            'w-40 h-40 rounded-md border-2 border-dashed overflow-hidden flex items-center justify-center flex-shrink-0 transition-colors relative',
+            dragActive
+              ? 'border-primary bg-primary/10'
+              : 'border-border bg-muted/30 hover:bg-muted/50',
+          )}
+          aria-label="העלאת תמונה ראשית"
+        >
+          {value ? (
+            <>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={value} alt="hero" className="w-full h-full object-cover" />
+              <span className="absolute inset-x-0 bottom-0 bg-black/60 text-white text-[10px] py-1 text-center pointer-events-none">
+                החלף תמונה
+              </span>
+            </>
+          ) : (
+            <div className="flex flex-col items-center gap-1.5 text-muted-foreground px-3 text-center">
+              <span className="text-2xl">⬆</span>
+              <span className="text-xs">גרור תמונה</span>
+              <span className="text-[10px]">או לחץ לבחור</span>
+            </div>
+          )}
+          {uploading && (
+            <div className="absolute inset-0 bg-black/60 flex items-center justify-center text-white text-xs">
+              מעלה…
+            </div>
+          )}
+        </button>
+
+        <div className="flex-1 space-y-2">
+          <input
+            ref={inputRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp,image/gif"
+            onChange={onInputChange}
+            className="hidden"
+          />
+          {value && (
+            <button
+              type="button"
+              onClick={() => onChange('')}
+              className="text-xs text-destructive hover:underline"
+            >
+              הסר תמונה
+            </button>
+          )}
+          <Input
+            type="url"
+            dir="ltr"
+            placeholder="או הדבק URL לתמונה"
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+          />
+          {scrapeThumbs.length > 0 && (
+            <div className="space-y-1.5">
+              <span className="text-[11px] text-muted-foreground">מתוך עמוד המוצר:</span>
+              <div className="flex gap-2 flex-wrap">
+                {scrapeThumbs.map((img) => (
+                  <button
+                    key={img}
+                    type="button"
+                    onClick={() => onChange(img)}
+                    className={cn(
+                      'w-12 h-12 rounded border-2 overflow-hidden bg-muted',
+                      value === img ? 'border-primary' : 'border-transparent',
+                    )}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={img} alt="" className="w-full h-full object-cover" />
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          {error && (
+            <div className="text-xs text-destructive">{error}</div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
 
-function AdditionalImages({
+function AdditionalImagesUpload({
   images,
   setImages,
 }: {
   images: string[];
   setImages: (next: string[]) => void;
 }) {
-  const [draft, setDraft] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [dragActive, setDragActive] = useState(false);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const MAX_IMAGES = 5;
 
-  const add = () => {
-    const trimmed = draft.trim();
-    if (!trimmed) return;
-    try {
-      new URL(trimmed);
-    } catch {
+  const addFiles = async (files: FileList | File[]) => {
+    const list = Array.from(files);
+    const room = MAX_IMAGES - images.length;
+    if (room <= 0) {
+      setError(`עד ${MAX_IMAGES} תמונות נוספות.`);
       return;
     }
-    setImages([...images, trimmed]);
-    setDraft('');
+    const toUpload = list.slice(0, room);
+    setError(null);
+    setUploading(true);
+    try {
+      const urls = await Promise.all(toUpload.map(uploadImageFile));
+      setImages([...images, ...urls]);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setUploading(false);
+    }
   };
 
   return (
@@ -501,45 +641,74 @@ function AdditionalImages({
       <div>
         <Label className="text-sm font-semibold">תמונות נוספות</Label>
         <p className="text-xs text-muted-foreground mt-0.5">
-          תמונות עזר נוספות. ה-AI עשוי להשתמש בהן כרפרנס משני.
+          עד {MAX_IMAGES} תמונות עזר. ה-AI עשוי להשתמש בהן כרפרנס משני. גרור או לחץ לבחירה.
         </p>
       </div>
-      {images.length > 0 && (
-        <div className="flex gap-2 flex-wrap">
-          {images.map((img, i) => (
-            <div key={i} className="relative">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={img} alt="" className="w-16 h-16 rounded object-cover border border-border" />
-              <button
-                type="button"
-                onClick={() => setImages(images.filter((_, j) => j !== i))}
-                className="absolute -top-2 -end-2 w-5 h-5 rounded-full bg-destructive text-destructive-foreground text-xs flex items-center justify-center"
-              >
-                ×
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-      <div className="flex gap-2">
-        <Input
-          type="url"
-          dir="ltr"
-          placeholder="https://..."
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
+      <div className="flex gap-2 flex-wrap">
+        {images.map((img, i) => (
+          <div key={i} className="relative">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={img}
+              alt=""
+              className="w-20 h-20 rounded object-cover border border-border"
+            />
+            <button
+              type="button"
+              onClick={() => setImages(images.filter((_, j) => j !== i))}
+              className="absolute -top-2 -end-2 w-5 h-5 rounded-full bg-destructive text-destructive-foreground text-xs flex items-center justify-center"
+              aria-label={`הסר תמונה ${i + 1}`}
+            >
+              ×
+            </button>
+          </div>
+        ))}
+        {images.length < MAX_IMAGES && (
+          <button
+            type="button"
+            onClick={() => inputRef.current?.click()}
+            onDragOver={(e) => {
               e.preventDefault();
-              add();
-            }
-          }}
-          className="flex-1"
-        />
-        <Button type="button" variant="outline" onClick={add} disabled={!draft.trim()}>
-          הוסף
-        </Button>
+              setDragActive(true);
+            }}
+            onDragLeave={() => setDragActive(false)}
+            onDrop={async (e) => {
+              e.preventDefault();
+              setDragActive(false);
+              if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                await addFiles(e.dataTransfer.files);
+              }
+            }}
+            className={cn(
+              'w-20 h-20 rounded border-2 border-dashed flex flex-col items-center justify-center text-[10px] text-muted-foreground transition-colors',
+              dragActive
+                ? 'border-primary bg-primary/10'
+                : 'border-border hover:bg-muted/50',
+              uploading && 'opacity-60 pointer-events-none',
+            )}
+          >
+            <span className="text-xl">+</span>
+            <span>הוסף</span>
+          </button>
+        )}
       </div>
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp,image/gif"
+        multiple
+        onChange={async (e) => {
+          if (e.target.files) await addFiles(e.target.files);
+          if (inputRef.current) inputRef.current.value = '';
+        }}
+        className="hidden"
+      />
+      {uploading && (
+        <div className="text-xs text-muted-foreground">מעלה תמונות…</div>
+      )}
+      {error && (
+        <div className="text-xs text-destructive">{error}</div>
+      )}
     </div>
   );
 }
