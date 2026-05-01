@@ -1,7 +1,6 @@
 'use client';
 
 import {
-  useActionState,
   useEffect,
   useRef,
   useState,
@@ -50,9 +49,12 @@ import {
   DEFAULT_CAPTION_PRESET_ID,
   type CaptionPresetId,
 } from '@ugc-video/shared';
+// V26.10 — generateSceneClipAction / regenLipSyncOnlyAction removed
+// from this client file. Per-scene generation now goes through fetch()
+// against /api/scenes/[id]/clip and /api/scenes/[id]/lipsync-only so
+// concurrent clicks on different scenes run in parallel (Next.js
+// serializes Server Actions per route).
 import {
-  generateSceneClipAction,
-  regenLipSyncOnlyAction,
   setSceneRequiresLipSyncAction,
   setSceneClipProviderAction,
   type GenerateClipState,
@@ -286,18 +288,99 @@ export function SceneClipCard(props: SceneClipCardProps) {
   // voice UI (audio preview + read-only spinner) drives off
   // `voiceInFlightAt` from the server prop only.
 
-  const clipAction = generateSceneClipAction.bind(null, props.sceneId);
-  const [clipState, clipFormAction, clipPending] = useActionState<
-    GenerateClipState,
-    FormData
-  >(clipAction, undefined);
-  // Lipsync-only regen — separate action so the user can re-lipsync
-  // without paying for a full Kling i2v re-run.
-  const lipsyncOnlyAction = regenLipSyncOnlyAction.bind(null, props.sceneId);
-  const [lipsyncOnlyState, lipsyncOnlyFormAction, lipsyncOnlyPending] = useActionState<
-    GenerateClipState,
-    FormData
-  >(lipsyncOnlyAction, undefined);
+  // V26.10 — per-scene clip generation went from <form action={ServerAction}>
+  // to a direct fetch() call against the same API route the batch button uses
+  // (/api/scenes/[id]/clip). Reason: Next.js serializes Server Actions per
+  // route, so clicking regen on 4 different scenes used to run them one-
+  // after-another even though they're independent jobs. The /api route
+  // handler is a plain Vercel function — clicks fan out in parallel
+  // (subject to the existing per-user rate limit in lib/usage/rate-limit).
+  const [clipPending, setClipPending] = useState(false);
+  const [clipState, setClipState] = useState<GenerateClipState>(undefined);
+  const clipStartedRef = useRef(false);
+
+  const triggerClipRegen = async () => {
+    if (clipPending) return;
+    clipStartedRef.current = true;
+    setClipPending(true);
+    setClipState(undefined);
+    try {
+      const res = await fetch(`/api/scenes/${props.sceneId}/clip`, {
+        method: 'POST',
+      });
+      const json = (await res.json()) as {
+        success: boolean;
+        error?: string;
+        needsCredits?: boolean;
+        needsImage?: boolean;
+        needsVoice?: boolean;
+        configError?: boolean;
+        timedOut?: boolean;
+        failedStage?: 'motion' | 'lipsync';
+      };
+      if (!json.success) {
+        setClipState({
+          error: json.error,
+          needsCredits: json.needsCredits,
+          needsImage: json.needsImage,
+          needsVoice: json.needsVoice,
+          configError: json.configError,
+          timedOut: json.timedOut,
+          failedStage: json.failedStage,
+        });
+      } else {
+        setClipState(undefined);
+        router.refresh();
+      }
+    } catch (err) {
+      setClipState({ error: `שגיאה: ${(err as Error).message}` });
+    } finally {
+      setClipPending(false);
+    }
+  };
+
+  // Lipsync-only regen — same parallelization fix.
+  const [lipsyncOnlyPending, setLipsyncOnlyPending] = useState(false);
+  const [lipsyncOnlyState, setLipsyncOnlyState] = useState<GenerateClipState>(undefined);
+
+  const triggerLipsyncOnlyRegen = async () => {
+    if (lipsyncOnlyPending) return;
+    setLipsyncOnlyPending(true);
+    setLipsyncOnlyState(undefined);
+    try {
+      const res = await fetch(`/api/scenes/${props.sceneId}/lipsync-only`, {
+        method: 'POST',
+      });
+      const json = (await res.json()) as {
+        success: boolean;
+        error?: string;
+        needsCredits?: boolean;
+        needsImage?: boolean;
+        needsVoice?: boolean;
+        configError?: boolean;
+        timedOut?: boolean;
+        failedStage?: 'motion' | 'lipsync';
+      };
+      if (!json.success) {
+        setLipsyncOnlyState({
+          error: json.error,
+          needsCredits: json.needsCredits,
+          needsImage: json.needsImage,
+          needsVoice: json.needsVoice,
+          configError: json.configError,
+          timedOut: json.timedOut,
+          failedStage: json.failedStage,
+        });
+      } else {
+        setLipsyncOnlyState(undefined);
+        router.refresh();
+      }
+    } catch (err) {
+      setLipsyncOnlyState({ error: `שגיאה: ${(err as Error).message}` });
+    } finally {
+      setLipsyncOnlyPending(false);
+    }
+  };
 
   // Live overrides: when polling beats router.refresh() during a batch,
   // we set these locally. Cleared once the prop catches up.
@@ -624,53 +707,50 @@ export function SceneClipCard(props: SceneClipCardProps) {
         {/* Animate button */}
         <div className="space-y-2">
           {!hasClip && !showClipWorking && (
-            <form action={clipFormAction}>
-              <Button
-                type="submit"
-                size="sm"
-                disabled={!canGenerateClip}
-                className="w-full"
-              >
-                {!hasVoice && props.requiresLipSync
-                  ? '🎬 צור voice-over לפני הנפשה'
-                  : props.requiresLipSync
-                    ? '🎬 הנפש + Lipsync'
-                    : '🎬 הנפש את הסצנה'}
-              </Button>
-            </form>
+            <Button
+              type="button"
+              size="sm"
+              disabled={!canGenerateClip}
+              className="w-full"
+              onClick={triggerClipRegen}
+            >
+              {!hasVoice && props.requiresLipSync
+                ? '🎬 צור voice-over לפני הנפשה'
+                : props.requiresLipSync
+                  ? '🎬 הנפש + Lipsync'
+                  : '🎬 הנפש את הסצנה'}
+            </Button>
           )}
           {hasClip && (
             <div className="grid grid-cols-2 gap-2">
-              <form action={clipFormAction}>
-                <Button
-                  type="submit"
-                  size="sm"
-                  variant="outline"
-                  className="w-full"
-                  disabled={showClipWorking || lipsyncOnlyPending}
-                  title="מנפיש מחדש מהתחלה — Kling i2v + lipsync (~30 קרדיטים)"
-                >
-                  {showClipWorking ? 'מנפיש מחדש…' : '↻ הנפש מחדש'}
-                </Button>
-              </form>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="w-full"
+                disabled={showClipWorking || lipsyncOnlyPending}
+                onClick={triggerClipRegen}
+                title="מנפיש מחדש מהתחלה — Kling i2v + lipsync (~30 קרדיטים). רץ במקביל לסצנות אחרות."
+              >
+                {showClipWorking ? 'מנפיש מחדש…' : '↻ הנפש מחדש'}
+              </Button>
               {/* Lipsync-only — keeps the existing animation, swaps just
                   the lipsync provider's pass on the same audio. Cheaper
                   (12 credits) than a full clip regen (30). Only useful
                   when the scene already has both clip + voice AND
                   requires_lip_sync = true. */}
               {hasVoice && props.requiresLipSync && (
-                <form action={lipsyncOnlyFormAction}>
-                  <Button
-                    type="submit"
-                    size="sm"
-                    variant="ghost"
-                    className="w-full"
-                    disabled={showClipWorking || lipsyncOnlyPending}
-                    title="רץ רק על שלב ה-lipsync עם הקליפ הנוכחי + האודיו הנוכחי. חוסך את שלב ה-i2v היקר."
-                  >
-                    {lipsyncOnlyPending ? '👄 מסנכרן…' : '👄 רק lipsync'}
-                  </Button>
-                </form>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="w-full"
+                  disabled={showClipWorking || lipsyncOnlyPending}
+                  onClick={triggerLipsyncOnlyRegen}
+                  title="רץ רק על שלב ה-lipsync עם הקליפ הנוכחי + האודיו הנוכחי. חוסך את שלב ה-i2v היקר."
+                >
+                  {lipsyncOnlyPending ? '👄 מסנכרן…' : '👄 רק lipsync'}
+                </Button>
               )}
             </div>
           )}
