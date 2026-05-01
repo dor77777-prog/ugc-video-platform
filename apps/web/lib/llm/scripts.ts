@@ -8,6 +8,22 @@ import {
   GeminiConfigError,
   GEMINI_DEFAULT_MODEL,
 } from './gemini-client';
+import {
+  openaiStructuredCall,
+  OpenAiConfigError,
+  OPENAI_DEFAULT_SCRIPT_MODEL,
+} from './openai-script-client';
+
+// V26.8 — provider switch. Default `openai` reverts the V25-V26.7
+// Gemini experiment after live use showed it was both more expensive
+// and produced weaker `visualPromptEnglish` than the pre-V25
+// gpt-5.4-mini baseline. Operator can flip via env without redeploy:
+//   LLM_SCRIPT_PROVIDER=openai   (default)
+//   LLM_SCRIPT_PROVIDER=gemini   (V25-V26.7 path, kept for experiments)
+function resolveScriptProvider(): 'openai' | 'gemini' {
+  const raw = process.env.LLM_SCRIPT_PROVIDER?.trim().toLowerCase();
+  return raw === 'gemini' ? 'gemini' : 'openai';
+}
 
 // Script Engine V2 — wrapper.
 //
@@ -339,17 +355,26 @@ export async function generateScripts(
   input: ProductInput,
   options?: GenerateScriptsOptions,
 ): Promise<ScriptGenerationOutput> {
-  // V25 — Gemini 3 Pro replaced gpt-5.4-mini for script generation.
-  // The same SCRIPT_SYSTEM_PROMPT + SINGLE_SCRIPT_JSON_SCHEMA flow,
-  // routed through @google/generative-ai with structured output.
-  // GEMINI_API_KEY missing → fail fast with a config error.
-  if (!process.env.GEMINI_API_KEY) {
+  // V26.8 — provider branch. Default OpenAI (gpt-5.4-mini, the
+  // pre-V25 baseline). Flip to Gemini for experiments via the env
+  // var `LLM_SCRIPT_PROVIDER=gemini`. The same SCRIPT_SYSTEM_PROMPT
+  // + SINGLE_SCRIPT_JSON_SCHEMA flow drives both paths.
+  const provider = resolveScriptProvider();
+  if (provider === 'gemini' && !process.env.GEMINI_API_KEY) {
     throw new LlmConfigError(
-      'GEMINI_API_KEY is not set. Add it to .env / Vercel / Railway to enable script generation.',
+      'LLM_SCRIPT_PROVIDER=gemini but GEMINI_API_KEY is not set. Either set the key or unset LLM_SCRIPT_PROVIDER to fall back to OpenAI.',
+    );
+  }
+  if (provider === 'openai' && !process.env.OPENAI_API_KEY) {
+    throw new LlmConfigError(
+      'OPENAI_API_KEY is not set. Add it to .env / Vercel / Railway to enable script generation.',
     );
   }
 
-  const model = process.env.GEMINI_SCRIPT_MODEL || GEMINI_DEFAULT_MODEL;
+  const model =
+    provider === 'gemini'
+      ? process.env.GEMINI_SCRIPT_MODEL || GEMINI_DEFAULT_MODEL
+      : process.env.OPENAI_SCRIPT_MODEL || OPENAI_DEFAULT_SCRIPT_MODEL;
 
   const startedAt = Date.now();
   let totalInputTokens = 0;
@@ -367,16 +392,24 @@ export async function generateScripts(
     FRAMEWORK_ORDER.map(async (framework, index) => {
       const userPrompt = buildSingleFrameworkPrompt(input, framework);
       try {
-        // V26.1 — no `temperature` override. Gemini 3 docs explicitly
-        // warn that values below 1.0 cause looping / degraded reasoning
-        // performance; defaulting to the model's built-in 1.0 fixes the
-        // "All 6 framework generations failed" hang we hit in V25.
-        const { parsed: parsedRegen, usage } = await geminiStructuredCall<LlmRegenResponse>({
-          systemInstruction: SCRIPT_SYSTEM_PROMPT,
-          userPrompt,
-          responseSchema: SINGLE_SCRIPT_JSON_SCHEMA,
-          model,
-        });
+        // V26.8 — dispatch on the env-driven provider. Same prompt +
+        // schema feeds both paths; usage shape is identical.
+        const { parsed: parsedRegen, usage } =
+          provider === 'gemini'
+            ? await geminiStructuredCall<LlmRegenResponse>({
+                // V26.1 — no `temperature` override on Gemini 3.
+                systemInstruction: SCRIPT_SYSTEM_PROMPT,
+                userPrompt,
+                responseSchema: SINGLE_SCRIPT_JSON_SCHEMA,
+                model,
+              })
+            : await openaiStructuredCall<LlmRegenResponse>({
+                systemInstruction: SCRIPT_SYSTEM_PROMPT,
+                userPrompt,
+                responseSchema: SINGLE_SCRIPT_JSON_SCHEMA,
+                model,
+                temperature: 0.7, // V14 baseline determinism
+              });
         totalInputTokens += usage.inputTokens;
         totalOutputTokens += usage.outputTokens;
         if (!parsedRegen.script) return null;
@@ -403,13 +436,13 @@ export async function generateScripts(
         }
         return generated;
       } catch (err) {
-        if (err instanceof GeminiConfigError) {
+        if (err instanceof GeminiConfigError || err instanceof OpenAiConfigError) {
           // Re-throw config errors — caller decides whether to surface
-          // a specific "configure GEMINI_API_KEY" message.
+          // a specific "configure {GEMINI,OPENAI}_API_KEY" message.
           throw err;
         }
         console.warn(
-          `[scripts] framework=${framework} Gemini call failed:`,
+          `[scripts] framework=${framework} ${provider} call failed:`,
           (err as Error).message,
         );
         return null;
