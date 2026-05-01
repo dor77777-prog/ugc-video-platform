@@ -1,7 +1,11 @@
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 
-const PUBLIC_PATHS = ['/login', '/register', '/auth/callback', '/api/health'];
+// V18 — `/` is now the public marketing landing (was an auth-gated
+// redirect). Anonymous visitors must reach page.tsx instead of being
+// bounced to /login by this middleware. The page itself still
+// redirects logged-in users to /dashboard.
+const PUBLIC_PATHS = ['/', '/login', '/register', '/auth/callback', '/api/health'];
 
 export async function updateSession(request: NextRequest) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
