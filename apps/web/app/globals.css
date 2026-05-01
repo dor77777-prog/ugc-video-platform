@@ -707,6 +707,69 @@
   50%      { opacity: 1; transform: scale(1.12); }
 }
 
+/* ─── Hero showcase floats ───
+ * Four named keyframes for the landing hero's avatar grid. Each slot
+ * is assigned one of these by `index % 4` so adjacent cards drift on
+ * different phases and the eye reads the grid as alive, not robotic.
+ *
+ * All four hold their `rotate(...)` constant — the slot's individual
+ * tilt is preserved — and add subtle Y/X drift + micro-scale breathing.
+ * Durations are intentionally co-prime (9 / 11 / 13 / 17 seconds) so
+ * the slots never align on the same frame across the full pool. */
+@keyframes hero-float-a {
+  0%, 100% { transform: translate3d(0, 0, 0) rotate(var(--slot-rot, 0deg)) scale(1); }
+  50%      { transform: translate3d(0, -10px, 0) rotate(var(--slot-rot, 0deg)) scale(1.012); }
+}
+@keyframes hero-float-b {
+  0%, 100% { transform: translate3d(0, 0, 0) rotate(var(--slot-rot, 0deg)) scale(1); }
+  50%      { transform: translate3d(-6px, -8px, 0) rotate(var(--slot-rot, 0deg)) scale(0.99); }
+}
+@keyframes hero-float-c {
+  0%, 100% { transform: translate3d(0, 0, 0) rotate(var(--slot-rot, 0deg)) scale(1); }
+  50%      { transform: translate3d(7px, -12px, 0) rotate(var(--slot-rot, 0deg)) scale(1.008); }
+}
+@keyframes hero-float-d {
+  0%, 100% { transform: translate3d(0, 0, 0) rotate(var(--slot-rot, 0deg)) scale(1); }
+  50%      { transform: translate3d(-4px, 6px, 0) rotate(var(--slot-rot, 0deg)) scale(1.014); }
+}
+
+/* Hero swap-flash — when a slot crossfades to a new avatar, a brief
+ * primary halo pulses and decays. Triggered by `data-swapping="true"`
+ * (set for ~700ms by the React orchestrator). */
+@keyframes hero-swap-flash {
+  0%   {
+    box-shadow:
+      0 0 0 1px hsl(var(--primary) / 0.18),
+      0 0 0 0  hsl(var(--primary) / 0),
+      0 24px 60px -16px hsl(0 0% 0% / 0.6);
+  }
+  35%  {
+    box-shadow:
+      0 0 0 2px hsl(var(--primary) / 0.55),
+      0 0 32px 4px hsl(var(--primary) / 0.45),
+      0 24px 60px -16px hsl(0 0% 0% / 0.6);
+  }
+  100% {
+    box-shadow:
+      0 0 0 1px hsl(var(--primary) / 0.18),
+      0 0 0 0  hsl(var(--primary) / 0),
+      0 24px 60px -16px hsl(0 0% 0% / 0.6);
+  }
+}
+
+/* Hero crossfade — opacity-only on a layer that already has its own
+ * positioning. Old layer fades out while the new layer fades in over
+ * the same window; the orchestrator takes care of swapping the layer
+ * src after the transition completes. */
+@keyframes hero-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes hero-fade-out {
+  from { opacity: 1; }
+  to   { opacity: 0; }
+}
+
 /* ─── Stagger system ─── */
 .stagger-1 { animation-delay: 60ms; }
 .stagger-2 { animation-delay: 120ms; }
@@ -740,6 +803,10 @@
   /* Aurora and shimmer disabled entirely. */
   .motion-shimmer { animation: none !important; }
   .motion-aurora  { display: none; }
+  /* Hero float + swap stop — slots stay positioned, crossfade collapses
+   * to instant swap. The 8 avatars are still visible, just static. */
+  [data-hero-slot] { animation: none !important; }
+  [data-hero-slot] [data-hero-layer] { animation: none !important; }
 }
 
 /* ─── data-motion="off" escape hatch ───

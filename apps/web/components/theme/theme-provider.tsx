@@ -9,10 +9,12 @@ import type { ComponentProps } from 'react';
 //   • attribute="data-theme" — writes data-theme="dark|light" on <html>
 //     (we don't use the .dark class because our CSS targets [data-theme]
 //     selectors).
-//   • defaultTheme="dark" — the V27 canonical experience. New users
-//     and SSR start dark; the user can opt into light via the toggle.
-//   • enableSystem — respects prefers-color-scheme on first visit if
-//     the user hasn't picked manually. The toggle still wins.
+//   • defaultTheme="system" — first visit follows the OS preference
+//     (prefers-color-scheme: dark vs light). After the user manually
+//     toggles, that choice persists in localStorage and overrides the
+//     system pref until the user picks "system" again.
+//   • enableSystem — required for the OS-pref read above; also keeps
+//     the app in sync if the OS theme changes mid-session.
 //   • disableTransitionOnChange — suppresses CSS transitions during
 //     the theme swap to prevent the brief crossfade of every
 //     transition-property element on flip. Themes are an instant cut.
@@ -29,7 +31,7 @@ export function ThemeProvider({
   return (
     <NextThemesProvider
       attribute="data-theme"
-      defaultTheme="dark"
+      defaultTheme="system"
       enableSystem
       disableTransitionOnChange
       {...rest}

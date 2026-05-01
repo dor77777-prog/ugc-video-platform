@@ -35,11 +35,14 @@ import { HeroShowcase, AnimatedCounter, LiveActivityTicker } from './landing-her
 
 const R2_BASE = 'https://pub-eb116bdbeab8486f96ecf7c4fbc1014a.r2.dev';
 
-// 25 avatars in catalog — show 12 in the proof grid below the hero.
-// V20.1 — fixed broken IDs (was using yossi/eyal/guy which aren't in
-// the catalog; replaced with yosef/eran/gil from
-// `apps/web/lib/avatars/catalog.ts`). Verified each returns HTTP 200
-// from R2 before listing.
+// 25 avatars in catalog — only these 12 are exposed on the landing.
+// The remaining 13 (yoav, omri, ron, ido, moshe, yael, adi, inbar,
+// avigail, sapir, hila, tomer, itay) live behind the auth gate so
+// the user has a reason to register ("+13 in catalog" CTA below).
+// THIS LIST IS THE SOURCE OF TRUTH for the public avatar pool —
+// `landing-hero.tsx` POOL must mirror it exactly. Anyone inspecting
+// network requests on the landing should only see PNG fetches for
+// these 12 ids.
 const AVATAR_PROOF_GRID = [
   'noa', 'liat', 'shira', 'maya', 'tamar', 'galit',
   'einat', 'ortal', 'avi', 'yosef', 'eran', 'gil',
