@@ -45,7 +45,17 @@ export default async function LibraryPage() {
             const playableUrl = isMock ? null : job.finalVideoUrl;
             return (
               <Card key={job.id} className="overflow-hidden tier-elevated motion-fade-up motion-tilt-hover" id={`job-${job.id}`}>
-                <div className="aspect-[9/16] bg-black relative">
+                {/* V27.5 — view-transition-name on the per-job poster
+                    so navigations from /videos (render complete →
+                    redirect to library#job-X) can morph the just-
+                    rendered final video poster from the render-status
+                    panel into this tile. Reserved name from globals.css
+                    §10. Per-id is essential — same name across all
+                    tiles would collide. */}
+                <div
+                  className="aspect-[9/16] bg-black relative"
+                  style={{ viewTransitionName: `--vt-final-video-poster-${job.id}` } as React.CSSProperties}
+                >
                   {playableUrl ? (
                     // Inline 9:16 player — controls + click-anywhere to play.
                     // preload="metadata" keeps the grid light; the actual

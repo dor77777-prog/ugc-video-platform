@@ -783,20 +783,8 @@
   animation: motion-shimmer-text 6s ease-in-out infinite;
 }
 
-/* .shadow-glow / .shadow-glow-accent kept as aliases — Wave 2 will
- * sweep call sites and remove. */
-.shadow-glow {
-  box-shadow:
-    0 0 0 1px hsl(var(--primary) / 0.15),
-    0 0 24px -4px hsl(var(--primary) / 0.5),
-    0 8px 32px -8px hsl(var(--primary) / 0.4);
-}
-.shadow-glow-accent {
-  box-shadow:
-    0 0 0 1px hsl(var(--ai) / 0.15),
-    0 0 24px -4px hsl(var(--ai) / 0.45),
-    0 8px 32px -8px hsl(var(--ai) / 0.35);
-}
+/* V27 Wave 5 sweep — .shadow-glow / .shadow-glow-accent removed.
+ * Replaced by .glow-primary / .glow-ai (V27 modifiers). */
 
 .card-hover {
   @apply transition-all duration-300 ease-out;
@@ -829,38 +817,9 @@
 .bento-4x1 { grid-column: span 4; }
 .bento-1x2 { grid-row: span 2; }
 
-/* .tilt-hover kept as alias — Wave 2 will sweep call sites. */
-.tilt-hover {
-  transform-style: preserve-3d;
-  transition: transform 400ms cubic-bezier(0.22, 0.61, 0.36, 1);
-}
-.tilt-hover:hover {
-  transform: perspective(900px) translateY(-3px) rotateX(2deg);
-}
-
-/* Animated gradient border — alias kept; new code uses .edge-gradient-primary */
-.gradient-border {
-  position: relative;
-  background-clip: padding-box;
-  border: 1px solid transparent;
-}
-.gradient-border::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  padding: 1px;
-  background: linear-gradient(
-    135deg,
-    hsl(var(--primary) / 0.6),
-    hsl(var(--gradient-to) / 0.4),
-    hsl(var(--ai) / 0.5)
-  );
-  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-  pointer-events: none;
-}
+/* V27 Wave 5 sweep — .tilt-hover and .gradient-border removed.
+ * Replaced by .motion-tilt-hover and .edge-gradient-primary
+ * (V27 motion vocabulary + edge modifier). */
 
 /* V27 Stage 5 sweep — `tachles-*` keyframe namespace deleted entirely.
  * The `tachles-` prefix was brand, not system. V27 owns the system

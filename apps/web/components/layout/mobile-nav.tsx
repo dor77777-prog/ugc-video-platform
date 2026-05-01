@@ -169,7 +169,7 @@ export function MobileNav({ recentProjects = [] }: { recentProjects?: RecentProj
             <div className="p-4 border-t border-border-subtle">
               <Link
                 href="/pricing"
-                className="block rounded-2xl bg-gradient-to-br from-primary via-primary/85 to-primary/60 text-primary-foreground p-4 space-y-2 hover:opacity-95 transition-all shadow-glow"
+                className="block rounded-2xl bg-gradient-to-br from-primary via-primary/85 to-primary/60 text-primary-foreground p-4 space-y-2 hover:opacity-95 transition-all glow-primary"
               >
                 <div className="flex items-center gap-2">
                   <Sparkles className="h-4 w-4" />
@@ -204,7 +204,7 @@ function DrawerLink({ item, active }: { item: NavItem; active: boolean }) {
       className={cn(
         'flex items-center gap-3 px-3 py-3 rounded-lg text-sm transition-all min-h-[44px]',
         active
-          ? 'bg-primary text-primary-foreground font-semibold shadow-glow'
+          ? 'bg-primary text-primary-foreground font-semibold glow-primary'
           : item.accent
             ? 'text-primary font-semibold hover:bg-primary/10'
             : 'text-foreground hover:bg-secondary',

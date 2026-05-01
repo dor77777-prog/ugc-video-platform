@@ -127,7 +127,7 @@ export function HeroShowcase() {
       <div className="absolute inset-0 flex items-center justify-center">
         <div className="relative">
           <div className="absolute inset-0 rounded-full bg-primary/30 animate-ping" />
-          <div className="relative h-3 w-3 rounded-full bg-primary shadow-glow" />
+          <div className="relative h-3 w-3 rounded-full bg-primary glow-primary" />
         </div>
       </div>
     </div>

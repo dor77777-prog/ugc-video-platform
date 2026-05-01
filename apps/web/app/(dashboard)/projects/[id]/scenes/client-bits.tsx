@@ -203,7 +203,7 @@ export function GenerateAllButton({
   const buttonLabel = pending ? 'מייצר…' : `✨ צור ${queue.length} סצנות`;
 
   return (
-    <Card className="tier-elevated border-primary/40 bg-primary/[0.04] shadow-glow card-hover motion-fade-up">
+    <Card className="tier-elevated border-primary/40 bg-primary/[0.04] glow-primary card-hover motion-fade-up">
       <CardContent className="p-5 flex flex-col md:flex-row items-start md:items-center gap-4 justify-between">
         <div className="space-y-2 flex-1">
           <div className="text-base font-semibold">{headline}</div>
@@ -226,7 +226,7 @@ export function GenerateAllButton({
             </div>
           )}
         </div>
-        <Button onClick={run} disabled={pending || !canRun} size="lg" className="shadow-glow">
+        <Button onClick={run} disabled={pending || !canRun} size="lg" className="glow-primary">
           {buttonLabel}
         </Button>
       </CardContent>
@@ -552,9 +552,17 @@ export function SceneCard(props: SceneCardProps) {
   // CSS auto-promotes the muted kicker (Badge here) to loud-lime.
   const aiActiveValue = showGeneratingOverlay ? 'image' : undefined;
 
+  // V27.5 — per-scene view-transition-name. Reserved name from
+  // globals.css §10 (`--vt-scene-card-{id}`). Allows the browser to
+  // treat the card as a shared element across same-origin nav, so
+  // navigating from /scenes → /voices keeps the card position stable
+  // if the destination renders a matching named element. Per-id
+  // values are essential — using a single name across all cards would
+  // make them collide (browser only treats one match per name).
   return (
     <Card
       data-ai-active={aiActiveValue}
+      style={{ viewTransitionName: `--vt-scene-card-${props.sceneId}` } as React.CSSProperties}
       className={cn(
         'tier-elevated motion-fade-up',
         hasImage && !showGeneratingOverlay && 'border-success/40',
@@ -604,7 +612,7 @@ export function SceneCard(props: SceneCardProps) {
               <div className="text-4xl motion-shimmer">✨</div>
               <div className="text-sm font-semibold">ה-AI יוצר תמונה…</div>
               <div className="w-3/4">
-                <ProgressBar variant="accent" />
+                <ProgressBar variant="ai" />
               </div>
               <div className="text-xs text-muted-foreground flex items-center gap-2">
                 <span>זמן שעבר:</span>

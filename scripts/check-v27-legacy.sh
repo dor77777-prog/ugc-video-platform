@@ -41,6 +41,17 @@ PATTERNS=(
   'tachles-fade-in-up'
   'tachles-aurora-drift'
   'tachles-text-shimmer'
+  # V27.5 sweep — these aliases are gone from globals.css; new code
+  # uses glow-primary / glow-ai / motion-tilt-hover / edge-gradient-primary.
+  '\bshadow-glow\b'
+  '\bshadow-glow-accent\b'
+)
+
+# Patterns where grep -E word-boundary isn't enough — these need a
+# negative-lookbehind. We run them via perl below.
+PERL_FORBIDDEN_PATTERNS=(
+  '(?<!motion-)\btilt-hover\b'
+  '(?<!edge-)\bgradient-border\b'
 )
 
 # Files explicitly allowed to contain these (legacy aliases live here).
@@ -78,6 +89,19 @@ for pattern in "${PATTERNS[@]}"; do
     if grep -nE "$pattern" "$f" > /dev/null 2>&1; then
       echo "❌ V27 legacy: pattern \"$pattern\" found in $f"
       grep -nE "$pattern" "$f" | head -3 | sed 's/^/    /'
+      EXIT=1
+    fi
+  done <<< "$FILES"
+done
+
+# Perl-regex patterns (negative-lookbehind support).
+for pattern in "${PERL_FORBIDDEN_PATTERNS[@]}"; do
+  while IFS= read -r f; do
+    [ -z "$f" ] && continue
+    if is_allowed "$f"; then continue; fi
+    if perl -ne "exit 0 if /$pattern/; END{exit 1}" "$f" 2>/dev/null; then
+      echo "❌ V27 legacy: perl pattern \"$pattern\" found in $f"
+      perl -ne "print qq{    \$.: \$_} if /$pattern/" "$f" 2>/dev/null | head -3
       EXIT=1
     fi
   done <<< "$FILES"

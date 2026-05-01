@@ -108,7 +108,7 @@ export function GenerateAllVoicesButton({
       : '⚠ בחר קול בראש העמוד לפני יצירת קריינות.';
 
   return (
-    <Card className="tier-elevated border-primary/40 bg-primary/[0.04] shadow-glow">
+    <Card className="tier-elevated border-primary/40 bg-primary/[0.04] glow-primary">
       <CardContent className="p-5 flex flex-col md:flex-row items-start md:items-center gap-4 justify-between">
         <div className="space-y-2 flex-1">
           <div className="text-base font-semibold">{headline}</div>
@@ -124,7 +124,7 @@ export function GenerateAllVoicesButton({
             </div>
           )}
         </div>
-        <Button onClick={run} disabled={!canRun} size="lg" className="shadow-glow">
+        <Button onClick={run} disabled={!canRun} size="lg" className="glow-primary">
           {pending ? 'מייצר…' : `🎙 צור ${queue.length} קריינויות`}
         </Button>
       </CardContent>

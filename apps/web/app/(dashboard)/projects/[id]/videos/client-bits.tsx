@@ -215,7 +215,7 @@ export function GenerateAllClipsButton({
           </div>
           {pending && (
             <div className="pt-2">
-              <ProgressBar variant="accent" />
+              <ProgressBar variant="ai" />
             </div>
           )}
           {error && (
@@ -644,7 +644,7 @@ export function SceneClipCard(props: SceneClipCardProps) {
                 <div className="text-4xl motion-shimmer">🎬</div>
                 <div className="text-sm font-semibold text-white">מנפיש את הסצנה…</div>
                 <div className="w-3/4">
-                  <ProgressBar variant="accent" />
+                  <ProgressBar variant="ai" />
                 </div>
                 <div className="text-xs text-white/80 flex items-center gap-2">
                   <span>זמן שעבר:</span>

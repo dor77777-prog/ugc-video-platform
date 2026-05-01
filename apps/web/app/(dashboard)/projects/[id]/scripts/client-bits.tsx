@@ -280,12 +280,24 @@ export function ScriptCard(props: ScriptCardProps) {
     setDraftScenes((prev) => prev.map((s, i) => (i === idx ? { ...s, ...patch } : s)));
   };
 
+  // V27.5 — when selected, the card carries the reserved
+  // view-transition-name `--vt-selected-script` across the
+  // /scripts → /scenes navigation. The browser morphs this card from
+  // its grid position on /scripts to wherever a matching named element
+  // appears on /scenes (currently no match → it crossfades out, but
+  // when /scenes adds the same name to its hero summary, the card
+  // becomes a true shared element). Reserved name from globals.css §10.
   return (
     <Card
+      style={
+        props.isSelected
+          ? ({ viewTransitionName: '--vt-selected-script' } as React.CSSProperties)
+          : undefined
+      }
       className={cn(
         'transition-all',
         props.isSelected
-          ? 'border-primary border-2 shadow-md ring-4 ring-primary/15'
+          ? 'tier-elevated border-primary border-2 ring-4 ring-primary/15'
           : 'hover:border-primary/40',
         editing && 'ring-4 ring-ai/30',
       )}

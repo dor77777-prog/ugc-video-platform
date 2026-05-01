@@ -82,7 +82,7 @@ export default async function RootPage() {
             >
               התחבר
             </Link>
-            <Button asChild size="sm" className="shadow-glow">
+            <Button asChild intent="default" className="glow-primary">
               <Link href="/register">התחל חינם</Link>
             </Button>
           </div>
@@ -120,7 +120,7 @@ export default async function RootPage() {
             </p>
 
             <div className="flex flex-col sm:flex-row items-center lg:items-start lg:justify-start justify-center gap-3 motion-fade-up [animation-delay:240ms]">
-              <Button asChild size="lg" className="shadow-glow h-14 px-8 text-base">
+              <Button asChild intent="hero" className="glow-primary">
                 <Link href="/register" className="flex items-center gap-2">
                   <Sparkles className="h-4 w-4" />
                   התחל חינם · 30 קרדיטים
@@ -129,9 +129,9 @@ export default async function RootPage() {
               </Button>
               <Button
                 asChild
-                size="lg"
+                intent="hero"
                 variant="outline"
-                className="h-14 px-6 text-base border-border bg-card/40 backdrop-blur-md"
+                className="bg-elevated/60"
               >
                 <Link href="#pipeline" className="flex items-center gap-2">
                   <Film className="h-4 w-4" />
@@ -229,7 +229,7 @@ export default async function RootPage() {
                 </div>
                 <div className="text-sm font-bold capitalize">{id}</div>
               </div>
-              <div className="absolute top-2 right-2 px-1.5 py-0.5 rounded-md bg-background/80 backdrop-blur-md text-[9px] font-black tracking-widest uppercase border border-border-subtle">
+              <div className="absolute top-2 right-2 px-1.5 py-0.5 rounded-sm tier-overlay text-[9px] font-mono font-bold uppercase tracking-[0.18em] tabular-nums">
                 {String(i + 1).padStart(2, '0')}
               </div>
             </div>
@@ -297,7 +297,7 @@ export default async function RootPage() {
           {FEATURES.map((f, i) => (
             <Card
               key={f.title}
-              className="tier-elevated card-hover tilt-hover motion-fade-up bg-card/40 group"
+              className="tier-elevated card-hover motion-tilt-hover motion-fade-up bg-card/40 group"
               style={{ animationDelay: `${i * 60}ms` }}
             >
               <CardContent className="p-7 space-y-5 h-full">
@@ -338,19 +338,19 @@ export default async function RootPage() {
                 key={slug}
                 className={`relative motion-fade-up ${
                   isFeatured
-                    ? 'tier-atmosphere gradient-border card-hover lg:scale-[1.04] z-10'
-                    : 'glass card-hover bg-card/40'
+                    ? 'tier-atmosphere edge-gradient-primary card-hover lg:scale-[1.04] z-10'
+                    : 'tier-elevated card-hover bg-card/40'
                 }`}
                 style={{ animationDelay: `${i * 80}ms` }}
               >
                 {isFeatured && (
-                  <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full bg-gradient-to-br from-primary to-ai text-background text-[10px] font-black uppercase tracking-widest shadow-glow">
+                  <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 rounded-pill bg-gradient-to-br from-primary to-primary-press text-primary-foreground text-[10px] font-black uppercase tracking-[0.18em] glow-primary">
                     הכי פופולרי
                   </div>
                 )}
                 <CardContent className="p-7 space-y-5">
                   <div className="space-y-2">
-                    <div className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                    <div className="kicker-muted font-mono text-[10px] uppercase font-bold">
                       {cfg.displayName}
                     </div>
                     <div className="flex items-baseline gap-1.5">
@@ -374,11 +374,12 @@ export default async function RootPage() {
                   </div>
                   <Button
                     asChild
+                    intent="action"
                     variant={isFeatured ? 'default' : 'outline'}
                     className={
                       isFeatured
-                        ? 'w-full shadow-glow h-12 font-bold'
-                        : 'w-full h-12 border-border bg-card/40'
+                        ? 'w-full glow-primary'
+                        : 'w-full bg-elevated/60'
                     }
                   >
                     <Link href="/register">
@@ -441,7 +442,7 @@ export default async function RootPage() {
             30 קרדיטים חינם בכניסה, ללא כרטיס אשראי. רוב המשתמשים מסיימים את הסרטון
             הראשון תוך 8 דקות.
           </p>
-          <Button asChild size="lg" className="mt-10 shadow-glow h-14 px-10 text-base font-bold">
+          <Button asChild intent="hero" className="mt-10 glow-primary font-bold">
             <Link href="/register" className="flex items-center gap-2">
               <Sparkles className="h-4 w-4" />
               התחל עכשיו · חינם

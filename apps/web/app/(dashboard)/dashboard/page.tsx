@@ -209,7 +209,7 @@ async function CompletedVideosShowcase({ userId }: { userId: string }) {
               <div className="absolute inset-x-0 bottom-0 h-2/5 bg-gradient-to-t from-black/90 via-black/40 to-transparent pointer-events-none" />
               {/* Hover: dim the video + show Play button. */}
               <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/30">
-                <div className="h-12 w-12 rounded-full bg-primary/90 backdrop-blur-md flex items-center justify-center shadow-glow">
+                <div className="h-12 w-12 rounded-full bg-primary/90 backdrop-blur-md flex items-center justify-center glow-primary">
                   <Play className="h-5 w-5 text-background ms-0.5" fill="currentColor" />
                 </div>
               </div>
@@ -240,7 +240,7 @@ async function CompletedVideosShowcase({ userId }: { userId: string }) {
 // Encourages them to create their first ad.
 function FirstVideoHero() {
   return (
-    <Card className="bento-2x1 md:bento-2x2 tier-elevated glow-primary gradient-border relative overflow-hidden card-hover">
+    <Card className="bento-2x1 md:bento-2x2 tier-elevated glow-primary edge-gradient-primary relative overflow-hidden card-hover">
       <div
         className="absolute inset-0 -z-10 opacity-60"
         style={{
@@ -283,7 +283,7 @@ function FirstVideoHero() {
 // to a returning user.
 function ReturningUserHero({ completedCount }: { completedCount: number }) {
   return (
-    <Card className="bento-2x1 md:bento-2x2 tier-elevated glow-primary gradient-border relative overflow-hidden card-hover">
+    <Card className="bento-2x1 md:bento-2x2 tier-elevated glow-primary edge-gradient-primary relative overflow-hidden card-hover">
       <div
         className="absolute inset-0 -z-10 opacity-60"
         style={{
@@ -507,7 +507,7 @@ async function RecentProjectsSection({ userId }: { userId: string }) {
               return (
                 <Card
                   key={p.id}
-                  className="tier-elevated card-hover tilt-hover motion-fade-up"
+                  className="tier-elevated card-hover motion-tilt-hover motion-fade-up"
                   style={{ animationDelay: `${i * 50}ms` }}
                 >
                   <CardContent className="p-5 flex items-center gap-4">
@@ -563,7 +563,7 @@ async function RecentProjectsSection({ userId }: { userId: string }) {
             {finished.map((p, i) => (
               <Card
                 key={p.id}
-                className="tier-elevated card-hover tilt-hover motion-fade-up"
+                className="tier-elevated card-hover motion-tilt-hover motion-fade-up"
                 style={{ animationDelay: `${i * 50}ms` }}
               >
                 <CardContent className="p-5 flex items-center gap-4">
@@ -607,7 +607,7 @@ async function RecentProjectsSection({ userId }: { userId: string }) {
       {projectCount === 0 && (
         <Card className="tier-atmosphere border-dashed border-2 border-primary/30 motion-fade-up">
           <CardContent className="p-12 text-center space-y-5">
-            <div className="mx-auto h-16 w-16 rounded-2xl bg-gradient-to-br from-primary/30 to-ai/30 flex items-center justify-center shadow-glow">
+            <div className="mx-auto h-16 w-16 rounded-2xl bg-gradient-to-br from-primary/30 to-ai/30 flex items-center justify-center glow-primary">
               <Sparkles className="h-8 w-8 text-primary" />
             </div>
             <div className="space-y-1">
@@ -619,7 +619,7 @@ async function RecentProjectsSection({ userId }: { userId: string }) {
                 גרסאות תסריט שונות לבחירה.
               </div>
             </div>
-            <Button asChild className="shadow-glow">
+            <Button asChild className="glow-primary">
               <Link href="/projects/new" className="flex items-center gap-2">
                 <Sparkles className="h-4 w-4" />
                 התחילו עכשיו

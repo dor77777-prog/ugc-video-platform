@@ -19,7 +19,7 @@ import { cn } from '@/lib/utils';
 // V21.1 — sidebar with workspace context: top section is fixed nav,
 // middle is a "Pinned projects" list (recent 5 projects from layout),
 // bottom is the upgrade-plan promo. Active route highlights with
-// shadow-glow. Active project (when URL is /projects/<id>/...) gets
+// glow-primary. Active project (when URL is /projects/<id>/...) gets
 // a primary highlight in the pinned list.
 
 interface RecentProject {
