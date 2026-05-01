@@ -75,22 +75,62 @@ export async function safeFetch(rawUrl: string): Promise<SafeFetchResult> {
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
   try {
-    let res: Response;
-    try {
-      res = await fetch(url, {
-        signal: controller.signal,
-        redirect: 'follow',
-        headers: {
-          'User-Agent': USER_AGENT,
-          Accept: 'text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.5',
-          'Accept-Language': 'he,en;q=0.9',
-        },
-      });
-    } catch (err) {
-      if ((err as Error).name === 'AbortError') {
-        throw new ScrapeFetchError('Fetch timed out', 'timeout');
+    // V26.SEC — manual redirect handling so each hop is re-validated
+    // against the SSRF allowlist. Without this, an attacker can host a
+    // public URL (e.g. example.com/redirect) that 302-redirects to
+    // http://127.0.0.1:8080 / http://169.254.169.254 — Node's fetch
+    // with redirect: 'follow' transparently follows it and the
+    // upstream isPrivateOrLocalHost() check on the original URL is
+    // bypassed. We cap the chain at 5 hops (typical max in practice).
+    const MAX_REDIRECTS = 5;
+    let currentUrl = url;
+    let res: Response | null = null;
+    for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+      try {
+        res = await fetch(currentUrl, {
+          signal: controller.signal,
+          redirect: 'manual',
+          headers: {
+            'User-Agent': USER_AGENT,
+            Accept: 'text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.5',
+            'Accept-Language': 'he,en;q=0.9',
+          },
+        });
+      } catch (err) {
+        if ((err as Error).name === 'AbortError') {
+          throw new ScrapeFetchError('Fetch timed out', 'timeout');
+        }
+        throw new ScrapeFetchError(`Network error: ${(err as Error).message}`, 'network');
       }
-      throw new ScrapeFetchError(`Network error: ${(err as Error).message}`, 'network');
+      // Status 3xx with a Location header → re-validate next hop.
+      if (res.status >= 300 && res.status < 400) {
+        const loc = res.headers.get('location');
+        if (!loc) break; // 3xx without Location — treat as terminal
+        if (hop === MAX_REDIRECTS) {
+          throw new ScrapeFetchError('Too many redirects', 'http_error');
+        }
+        let next: URL;
+        try {
+          next = new URL(loc, currentUrl);
+        } catch {
+          throw new ScrapeFetchError('Invalid redirect Location', 'invalid_url');
+        }
+        if (next.protocol !== 'http:' && next.protocol !== 'https:') {
+          throw new ScrapeFetchError('Redirect to non-http(s) blocked', 'invalid_url');
+        }
+        if (isPrivateOrLocalHost(next.hostname)) {
+          throw new ScrapeFetchError(
+            'Redirect to private/internal host blocked',
+            'private_host',
+          );
+        }
+        currentUrl = next;
+        continue;
+      }
+      break;
+    }
+    if (!res) {
+      throw new ScrapeFetchError('No response after redirect chain', 'network');
     }
 
     if (!res.ok) {

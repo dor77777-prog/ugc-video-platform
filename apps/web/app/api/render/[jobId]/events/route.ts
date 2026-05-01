@@ -25,8 +25,9 @@
 // server-side DB polling is simpler, hits the existing SLOW_QUERY logger,
 // and the V14.1c index on RenderJob.status keeps the query fast.
 
-import type { NextRequest } from 'next/server';
+import { type NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
+import { getOrCreateAppUser } from '@/lib/auth/sync-user';
 
 // Each SSE connection caps at 55s. Vercel Hobby max function duration is
 // 60s; we leave 5s for the close + flush so the function exits cleanly.
@@ -56,6 +57,22 @@ export async function GET(
   { params }: { params: Promise<{ jobId: string }> },
 ) {
   const { jobId } = await params;
+
+  // V26.SEC — Auth + ownership enforcement BEFORE opening the SSE
+  // stream. Pre-V26.SEC anyone with a leaked jobId could subscribe to
+  // its status updates in real time. Now we resolve the requester's
+  // app user and confirm they own the job before piping any data.
+  const { dbUser } = await getOrCreateAppUser();
+  const owner = await prisma.renderJob.findUnique({
+    where: { id: jobId },
+    select: { userId: true },
+  });
+  if (!owner) {
+    return NextResponse.json({ error: 'Job not found' }, { status: 404 });
+  }
+  if (owner.userId !== dbUser.id) {
+    return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+  }
 
   const encoder = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({

@@ -2,11 +2,23 @@ import { NextResponse } from 'next/server';
 import { ProjectStatus, ScriptAngle, SceneType } from '@prisma/client';
 import { prisma } from '@/lib/db';
 import { renderQueue } from '@/lib/queue';
+import { getOrCreateAppUser } from '@/lib/auth/sync-user';
 
 // Demo endpoint — creates a sample project + script + scenes,
 // enqueues a render job, returns the jobId.
-// Use this from the home page to see the full mock pipeline run.
+// Used from the /dev/demo page to see the full pipeline run.
+//
+// V26.SEC — auth gate. Pre-V26.SEC this endpoint was reachable
+// unauthenticated (every /api/* slips through middleware) and would
+// upsert a shared demo@ugc-video.local user, create a project + 4
+// scenes + a render job, and enqueue a Redis BullMQ job — for any
+// passing visitor with curl. The /dev/demo page that consumes this
+// route lives behind the (dashboard) auth gate, so requiring an
+// authenticated session here doesn't change UX. We still keep the
+// shared demo user (matches the previous semantics — the operator
+// runs the demo without polluting their own dashboard).
 export async function POST() {
+  await getOrCreateAppUser();
   const user = await prisma.user.upsert({
     where: { email: 'demo@ugc-video.local' },
     update: {},
