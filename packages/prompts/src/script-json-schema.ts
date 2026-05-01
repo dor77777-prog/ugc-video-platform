@@ -168,6 +168,20 @@ export const SCENE_GOALS_LIST = SCENE_GOALS;
 export const SCENE_GENERATION_TYPES_LIST = SCENE_GENERATION_TYPES;
 export const FACE_VISIBILITY_LIST = FACE_VISIBILITY;
 export const PRIMARY_SUBJECTS_LIST = PRIMARY_SUBJECTS;
+
+// V27.9 — frame strategy enum used by both the schema (above) and
+// downstream consumers (image-brief-builder, scene-rules, admin debug).
+export const FRAME_STRATEGIES = [
+  'pure_setup',
+  'product_reveal',
+  'product_in_use',
+  'product_focus',
+  'comparison_split',
+  'reaction_shot',
+  'cta_close',
+] as const;
+export const FRAME_STRATEGIES_LIST = FRAME_STRATEGIES;
+export type FrameStrategy = (typeof FRAME_STRATEGIES)[number];
 export const PRODUCT_VISIBILITY_PRIORITY_LIST = PRODUCT_VISIBILITY_PRIORITY;
 export const CAMERA_FOCUS_LIST = CAMERA_FOCUS;
 export const ENVIRONMENT_TYPES_LIST = ENVIRONMENT_TYPES;
@@ -209,6 +223,16 @@ const SCENE_ITEM_SCHEMA = {
     // V14 PR5 — optional Israeli setting cue ID. Maps to one of the 8
     // canonical scene presets in apps/web/lib/scene-planning/israeli-realism-rules.ts.
     'israeli_setting_cue',
+    // V27.9 — narrative coherence between scenes. Forces the LLM to
+    // commit to a 1-line link explaining how this scene continues
+    // from the previous one. Nullable for scene_order=0 and for
+    // back-compat with V14 scripts already saved in DB.
+    'narrative_link_from_previous',
+    // V27.9 — frame strategy. Decouples "is the product visible?"
+    // from "how prominent is it?" — answers a third question:
+    // "what does this frame DO with the product?" Comparison scenes
+    // need it dominant; pain scenes shouldn't have it at all.
+    'frame_strategy',
   ],
   properties: {
     scene_order: {
@@ -275,13 +299,13 @@ const SCENE_ITEM_SCHEMA = {
     must_show_product: {
       type: 'boolean',
       description:
-        'true if the product is required to be visible in the frame at the start AND end of the clip. Default true for every scene except scene 0 (hook).',
+        'true if the product is required to be visible in the frame at the start AND end of the clip. V27.9 — coordinate with frame_strategy: pure_setup (pain/hook before product introduced) → false; everything else → true. Do NOT force product into a pain/setup scene; it reads as desperate ad copy.',
     },
     product_visibility_priority: {
       type: 'string',
       enum: PRODUCT_VISIBILITY_PRIORITY as unknown as string[],
       description:
-        'How dominant the product should be in the frame. high = product fills 30-60%; medium = clearly visible but not dominant; low = peripheral or absent (talking-head only).',
+        'How dominant the product should be in the frame. V27.9 mapping by frame_strategy: comparison_split / product_focus / cta_close → high (product fills 40-70%); product_reveal / product_in_use → high or medium depending on whether the demo IS the product (high) or context is needed (medium); reaction_shot → low (peripheral); pure_setup → low (none). The image-brief-builder reads this directly.',
     },
     camera_focus: {
       type: 'string',
@@ -326,6 +350,17 @@ const SCENE_ITEM_SCHEMA = {
       enum: [...ISRAELI_SETTING_CUES, null] as unknown as string[],
       description:
         'V14 PR5. One of the 8 canonical Israeli scene preset IDs (kitchen_with_morning_light / bathroom_morning_routine / bedroom_evening / living_room_couch / tel_aviv_street_evening / supermarket_aisle / gym_modern / outdoor_park_afternoon) or null when no preset fits. The deterministic image-brief-builder expands this into atomic Israeli realism cues.',
+    },
+    narrative_link_from_previous: {
+      type: ['string', 'null'] as unknown as 'string',
+      description:
+        'V27.9 — 1-sentence Hebrew description of how this scene continues from the previous one. Examples: "ממשיך את הכאב שהוצג בסצנה 0 ומכניס את הראייה הראשונה של המוצר", "תגובה רגשית למה שעשה המוצר בסצנה 2", "עוצר את הסיפור ומציע לצופה החלטה". MUST be null only for scene_order=0 (the first scene has no previous). For every other scene this MUST be a real, specific link — not a generic "continues the script". A reader should be able to read scene N-1 then scene N and feel the bridge. If you can\'t describe the link in one sentence, the scene is a non-sequitur — rewrite it.',
+    },
+    frame_strategy: {
+      type: 'string',
+      enum: FRAME_STRATEGIES as unknown as string[],
+      description:
+        'V27.9 — what does this frame DO with the product? Decouples "is product visible" (must_show_product) from "how prominent" (product_visibility_priority) by answering a third question. pure_setup = pain/hook before product is introduced (must_show_product=false). product_reveal = first time the product appears, frame composed around it. product_in_use = demo / hands. product_focus = closeup / detail. comparison_split = the scene compares the product to a category alternative — the product MUST be dominant in the frame, not implied. reaction_shot = creator reacting to a result; product peripheral. cta_close = final decision push; product is hero. Drives the deterministic image-brief-builder downstream.',
     },
   },
 } as const;
