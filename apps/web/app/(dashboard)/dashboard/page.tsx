@@ -155,6 +155,7 @@ async function CompletedVideosShowcase({ userId }: { userId: string }) {
       <div className="flex items-end justify-between flex-wrap gap-3">
         <div className="space-y-2">
           <SectionKicker
+            variant="loud"
             text="הסרטונים שיצרת"
             english="Your Productions"
             icon={Film}
@@ -442,7 +443,7 @@ async function RecentProjectsSection({ userId }: { userId: string }) {
         <div className="space-y-5 animate-fade-in-up">
           <div className="flex items-end justify-between flex-wrap gap-3">
             <div className="space-y-2">
-              <SectionKicker text="הפרויקט הפעיל" english="Active Project" icon={Activity} />
+              <SectionKicker variant="loud" text="הפרויקט הפעיל" english="Active Project" icon={Activity} />
               <h2 className="text-2xl md:text-3xl font-black tracking-tight">
                 {featuredInProgress.productName ?? 'פרויקט ללא שם'}
               </h2>
@@ -483,10 +484,10 @@ async function RecentProjectsSection({ userId }: { userId: string }) {
       {inProgress.length > 1 && (
         <div className="space-y-5">
           <SectionKicker
+            variant="muted"
             text="ממשיכים ממה שהפסקת"
             english="In Progress"
             icon={Clock}
-            className="text-muted-foreground/80"
           />
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {inProgress.slice(1).map((p, i) => {
@@ -553,10 +554,10 @@ async function RecentProjectsSection({ userId }: { userId: string }) {
       {finished.length > 0 && (
         <div className="space-y-5">
           <SectionKicker
+            variant="loud"
             text="הושלמו לאחרונה"
             english="Recently Completed"
             icon={CheckCircle2}
-            className="text-accent/80"
           />
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {finished.map((p, i) => (

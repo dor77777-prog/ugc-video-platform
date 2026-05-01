@@ -3,59 +3,185 @@
 @tailwind utilities;
 
 /* ============================================================
- * V19 — Dark-mode-first theme overhaul.
+ * V27 — Tri-Modal Liquid design language.
  *
- * Inspiration: kling.ai (cinematic, deep violet-black, neon accents)
- * + krea.ai (workspace feel, gradient washes, glass surfaces).
+ * Three coordinated modes share one vocabulary:
+ *   • Vercel-mode  — Precision · Engineered · Restraint
+ *                    Chrome, admin, settings, sidebar, library.
+ *   • Krea-mode    — Cinematic · Generative · Alive
+ *                    Wizard step 4–6, scene cards, video reveal.
+ *   • Granola-mode — Liquid · Atmospheric · Connective
+ *                    Modals, sheets, popovers, AI-active states.
  *
- * Tachles signature stays — electric violet primary + acid lime accent
- * — but everything else is rebuilt around a near-black canvas with
- * subtle violet undertone, refined borders, and a heavier glow culture.
+ * Color and motion are state, not decoration. The system teaches
+ * the eye through measured deltas (radius 12 vs 16, kicker 0.18 vs
+ * 0.24em, ai-pulse vs success-static).
+ *
+ * Source of truth: .design/design-language-v27/
  * ============================================================ */
 
 @layer base {
   :root {
-    /* Near-black with a slight violet tint — reads as premium AI tool,
-       not generic dark gray. Surfaces step up from canvas → card →
-       elevated. Borders are SUBTLE: 8-14% lightness deltas. */
-    --background: 240 18% 5%;
-    --foreground: 0 0% 96%;
+    /* ─── Surface ladder (228° 6%, only L varies) ─── */
+    --canvas:        228 6% 4%;
+    --surface:       228 6% 7%;
+    --elevated:      228 6% 10%;
+    --overlay:       228 6% 13%;
+    --divider:       228 6% 16%;
+    --border:        228 6% 20%;
 
-    --card: 240 14% 8%;
-    --card-foreground: 0 0% 96%;
+    /* ─── shadcn back-compat aliases (DO NOT remove) ─── */
+    --background:        228 6% 4%;
+    --card:              228 6% 7%;
+    --popover:           228 6% 10%;
+    --input:             228 6% 10%;
+    --secondary:         228 6% 10%;
+    --muted:             228 6% 10%;
+    --border-subtle:     228 6% 16%;
 
-    --popover: 240 16% 7%;
-    --popover-foreground: 0 0% 96%;
+    /* ─── Foreground tiers ─── */
+    --fg:                0 0% 98%;
+    --fg-secondary:      228 8% 78%;
+    --fg-tertiary:       228 8% 56%;
+    --fg-disabled:       228 8% 38%;
 
-    /* Slightly hotter primary for contrast against black. */
-    --primary: 258 100% 68%;
-    --primary-foreground: 240 18% 5%;
-    --primary-soft: 258 60% 18%;
+    --foreground:            0 0% 98%;
+    --card-foreground:       0 0% 98%;
+    --popover-foreground:    0 0% 98%;
+    --secondary-foreground:  0 0% 98%;
+    --muted-foreground:      228 8% 56%;
 
-    --secondary: 240 10% 14%;
-    --secondary-foreground: 0 0% 96%;
+    /* ─── Primary (violet, desat 100→92) ─── */
+    --primary:           258 92% 66%;
+    --primary-hover:     258 92% 72%;
+    --primary-press:     258 92% 60%;
+    --primary-soft:      258 50% 16%;
+    --primary-on-glass:  258 92% 76%;
+    --primary-foreground: 228 6% 4%;
 
-    --muted: 240 8% 12%;
-    --muted-foreground: 240 6% 60%;
+    /* ─── AI Active (78°, semantic-only) ─── */
+    --ai:                78 82% 58%;
+    --ai-soft:           78 35% 14%;
+    --ai-foreground:     228 6% 4%;
 
-    --accent: 73 95% 62%;
-    --accent-foreground: 240 18% 5%;
-    --accent-soft: 73 30% 16%;
+    /* Migration alias — old --accent points here for back-compat.
+     * NEW CODE WRITTEN FROM V27 ONWARD MUST NOT REFERENCE bg-accent /
+     * text-accent. Use bg-ai / text-ai for AI-active surfaces.
+     * Pre-commit gate blocks new bg-accent usage. */
+    --accent:            78 82% 58%;
+    --accent-soft:       78 35% 14%;
+    --accent-foreground: 228 6% 4%;
 
-    --destructive: 0 70% 60%;
+    /* ─── Semantic state ─── */
+    --success:               150 60% 50%;
+    --success-soft:          150 35% 14%;
+    --success-foreground:    228 6% 4%;
+
+    --warning:               38 92% 58%;
+    --warning-soft:          38 35% 14%;
+    --warning-foreground:    228 6% 4%;
+
+    --destructive:           358 75% 58%;
+    --destructive-soft:      358 50% 64%;
     --destructive-foreground: 0 0% 98%;
 
-    --border: 240 10% 16%;
-    --border-subtle: 240 10% 12%;
-    --input: 240 10% 14%;
-    --ring: 258 100% 68%;
+    --info:                  218 88% 64%;
+    --info-soft:             218 40% 14%;
+    --info-foreground:       228 6% 4%;
 
-    --radius: 0.875rem;
+    /* ─── Provider dots (admin-only, namespaced) ─── */
+    --provider-openai:     162 35% 58%;
+    --provider-gemini:     218 60% 64%;
+    --provider-xai:        220 8% 72%;
+    --provider-kling:      285 45% 60%;
+    --provider-pixverse:   330 55% 64%;
+    --provider-elevenlabs: 42 70% 60%;
+    --provider-r2:         14 65% 58%;
 
-    /* Hot gradient stops for hero / CTA / text-gradient. */
-    --gradient-from: 258 100% 70%;
-    --gradient-to: 290 100% 70%;
-    --gradient-third: 73 95% 62%;
+    /* ─── Focus ring (3-state) ─── */
+    --ring:        258 92% 66%;
+    --ring-error:  358 75% 58%;
+
+    /* ─── Radius scale (7 steps) ─── */
+    --radius-xs:   0.25rem;   /* 4px */
+    --radius-sm:   0.375rem;  /* 6px */
+    --radius-md:   0.5rem;    /* 8px */
+    --radius-lg:   0.75rem;   /* 12px — default */
+    --radius-xl:   1rem;      /* 16px — Krea-mode override */
+    --radius-2xl:  1.5rem;    /* 24px */
+    --radius-pill: 9999px;
+
+    --radius:      0.75rem;   /* default = lg */
+
+    /* ─── Gradient anchors (landing-only) ─── */
+    --gradient-from:   258 92% 70%;
+    --gradient-to:     290 92% 70%;
+    --gradient-third:  78 82% 58%;
+
+    /* ─── Container max-widths ─── */
+    --container-form:      48rem;
+    --container-grid:      80rem;
+    --container-showcase:  90rem;
+    --container-admin:     82.5rem;
+
+    /* ─── Motion easings (3) ─── */
+    --ease-out:    cubic-bezier(0.16, 1, 0.3, 1);
+    --ease-snap:   cubic-bezier(0.32, 0.72, 0, 1);
+    --ease-pulse:  cubic-bezier(0.4, 0, 0.6, 1);
+
+    /* ─── Motion durations (7) ─── */
+    --motion-instant:    80ms;
+    --motion-fast:       160ms;
+    --motion-normal:     240ms;
+    --motion-slow:       400ms;
+    --motion-cinematic:  700ms;
+    --motion-breathe:    1600ms;
+    --motion-aurora:     22000ms;
+
+    /* ─── Density defaults (root + default mode) ─── */
+    --pad-card-y:        1.25rem;
+    --pad-card-x:        1.5rem;
+    --gap-section:       1.5rem;
+    --row-height:        2.75rem;
+    --bento-gap:         1rem;
+    --line-height-body:  1.55;
+  }
+
+  /* ─── Density variants ─── */
+  [data-density="default"] {
+    --pad-card-y:        1.25rem;
+    --pad-card-x:        1.5rem;
+    --gap-section:       1.5rem;
+    --row-height:        2.75rem;
+    --bento-gap:         1rem;
+    --line-height-body:  1.55;
+  }
+
+  [data-density="dense"] {
+    --pad-card-y:        0.75rem;
+    --pad-card-x:        1rem;
+    --gap-section:       1rem;
+    --row-height:        2.25rem;
+    --bento-gap:         0.75rem;
+    --line-height-body:  1.45;
+  }
+
+  [data-density="comfortable"] {
+    --pad-card-y:        1.75rem;
+    --pad-card-x:        1.75rem;
+    --gap-section:       2rem;
+    --row-height:        3.5rem;
+    --bento-gap:         1.25rem;
+    --line-height-body:  1.6;
+    --radius:            1rem; /* Krea-mode 16px override */
+  }
+
+  [data-density="showcase"] {
+    --pad-card-y:        2.5rem;
+    --pad-card-x:        2.5rem;
+    --gap-section:       3rem;
+    --bento-gap:         1.5rem;
+    --line-height-body:  1.65;
   }
 }
 
@@ -64,43 +190,511 @@
     @apply border-border;
   }
   html {
-    /* Smooth-scroll for in-page anchors on the landing page. */
     scroll-behavior: smooth;
   }
   body {
     @apply bg-background text-foreground;
-    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11', 'tnum', 'cv05';
+    font-variant-numeric: tabular-nums;
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
-    /* Slightly tighter base line height for a denser, premium feel. */
-    line-height: 1.55;
+    line-height: var(--line-height-body);
   }
-  /* Heading scale — much bigger + much tighter than V15. */
+  /* Headings opt OUT of tabular-nums.
+   * Reason: Hebrew titles often mix numerals with words ("6 תסריטים",
+   * "סצנה 3 מתוך 7"). Heebo wasn't designed with `tnum` glyph slots,
+   * so forcing tabular renders inconsistently. Tabular nums are useful
+   * for data context (table cells, badges, costs); headings are not.
+   */
   h1, h2, h3, h4 {
     letter-spacing: -0.025em;
-    font-weight: 800;
+    font-weight: 700;
     line-height: 1.05;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+    font-variant-numeric: normal;
   }
   h1 {
     letter-spacing: -0.04em;
-    font-weight: 900;
+    font-weight: 800; /* Heebo caps at 800; was 900 falling to system fallback */
   }
-  h2 {
-    letter-spacing: -0.03em;
-  }
-  /* Selection styling for premium feel. */
+  h2 { letter-spacing: -0.03em; }
   ::selection {
-    background: hsl(var(--primary) / 0.35);
-    color: hsl(var(--foreground));
+    background: hsl(var(--primary) / 0.3);
+    color: hsl(var(--fg));
   }
 }
 
 /* ============================================================
- * V19 — utility classes.
+ * V27 — Kicker variants (explicit, no context-aware magic)
+ * ============================================================ */
+.kicker-loud {
+  letter-spacing: 0.24em;
+  color: hsl(var(--primary));
+}
+.kicker-muted {
+  letter-spacing: 0.18em;
+  color: hsl(var(--fg-tertiary));
+}
+
+/* ============================================================
+ * V27 — Tier system (replaces .glass/.glass-strong/.glass-liquid).
+ *
+ * Rule: glass is earned. tier-surface (no blur) is the default for
+ * Vercel-mode. tier-elevated (8px blur) for default-mode cards.
+ * tier-overlay (20px) for popovers/sheets/drawers. tier-atmosphere
+ * (28px) for modal scrims + featured hero. tier-liquid (40px) for
+ * landing hero only.
+ *
+ * Hard limit: max 2 glass tiers per screen.
  * ============================================================ */
 
-/* Cinematic mesh — three-stop radial that washes the canvas with
-   violet → magenta → lime hints. Designed for hero backgrounds. */
+.tier-surface {
+  background: hsl(var(--surface));
+  border: 1px solid hsl(var(--divider));
+  box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.06);
+}
+
+.tier-elevated {
+  background: hsl(var(--elevated) / 0.92);
+  backdrop-filter: blur(8px) saturate(115%);
+  -webkit-backdrop-filter: blur(8px) saturate(115%);
+  border: 1px solid hsl(var(--divider));
+  box-shadow:
+    inset 0 1px 0 hsl(0 0% 100% / 0.06),
+    0 4px 16px -8px hsl(0 0% 0% / 0.45);
+}
+
+.tier-overlay {
+  position: relative;
+  background: hsl(var(--overlay) / 0.85);
+  backdrop-filter: blur(20px) saturate(140%);
+  -webkit-backdrop-filter: blur(20px) saturate(140%);
+  border: 1px solid hsl(var(--border));
+  box-shadow:
+    inset 0 1px 0 hsl(0 0% 100% / 0.08),
+    0 8px 32px -12px hsl(0 0% 0% / 0.55);
+}
+.tier-overlay::before {
+  /* edge-pearl on tier-overlay+ */
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(
+    90deg,
+    hsl(0 0% 100% / 0.04),
+    hsl(var(--primary) / 0.18) 50%,
+    hsl(0 0% 100% / 0.04)
+  );
+  mask:
+    linear-gradient(180deg, black 0, black 1.5px, transparent 1.5px),
+    linear-gradient(black, black);
+  mask-composite: source-in;
+  -webkit-mask:
+    linear-gradient(180deg, black 0, black 1.5px, transparent 1.5px),
+    linear-gradient(black, black);
+  -webkit-mask-composite: source-in;
+}
+
+.tier-atmosphere {
+  position: relative;
+  background: hsl(var(--canvas) / 0.55);
+  backdrop-filter: blur(28px) saturate(165%);
+  -webkit-backdrop-filter: blur(28px) saturate(165%);
+  border: 1px solid hsl(var(--border));
+  box-shadow:
+    inset 0 1px 0 hsl(0 0% 100% / 0.1),
+    inset 1px 0 0 hsl(0 0% 100% / 0.04),
+    0 1px 0 hsl(0 0% 0% / 0.5),
+    0 24px 60px -16px hsl(0 0% 0% / 0.6);
+}
+.tier-atmosphere::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(
+    90deg,
+    hsl(0 0% 100% / 0.04),
+    hsl(var(--primary) / 0.22) 50%,
+    hsl(0 0% 100% / 0.04)
+  );
+  mask:
+    linear-gradient(180deg, black 0, black 1.5px, transparent 1.5px),
+    linear-gradient(black, black);
+  mask-composite: source-in;
+  -webkit-mask:
+    linear-gradient(180deg, black 0, black 1.5px, transparent 1.5px),
+    linear-gradient(black, black);
+  -webkit-mask-composite: source-in;
+}
+
+.tier-liquid {
+  /* LANDING HERO ONLY — 40px blur is allowed because the landing has
+   * no paint-storm (single visit, no wizard cards in the surrounding
+   * tree). All other surfaces are capped at 28px in tier-atmosphere. */
+  background:
+    linear-gradient(
+      135deg,
+      hsl(0 0% 100% / 0.06) 0%,
+      hsl(0 0% 100% / 0.02) 50%,
+      hsl(var(--primary) / 0.04) 100%
+    ),
+    hsl(var(--canvas) / 0.4);
+  backdrop-filter: blur(40px) saturate(180%);
+  -webkit-backdrop-filter: blur(40px) saturate(180%);
+  border: 1px solid hsl(var(--border));
+  box-shadow:
+    inset 0 1px 0 hsl(0 0% 100% / 0.1),
+    inset 1px 0 0 hsl(0 0% 100% / 0.04),
+    0 1px 0 hsl(0 0% 0% / 0.4),
+    0 24px 60px -20px hsl(var(--primary) / 0.3);
+}
+
+/* ─── Glow modifiers (additive to any tier) ─── */
+.glow-primary {
+  box-shadow:
+    0 0 0 1px hsl(var(--primary) / 0.18),
+    0 0 24px -8px hsl(var(--primary) / 0.4),
+    0 8px 32px -12px hsl(var(--primary) / 0.32);
+}
+.glow-ai {
+  box-shadow:
+    0 0 0 1px hsl(var(--ai) / 0.4),
+    0 0 24px -8px hsl(var(--ai) / 0.35),
+    0 8px 32px -12px hsl(var(--ai) / 0.28);
+}
+.glow-success {
+  box-shadow:
+    0 0 0 1px hsl(var(--success) / 0.45),
+    0 0 20px -8px hsl(var(--success) / 0.3);
+}
+
+/* ─── edge-gradient (explicit "favored object" decoration) ─── */
+.edge-gradient-primary {
+  position: relative;
+  background-clip: padding-box;
+  border: 1px solid transparent;
+}
+.edge-gradient-primary::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(
+    135deg,
+    hsl(var(--primary) / 0.6),
+    hsl(var(--gradient-to) / 0.4),
+    hsl(var(--ai) / 0.5)
+  );
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+/* ─── data-ai-active automatic styling ───
+ * Per V27 contract: data-ai-active sits on the OUTCOME UNIT (the
+ * unit the user is waiting for), not the trigger. Server-rendered
+ * from *InFlightAt columns. Enum: image | voice | clip |
+ * script-batch | render. */
+[data-ai-active="image"],
+[data-ai-active="voice"],
+[data-ai-active="clip"],
+[data-ai-active="script-batch"] {
+  box-shadow:
+    0 0 0 1px hsl(var(--ai) / 0.4),
+    0 0 24px -8px hsl(var(--ai) / 0.35),
+    0 8px 32px -12px hsl(var(--ai) / 0.28);
+  animation: motion-pulse-ai-kf var(--motion-breathe) var(--ease-pulse) infinite;
+}
+
+/* render is long-running — static ring, NO pulse. The internal
+ * <Progress variant="ai"> shimmer carries the "live" signal. */
+[data-ai-active="render"] {
+  box-shadow:
+    0 0 0 1px hsl(var(--ai) / 0.5),
+    0 0 24px -6px hsl(var(--ai) / 0.4);
+}
+
+/* Success state: static green ring for 800ms, then fade out. */
+[data-state="success"] {
+  box-shadow:
+    0 0 0 1px hsl(var(--success) / 0.45),
+    0 0 20px -8px hsl(var(--success) / 0.3);
+  animation: motion-success-fade var(--motion-cinematic) var(--ease-out) forwards;
+}
+
+/* Auto-promote kicker when ancestor is AI-active. */
+[data-ai-active] .kicker-muted {
+  letter-spacing: 0.24em;
+  color: hsl(var(--ai));
+}
+
+/* ============================================================
+ * V27 — Motion vocabulary (12 named patterns).
+ *
+ * Every transition / animation in component code must use one of
+ * these. Easing + duration come from CSS variables. Adding new
+ * patterns means adding to this section, not inlining ad-hoc.
+ * ============================================================ */
+
+/* ─── Entrances / state changes ─── */
+
+@keyframes motion-fade-kf {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.motion-fade {
+  animation: motion-fade-kf var(--motion-normal) var(--ease-out) backwards;
+}
+
+@keyframes motion-fade-up-kf {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.motion-fade-up {
+  animation: motion-fade-up-kf var(--motion-normal) var(--ease-out) backwards;
+}
+
+@keyframes motion-pop-in-kf {
+  from { opacity: 0; transform: scale(0.94); }
+  to   { opacity: 1; transform: scale(1); }
+}
+.motion-pop-in {
+  animation: motion-pop-in-kf var(--motion-fast) var(--ease-snap) backwards;
+}
+
+@keyframes motion-slide-down-kf {
+  from { opacity: 0; transform: translateY(-12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.motion-slide-down {
+  animation: motion-slide-down-kf var(--motion-normal) var(--ease-out) backwards;
+}
+
+/* RTL-aware slide-side: enters from inline-start. */
+@keyframes motion-slide-side-kf {
+  from { opacity: 0; transform: translateX(var(--slide-side-from, 16px)); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+.motion-slide-side {
+  animation: motion-slide-side-kf var(--motion-slow) var(--ease-snap) backwards;
+}
+[dir="rtl"] .motion-slide-side {
+  --slide-side-from: -16px;
+}
+
+@keyframes motion-cinematic-reveal-kf {
+  from { opacity: 0; transform: translateY(16px) scale(1.04); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.motion-cinematic-reveal {
+  animation: motion-cinematic-reveal-kf var(--motion-cinematic) var(--ease-out) backwards;
+}
+
+/* ─── Press / hover ─── */
+
+.motion-press {
+  transition: transform var(--motion-instant) var(--ease-snap);
+}
+.motion-press:active {
+  transform: scale(0.97);
+}
+
+.motion-lift-hover {
+  transition:
+    transform var(--motion-fast) var(--ease-out),
+    filter var(--motion-fast) var(--ease-out);
+}
+.motion-lift-hover:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.04);
+}
+
+.motion-tilt-hover {
+  transform-style: preserve-3d;
+  transition: transform var(--motion-normal) var(--ease-out);
+}
+.motion-tilt-hover:hover {
+  transform: perspective(900px) translateY(-3px) rotateX(2deg);
+}
+
+/* In dense mode, tilt collapses to lift. */
+[data-density="dense"] .motion-tilt-hover {
+  transition: filter var(--motion-fast) var(--ease-out);
+}
+[data-density="dense"] .motion-tilt-hover:hover {
+  transform: none;
+  filter: brightness(1.04);
+}
+[data-density="dense"] .motion-cinematic-reveal {
+  animation: motion-fade-kf var(--motion-normal) var(--ease-out) backwards;
+}
+
+/* Mobile clamp — disable tilt below md regardless of density. */
+@media (max-width: 767px) {
+  .motion-tilt-hover:hover {
+    transform: none;
+    filter: brightness(1.04);
+  }
+}
+
+/* ─── Loops ─── */
+
+@keyframes motion-shimmer-kf {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+.motion-shimmer {
+  animation: motion-shimmer-kf 1.4s linear infinite;
+}
+
+@keyframes motion-pulse-ai-kf {
+  0%, 100% {
+    box-shadow:
+      0 0 0 1px hsl(var(--ai) / 0.4),
+      0 0 24px -8px hsl(var(--ai) / 0.35);
+  }
+  50% {
+    box-shadow:
+      0 0 0 1px hsl(var(--ai) / 0.6),
+      0 0 32px -6px hsl(var(--ai) / 0.5);
+  }
+}
+.motion-pulse-ai {
+  animation: motion-pulse-ai-kf var(--motion-breathe) var(--ease-pulse) infinite;
+}
+
+@keyframes motion-aurora-kf {
+  0%, 100% { transform: translate(0, 0) rotate(0deg); }
+  50%      { transform: translate(2%, -3%) rotate(8deg); }
+}
+.motion-aurora {
+  animation: motion-aurora-kf var(--motion-aurora) linear infinite;
+}
+
+@keyframes motion-success-fade {
+  0%   { opacity: 1; }
+  60%  { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+@keyframes motion-shimmer-text {
+  0%, 100% { background-position: 0% 50%; }
+  50%      { background-position: 100% 50%; }
+}
+
+@keyframes motion-shimmer-overlay {
+  0%, 100% { opacity: 0.4; }
+  50%      { opacity: 0.85; }
+}
+
+@keyframes motion-pulse-ai-soft {
+  0%, 100% { opacity: 0.5; transform: scale(1); }
+  50%      { opacity: 1; transform: scale(1.12); }
+}
+
+/* ─── Stagger system ─── */
+.stagger-1 { animation-delay: 60ms; }
+.stagger-2 { animation-delay: 120ms; }
+.stagger-3 { animation-delay: 180ms; }
+.stagger-4 { animation-delay: 240ms; }
+.stagger-5 { animation-delay: 300ms; }
+.stagger-6 { animation-delay: 360ms; }
+.stagger-7 { animation-delay: 420ms; }
+.stagger-8 { animation-delay: 480ms; }
+
+/* ─── prefers-reduced-motion (global contract) ─── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  /* Allowed exceptions: fade (orientation), press (state confirmation). */
+  .motion-fade,
+  .motion-fade-up {
+    transition-duration: 200ms !important;
+    animation-duration: 200ms !important;
+  }
+  .motion-press {
+    transition-duration: 80ms !important;
+  }
+  /* AI active: ring becomes static, no breathing. */
+  [data-ai-active] {
+    animation: none !important;
+  }
+  /* Aurora and shimmer disabled entirely. */
+  .motion-shimmer { animation: none !important; }
+  .motion-aurora  { display: none; }
+}
+
+/* ─── data-motion="off" escape hatch ───
+ * Use cases אסורים: לתקן jank, להאיץ build perceived performance,
+ * להחביא bug. אם זה התשובה, ה-bug במקום אחר. */
+[data-motion="off"],
+[data-motion="off"] * {
+  animation: none !important;
+  transition: none !important;
+}
+
+/* ─── Focus ring (3-state) ─── */
+.focus-ring {
+  outline: none;
+}
+.focus-ring:focus-visible {
+  box-shadow:
+    0 0 0 2px hsl(var(--canvas)),
+    0 0 0 4px hsl(var(--ring) / 0.55);
+}
+.focus-ring[aria-invalid="true"]:focus-visible {
+  box-shadow:
+    0 0 0 2px hsl(var(--canvas)),
+    0 0 0 4px hsl(var(--ring-error) / 0.55);
+}
+.focus-ring:disabled:focus-visible,
+[disabled] .focus-ring:focus-visible {
+  box-shadow: none;
+}
+
+/* ============================================================
+ * V27 — Reserved view-transition-name targets (Wave 2).
+ *
+ * When wave 2 implements unstable_ViewTransition for the route
+ * change /projects/[id]/scripts → /projects/[id]/scenes (wizard
+ * step 3 → 4), the following names will be claimed. Do NOT use any
+ * of these for unrelated transitions without coordinating.
+ *
+ *   --vt-wizard-progress-strip — strip persisting across wizard steps
+ *   --vt-selected-script       — chosen script card carrying forward
+ *   --vt-scene-card-{id}       — scene card across enter/exit
+ *   --vt-final-video-poster    — final-video poster between routes
+ *   --vt-cta-generate          — primary "Generate" CTA → loading
+ *   --vt-credits-meter         — credit-balance pill anchored
+ *
+ * Naming convention: kebab-case, --vt- prefix, semantic role.
+ * ============================================================ */
+
+/* ============================================================
+ * LEGACY UTILITIES — V19.x → V26.x.
+ *
+ * TODO(wave1-wrap, ~2 weeks from V27 ship):
+ *   • Remove .glass / .glass-strong / .glass-liquid utilities entirely
+ *   • Remove the entire `tachles-*` keyframe namespace (NOT just aliases)
+ *   • Remove .animate-fade-in-up / .animate-progress-shimmer /
+ *     .animate-shimmer-overlay / .animate-soft-pulse /
+ *     .animate-aurora-drift utility-class aliases. Code must reference
+ *     .motion-* exclusively.
+ *   • Remove --accent / --accent-soft / --accent-foreground aliases
+ *     (after sweeping bg-accent / text-accent → bg-ai / text-ai).
+ * Owner: design-language-v27 wave-1 close.
+ * ============================================================ */
+
+/* @deprecated V19 cinematic mesh — landing only */
 .bg-mesh {
   background-color: hsl(var(--background));
   background-image:
@@ -109,7 +703,7 @@
     radial-gradient(at 50% 100%, hsl(var(--gradient-third) / 0.14) 0px, transparent 60%);
 }
 
-/* Smaller, tamer mesh for inner pages where the hero shouldn't shout. */
+/* @deprecated V19 — tamer mesh */
 .bg-mesh-soft {
   background-color: hsl(var(--background));
   background-image:
@@ -117,7 +711,7 @@
     radial-gradient(at 88% 12%, hsl(var(--gradient-to) / 0.10) 0px, transparent 50%);
 }
 
-/* Conic spotlight behind a hero element — pairs with bg-mesh. */
+/* @deprecated V19 conic spotlight */
 .bg-spotlight {
   background-image: conic-gradient(
     from 220deg at 50% 0%,
@@ -127,8 +721,7 @@
   );
 }
 
-/* SVG noise — heavier alpha than V15 because we're on dark and noise
-   reads less. Still subtle. */
+/* @deprecated V19 SVG noise overlay */
 .bg-noise::before {
   content: '';
   position: absolute;
@@ -140,8 +733,7 @@
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
-/* Glass card — refined for dark. Slight inner highlight + softer
-   border. Use over the mesh / hero surfaces. */
+/* @deprecated V19.1 — use .tier-elevated instead */
 .glass {
   background: hsl(var(--card) / 0.55);
   backdrop-filter: blur(20px) saturate(140%);
@@ -152,7 +744,7 @@
     0 8px 32px -16px hsl(0 0% 0% / 0.5);
 }
 
-/* Heavier glass for primary CTAs / hero panels. */
+/* @deprecated V19.1 — use .tier-elevated + .glow-primary */
 .glass-strong {
   background: hsl(var(--card) / 0.75);
   backdrop-filter: blur(28px) saturate(160%);
@@ -163,10 +755,7 @@
     0 12px 48px -16px hsl(var(--primary) / 0.25);
 }
 
-/* V19.1 — Liquid glass (heaviest variant). For hero CTAs and headline
-   panels. Triple-layered: heavy blur, saturated colors, two inset
-   highlights (top + left), strong outer shadow. Pulled from the
-   glassmorphism design system. */
+/* @deprecated V19.1 — use .tier-atmosphere (or .tier-liquid for landing hero) */
 .glass-liquid {
   background:
     linear-gradient(
@@ -186,10 +775,7 @@
     0 24px 60px -20px hsl(var(--primary) / 0.3);
 }
 
-/* V19.1 — Soft elevation shadows. Used as alternatives to harsh
-   borders on dark surfaces. Cloud-platform aesthetic (Vercel/GitHub
-   style). Three tiers: soft (cards), elevated (hovers), floating
-   (popovers / modals). */
+/* Soft elevation shadows (kept; cloud-platform aesthetic) */
 .shadow-soft {
   box-shadow:
     0 1px 0 hsl(0 0% 0% / 0.4),
@@ -209,14 +795,7 @@
     0 24px 48px -12px hsl(0 0% 0% / 0.5);
 }
 
-/* V20.1 — refined gradient text. The previous 3-stop rainbow read as
-   amateur (violet→magenta→lime is "pride flag", not premium AI tool).
-   Replaced with mono-accent gradients used by Linear, Stripe, Anthropic:
-   one tone, with tonal shifts for depth, not multi-color. */
 .text-gradient {
-  /* Two-stop, both within the primary family. Bright on top, slightly
-     dimmer / shifted on bottom — reads as a metallic sheen on the
-     accent word, not a rainbow. */
   background-image: linear-gradient(
     180deg,
     hsl(var(--primary) / 1) 0%,
@@ -225,13 +804,9 @@
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-  /* Slight horizontal shimmer suggestion via 0px shadow — keeps the
-     letterform crisp against dark BG. */
   filter: drop-shadow(0 0 24px hsl(var(--primary) / 0.25));
 }
 
-/* For headlines that want a subtle white-to-primary fade, used on
-   one accent word per heading. Reads as a "highlight" not a "color". */
 .text-gradient-cool {
   background-image: linear-gradient(
     180deg,
@@ -243,8 +818,6 @@
   color: transparent;
 }
 
-/* For when you really want a glow/shimmer accent — sparingly, on hero
-   key words. Single tone with a soft glow halo. */
 .text-gradient-shimmer {
   background-image: linear-gradient(
     100deg,
@@ -257,14 +830,10 @@
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-  animation: tachles-text-shimmer 6s ease-in-out infinite;
-}
-@keyframes tachles-text-shimmer {
-  0%, 100% { background-position: 0% 50%; }
-  50% { background-position: 100% 50%; }
+  animation: motion-shimmer-text 6s ease-in-out infinite;
 }
 
-/* Strong neon glow for CTAs. Layered: tight inner ring + soft outer. */
+/* @deprecated — use .glow-primary */
 .shadow-glow {
   box-shadow:
     0 0 0 1px hsl(var(--primary) / 0.15),
@@ -272,14 +841,14 @@
     0 8px 32px -8px hsl(var(--primary) / 0.4);
 }
 
+/* @deprecated — use .glow-ai */
 .shadow-glow-accent {
   box-shadow:
-    0 0 0 1px hsl(var(--accent) / 0.15),
-    0 0 24px -4px hsl(var(--accent) / 0.45),
-    0 8px 32px -8px hsl(var(--accent) / 0.35);
+    0 0 0 1px hsl(var(--ai) / 0.15),
+    0 0 24px -4px hsl(var(--ai) / 0.45),
+    0 8px 32px -8px hsl(var(--ai) / 0.35);
 }
 
-/* Card hover — subtle lift + glow pickup. Deeper effect than V15. */
 .card-hover {
   @apply transition-all duration-300 ease-out;
   position: relative;
@@ -293,14 +862,12 @@
     0 0 24px -8px hsl(var(--primary) / 0.25);
 }
 
-/* V19.1 — Bento grid utilities. Asymmetric grid where cells span
-   different row/col counts. Pulled from the `contemporary` design
-   system. Default 4-column grid; cells declare span via classes. */
+/* Bento grid utilities (gap driven by --bento-gap from density) */
 .bento {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   grid-auto-rows: minmax(140px, auto);
-  gap: 1rem;
+  gap: var(--bento-gap);
 }
 @media (max-width: 768px) {
   .bento {
@@ -313,9 +880,7 @@
 .bento-4x1 { grid-column: span 4; }
 .bento-1x2 { grid-row: span 2; }
 
-/* V19.1 — Perspective tilt on hover (subtle 3D depth, the
-   `perspective` design-system contribution). Lifts the card while
-   tilting on the y-axis 1deg — feels physical without being kitschy. */
+/* @deprecated — use .motion-tilt-hover */
 .tilt-hover {
   transform-style: preserve-3d;
   transition: transform 400ms cubic-bezier(0.22, 0.61, 0.36, 1);
@@ -324,8 +889,7 @@
   transform: perspective(900px) translateY(-3px) rotateX(2deg);
 }
 
-/* Animated gradient border — the kling.ai card halo effect. Used
-   sparingly on hero cards / featured pricing tier. */
+/* Animated gradient border — alias kept; new code uses .edge-gradient-primary */
 .gradient-border {
   position: relative;
   background-clip: padding-box;
@@ -341,7 +905,7 @@
     135deg,
     hsl(var(--primary) / 0.6),
     hsl(var(--gradient-to) / 0.4),
-    hsl(var(--accent) / 0.5)
+    hsl(var(--ai) / 0.5)
   );
   -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   -webkit-mask-composite: xor;
@@ -349,17 +913,8 @@
   pointer-events: none;
 }
 
-/* Pure utility — translate the focus ring into something that feels
-   custom-tuned rather than the Tailwind default. */
-.focus-ring {
-  @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 focus-visible:ring-offset-2 focus-visible:ring-offset-background;
-}
-
-/* ============================================================
- * Animations.
- * ============================================================ */
-
-/* Indeterminate progress bar — sliding gradient. */
+/* ─── Legacy keyframes — back-compat aliases.
+ * @deprecated wave1-wrap. New code uses .motion-* exclusively. */
 @keyframes tachles-progress-shimmer {
   0% { transform: translateX(-100%); }
   100% { transform: translateX(200%); }
@@ -368,37 +923,33 @@
   animation: tachles-progress-shimmer 1.4s infinite cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* Skeleton pulse on loading scene cards. */
 @keyframes tachles-shimmer-overlay {
   0%, 100% { opacity: 0.4; }
-  50% { opacity: 0.85; }
+  50%      { opacity: 0.85; }
 }
 .animate-shimmer-overlay {
   animation: tachles-shimmer-overlay 1.6s infinite ease-in-out;
 }
 
-/* Slow pulse for live activity indicators. */
 @keyframes tachles-soft-pulse {
   0%, 100% { opacity: 0.5; transform: scale(1); }
-  50% { opacity: 1; transform: scale(1.12); }
+  50%      { opacity: 1; transform: scale(1.12); }
 }
 .animate-soft-pulse {
   animation: tachles-soft-pulse 2.2s infinite ease-in-out;
 }
 
-/* Fade-in-up — staggered entry for grid cards. */
 @keyframes tachles-fade-in-up {
-  0% { opacity: 0; transform: translateY(12px); }
+  0%   { opacity: 0; transform: translateY(12px); }
   100% { opacity: 1; transform: translateY(0); }
 }
 .animate-fade-in-up {
   animation: tachles-fade-in-up 0.5s cubic-bezier(0.22, 0.61, 0.36, 1) backwards;
 }
 
-/* Slow gradient drift — for hero gradient backgrounds. */
 @keyframes tachles-aurora-drift {
   0%, 100% { transform: translate(0, 0) rotate(0deg); }
-  50% { transform: translate(2%, -3%) rotate(8deg); }
+  50%      { transform: translate(2%, -3%) rotate(8deg); }
 }
 .animate-aurora-drift {
   animation: tachles-aurora-drift 22s ease-in-out infinite;

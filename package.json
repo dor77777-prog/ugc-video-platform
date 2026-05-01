@@ -18,7 +18,9 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
-    "test:render": "npm run test:render -w @ugc-video/worker"
+    "test:render": "npm run test:render -w @ugc-video/worker",
+    "check:v27-legacy": "bash scripts/check-v27-legacy.sh",
+    "check:v27-strict": "bash scripts/check-v27-legacy.sh --strict"
   },
   "dependencies": {
     "@prisma/client": "^6.0.0"

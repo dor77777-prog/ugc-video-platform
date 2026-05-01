@@ -1,29 +1,37 @@
 import type { Metadata } from 'next';
-import { Heebo, IBM_Plex_Sans, JetBrains_Mono } from 'next/font/google';
+import { Heebo, Geist, Geist_Mono } from 'next/font/google';
 import { Toaster } from 'sonner';
 import { BRAND } from '@/lib/brand';
 import './globals.css';
 
-// V19.1 — Heebo for Hebrew (perfect RTL coverage), IBM Plex Sans for
-// Latin (cloud-platform / Vercel-grade), JetBrains Mono for code +
-// numbers. The Tailwind font stack falls through Heebo → IBM Plex →
-// system, so Hebrew always renders Heebo; English+numbers default to
-// IBM Plex.
+// V27 — Tri-Modal Liquid font stack:
+//   Heebo (Hebrew anchor)        — primary content register
+//   Geist Sans (Latin + numbers) — Vercel-mode DNA, tnum built in
+//   Geist Mono (kickers + data)  — IDs, badges, tabular data, kickers
+//
+// The Tailwind sans stack is [Heebo, Geist Sans, system, sans-serif] so
+// Hebrew always renders Heebo; English/numbers default to Geist. Geist
+// ships tabular numbers by default (font-feature-settings: 'tnum'),
+// which fixes per-row drift in /admin/costs without any per-call CSS.
+//
+// Heebo is loaded with weight 800 so <h1>'s font-weight: 800 has a
+// matching glyph (older V19/V26 used font-weight: 900 → fell to system).
 const heebo = Heebo({
   subsets: ['hebrew', 'latin'],
+  weight: ['400', '500', '600', '700', '800'],
   variable: '--font-heebo',
   display: 'swap',
 });
-const ibmPlex = IBM_Plex_Sans({
+const geistSans = Geist({
   subsets: ['latin'],
-  weight: ['300', '400', '500', '600', '700'],
-  variable: '--font-ibm-plex',
+  weight: ['400', '500', '600', '700'],
+  variable: '--font-geist-sans',
   display: 'swap',
 });
-const jetbrains = JetBrains_Mono({
+const geistMono = Geist_Mono({
   subsets: ['latin'],
   weight: ['400', '500', '600'],
-  variable: '--font-jetbrains',
+  variable: '--font-geist-mono',
   display: 'swap',
 });
 
@@ -40,13 +48,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html
       lang="he"
       dir="rtl"
-      className={`${heebo.variable} ${ibmPlex.variable} ${jetbrains.variable}`}
+      className={`${heebo.variable} ${geistSans.variable} ${geistMono.variable}`}
     >
       <body className="font-sans antialiased min-h-screen" suppressHydrationWarning>
         {children}
-        {/* V16 — sonner toaster mounted globally so any client component
-            can call toast.success / toast.error without setup. RTL-aware
-            via the dir attribute on <html>. */}
+        {/* Sonner toaster — RTL via dir attribute, Heebo for Hebrew. */}
         <Toaster
           position="top-center"
           dir="rtl"
