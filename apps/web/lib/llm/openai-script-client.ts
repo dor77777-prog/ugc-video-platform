@@ -83,17 +83,26 @@ export async function openaiStructuredCall<T>({
   temperature = 0.7,
 }: OpenAiStructuredCallOptions): Promise<OpenAiStructuredCallResult<T>> {
   const schemaForCall = passThrough(responseSchema) as Record<string, unknown>;
-  const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [];
-  if (systemInstruction) messages.push({ role: 'system', content: systemInstruction });
-  messages.push({ role: 'user', content: userPrompt });
 
-  const response = await client().chat.completions.create({
+  // V26.9 — moved from Chat Completions to the Responses API per
+  // OpenAI's official migration guide. Two concrete benefits for our
+  // use case:
+  //   1. 40-80% better cache utilization on repeated identical prompt
+  //      prefixes. We fire 6 parallel calls all sharing the same
+  //      SCRIPT_SYSTEM_PROMPT — exactly the workload the Responses
+  //      API caches well. Real cost cut on the input-token side.
+  //   2. Cleaner shape: `instructions` for the system prompt at the
+  //      top level, `input` as a plain string, structured output via
+  //      `text.format` (not `response_format`). Output text is read
+  //      via the SDK's `output_text` helper.
+  const response = await client().responses.create({
     model: modelId,
-    messages,
+    instructions: systemInstruction,
+    input: userPrompt,
     temperature,
-    response_format: {
-      type: 'json_schema',
-      json_schema: {
+    text: {
+      format: {
+        type: 'json_schema',
         name: 'script_payload',
         schema: schemaForCall,
         strict: true,
@@ -101,7 +110,7 @@ export async function openaiStructuredCall<T>({
     },
   });
 
-  const content = response.choices[0]?.message?.content;
+  const content = response.output_text;
   if (!content) {
     throw new Error('OpenAI returned empty response.');
   }
@@ -115,13 +124,15 @@ export async function openaiStructuredCall<T>({
     );
   }
 
+  // Responses API uses input_tokens / output_tokens (not the legacy
+  // prompt_tokens / completion_tokens shape from Chat Completions).
   return {
     parsed,
     raw: content,
     usage: {
       model: modelId,
-      inputTokens: response.usage?.prompt_tokens ?? 0,
-      outputTokens: response.usage?.completion_tokens ?? 0,
+      inputTokens: response.usage?.input_tokens ?? 0,
+      outputTokens: response.usage?.output_tokens ?? 0,
       thoughtsTokens: 0,
     },
   };

@@ -64,7 +64,12 @@ export const PROVIDER_COST_ESTIMATES_USD = {
   ),
   // Kept for back-compat references; alias for gemini_script_batch
   // post-V25.
-  openai_script_batch: num('COST_OPENAI_SCRIPT_BATCH_USD', 0.04),
+  // V26.9 — Responses API smoke test on a representative 3-scene
+  // schema: 361 input + 426 output tokens × 6 calls = ~$0.013/batch.
+  // Bumped baseline to $0.03 to leave headroom for the full V6 schema
+  // (creative_strategy + 12-axis quality_score + scenes array) which
+  // may run 2-3× the smoke test's token budget.
+  openai_script_batch: num('COST_OPENAI_SCRIPT_BATCH_USD', 0.03),
   openai_scene_image: num('COST_OPENAI_SCENE_IMAGE_USD', 0.06),
   openai_motion_analysis_scene: num('COST_OPENAI_MOTION_ANALYSIS_SCENE_USD', 0.005),
 
