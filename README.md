@@ -100,12 +100,30 @@ Built **specifically** for the Israeli market:
 | **Storage** | Cloudflare R2 (S3-compatible) |
 | **Auth** | Supabase Auth |
 | **Composition** | ffmpeg on the worker host → MP4 → R2 |
+| **Design system** | V27 — Tri-Modal Liquid (Heebo + Geist Sans + Geist Mono) |
 
 </div>
 
 Hebrew rendering everywhere is **bidi-correct via libass + unicode**.
 Mixed Hebrew + English captions isolate properly. The pipeline never
 ships a sentence with the wrong-side punctuation.
+
+### Design language — V27 (Tri-Modal Liquid)
+
+Three coordinated modes share one vocabulary:
+
+| Mode | Where | Vibe |
+|:--|:--|:--|
+| **Vercel-mode** | admin · settings · sidebar · library · pricing | Precision · Engineered · Restraint |
+| **Krea-mode** | wizard step 4–7 · scene cards · video reveal | Cinematic · Generative · Alive |
+| **Granola-mode** | modals · sheets · popovers · AI-active states | Liquid · Atmospheric · Connective |
+
+**Core contract**: color and motion are state, not decoration.
+- `bg-ai` (78° lime) appears **only** inside `[data-ai-active]` containers — auto-applies a breathing glow ring.
+- `bg-success` (150° green) appears **only** on completion (`[data-state="success"]`, 800ms static fade).
+- The eye learns `ai = motion / success = static` without copy.
+
+Source of truth: [`.design/design-language-v27/`](.design/design-language-v27/).
 
 ---
 
