@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import Image from 'next/image';
 import { notFound } from 'next/navigation';
+import { ImageIcon, ArrowLeft } from 'lucide-react';
 import { prisma } from '@/lib/db';
 import { getOrCreateAppUser } from '@/lib/auth/sync-user';
 import { findAvatar } from '@/lib/avatars/catalog';
@@ -8,6 +9,7 @@ import { findVoicePreset } from '@/lib/voice/voice-presets';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Stepper } from '@/components/wizard/stepper';
+import { ProjectHero } from '@/components/wizard/project-hero';
 import { SceneCard, GenerateAllButton, VoicePicker } from './client-bits';
 
 export default async function ScenesPage({
@@ -63,51 +65,64 @@ export default async function ScenesPage({
   const voiceQueue = scenes.filter((s) => !s.voiceUrl);
 
   return (
-    <div className="p-6 md:p-10 max-w-7xl space-y-8">
-      <div className="space-y-1">
-        <div className="text-xs uppercase tracking-widest text-muted-foreground">
-          {project.productName}
-        </div>
-        <h1 className="text-3xl font-bold tracking-tight">סצנות תמונות</h1>
-        <p className="text-sm text-muted-foreground max-w-2xl">
-          לחץ על "צור את כל הסצנות" כדי להריץ את כולן בלחיצה אחת. הן ייוצרו ברצף ויופיעו
-          למטה אחת אחרי השנייה. אפשר גם לערוך פרומפט של סצנה ולהריץ אותה מחדש בנפרד.
-        </p>
-      </div>
-
-      <Stepper current={4} done={[1, 2, 3]} projectId={projectId} />
-
-      {/* Context strip: avatar + selected script summary */}
-      <Card className="bg-accent/10 border-accent/30">
-        <CardContent className="p-4 flex items-center gap-4">
-          {avatar ? (
-            <>
-              <Image
-                src={avatar.imageUrl}
-                alt={avatar.name}
-                width={56}
-                height={56}
-                className="w-14 h-14 rounded-lg object-cover border border-border"
-              />
-              <div className="flex-1">
-                <div className="text-xs text-muted-foreground">דמות נבחרה</div>
-                <div className="font-semibold">{avatar.name}</div>
+    <div className="relative bg-mesh-soft bg-noise min-h-screen">
+      <div className="relative px-6 md:px-10 py-8 md:py-10 max-w-7xl mx-auto space-y-8">
+        {/* V21 — unified ProjectHero. Replaces the previous header
+            block + accent context strip with a single glass-strong
+            hero panel that surfaces avatar + script + step. */}
+        <ProjectHero
+          kicker="סצנות"
+          title="סצנות תמונות"
+          description="לחץ על 'צור את כל הסצנות' כדי להריץ את כולן בלחיצה אחת. הן ייוצרו במקביל ויופיעו למטה אחת אחרי השנייה. אפשר לערוך פרומפט של סצנה ולהריץ אותה מחדש בנפרד."
+          projectName={project.productName}
+          step={4}
+          totalSteps={6}
+          icon={ImageIcon}
+          backHref={`/projects/${projectId}/scripts`}
+          backLabel="חזרה לתסריטים"
+          meta={
+            <div className="flex items-center gap-3 flex-wrap">
+              {avatar && (
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl glass">
+                  <Image
+                    src={avatar.imageUrl}
+                    alt={avatar.name}
+                    width={28}
+                    height={28}
+                    className="h-7 w-7 rounded-md object-cover"
+                  />
+                  <div className="text-xs">
+                    <div className="text-muted-foreground text-[10px] uppercase tracking-widest">
+                      דמות
+                    </div>
+                    <div className="font-semibold leading-none mt-0.5">
+                      {avatar.name}
+                    </div>
+                  </div>
+                </div>
+              )}
+              <div className="px-3 py-1.5 rounded-xl glass max-w-[280px]">
+                <div className="text-muted-foreground text-[10px] uppercase tracking-widest">
+                  תסריט נבחר
+                </div>
+                <div className="font-semibold text-xs leading-tight mt-0.5 line-clamp-1">
+                  {selected.hook}
+                </div>
               </div>
-            </>
-          ) : (
-            <div className="flex-1 text-sm text-muted-foreground">
-              לא נבחרה דמות —{' '}
-              <Link href={`/projects/${projectId}/avatar`} className="text-primary underline">
-                בחר דמות
-              </Link>
+              {!avatar && (
+                <Link
+                  href={`/projects/${projectId}/avatar`}
+                  className="flex items-center gap-1 text-xs text-primary hover:underline"
+                >
+                  בחר דמות
+                  <ArrowLeft className="h-3 w-3" />
+                </Link>
+              )}
             </div>
-          )}
-          <div className="border-s border-border ps-4">
-            <div className="text-xs text-muted-foreground">תסריט</div>
-            <div className="font-semibold text-sm line-clamp-1">{selected.hook}</div>
-          </div>
-        </CardContent>
-      </Card>
+          }
+        />
+
+        <Stepper current={4} done={[1, 2, 3]} projectId={projectId} />
 
       {/* Voice picker — V14.2-B moved here from videos/step 5 so the
           user picks voice while choosing scene images, and voice gen
@@ -212,6 +227,7 @@ export default async function ScenesPage({
           </ol>
         </CardContent>
       </Card>
+      </div>
     </div>
   );
 }

@@ -35,9 +35,13 @@ import { HeroShowcase, AnimatedCounter, LiveActivityTicker } from './landing-her
 const R2_BASE = 'https://pub-eb116bdbeab8486f96ecf7c4fbc1014a.r2.dev';
 
 // 25 avatars in catalog — show 12 in the proof grid below the hero.
+// V20.1 — fixed broken IDs (was using yossi/eyal/guy which aren't in
+// the catalog; replaced with yosef/eran/gil from
+// `apps/web/lib/avatars/catalog.ts`). Verified each returns HTTP 200
+// from R2 before listing.
 const AVATAR_PROOF_GRID = [
   'noa', 'liat', 'shira', 'maya', 'tamar', 'galit',
-  'einat', 'ortal', 'avi', 'yossi', 'eyal', 'guy',
+  'einat', 'ortal', 'avi', 'yosef', 'eran', 'gil',
 ];
 
 export default async function RootPage() {
