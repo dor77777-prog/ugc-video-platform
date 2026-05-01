@@ -19,6 +19,9 @@ import {
   TrendingUp,
   Play,
   Zap,
+  Activity,
+  Compass,
+  Rocket,
 } from 'lucide-react';
 import { getOrCreateAppUser } from '@/lib/auth/sync-user';
 import { prisma } from '@/lib/db';
@@ -30,6 +33,8 @@ import { WIZARD_STEPS } from '@/components/wizard/stepper';
 import { StudioCanvasIllustration } from '@/components/brand/illustrations';
 import { DashboardAurora } from '@/components/layout/dashboard-aurora';
 import { AnimatedCounter, LiveActivityTicker } from '@/app/landing-hero';
+import { SectionKicker } from '@/components/ui/section-kicker';
+import { WizardProgressStrip } from '@/components/wizard/wizard-progress-strip';
 import { DeleteProjectButton } from './delete-button';
 
 export default async function DashboardHome() {
@@ -146,17 +151,23 @@ async function CompletedVideosShowcase({ userId }: { userId: string }) {
   if (completed.length === 0) return null;
 
   return (
-    <div className="space-y-4 animate-fade-in-up">
-      <div className="flex items-end justify-between">
-        <h3 className="flex items-center gap-2 text-[11px] font-bold text-muted-foreground uppercase tracking-[0.25em]">
-          <Film className="h-4 w-4 text-accent" />
-          הסרטונים שיצרת
-        </h3>
+    <div className="space-y-5 animate-fade-in-up">
+      <div className="flex items-end justify-between flex-wrap gap-3">
+        <div className="space-y-2">
+          <SectionKicker
+            text="הסרטונים שיצרת"
+            english="Your Productions"
+            icon={Film}
+          />
+          <h2 className="text-2xl md:text-3xl font-black tracking-tight">
+            הספריה <span className="text-gradient">שלך</span>
+          </h2>
+        </div>
         <Link
           href="/library"
-          className="text-xs text-primary hover:underline flex items-center gap-1"
+          className="text-xs text-primary hover:underline flex items-center gap-1.5 font-mono uppercase tracking-widest"
         >
-          ספריית מלאה
+          ספרייה מלאה
           <ArrowLeft className="h-3 w-3" />
         </Link>
       </div>
@@ -228,7 +239,7 @@ async function CompletedVideosShowcase({ userId }: { userId: string }) {
 // Encourages them to create their first ad.
 function FirstVideoHero() {
   return (
-    <Card className="bento-3x1 md:bento-2x2 glass-strong gradient-border relative overflow-hidden card-hover">
+    <Card className="bento-2x1 md:bento-2x2 glass-strong gradient-border relative overflow-hidden card-hover">
       <div
         className="absolute inset-0 -z-10 opacity-60"
         style={{
@@ -271,7 +282,7 @@ function FirstVideoHero() {
 // to a returning user.
 function ReturningUserHero({ completedCount }: { completedCount: number }) {
   return (
-    <Card className="bento-3x1 md:bento-2x2 glass-strong gradient-border relative overflow-hidden card-hover">
+    <Card className="bento-2x1 md:bento-2x2 glass-strong gradient-border relative overflow-hidden card-hover">
       <div
         className="absolute inset-0 -z-10 opacity-60"
         style={{
@@ -409,17 +420,76 @@ async function RecentProjectsSection({ userId }: { userId: string }) {
   );
   const finished = recentProjects.filter((p) => p.status === 'completed');
 
+  // V23 — pull the freshest in-progress project's wizard step so we
+  // can render a full progress strip for it (vs the small badge on
+  // the card). Surfaces the active step at a glance, matching the
+  // landing's pipeline strip.
+  const featuredInProgress = inProgress[0];
+  const featuredStep = featuredInProgress
+    ? getCurrentStepNumber({
+        id: featuredInProgress.id,
+        selectedScriptId: featuredInProgress.selectedScriptId,
+        productData: featuredInProgress.productData,
+        scripts: featuredInProgress.scripts,
+      })
+    : null;
+
   return (
-    <div className="space-y-10">
-      {/* In-progress */}
-      {inProgress.length > 0 && (
-        <div className="space-y-4">
-          <h3 className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.25em] text-muted-foreground">
-            <Clock className="h-4 w-4 text-primary" />
-            ממשיכים ממה שהפסקת
-          </h3>
+    <div className="space-y-12">
+      {/* V23 — featured wizard progress strip for the most-recent
+          in-progress project. Acts as a workspace pipeline view. */}
+      {featuredInProgress && featuredStep && (
+        <div className="space-y-5 animate-fade-in-up">
+          <div className="flex items-end justify-between flex-wrap gap-3">
+            <div className="space-y-2">
+              <SectionKicker text="הפרויקט הפעיל" english="Active Project" icon={Activity} />
+              <h2 className="text-2xl md:text-3xl font-black tracking-tight">
+                {featuredInProgress.productName ?? 'פרויקט ללא שם'}
+              </h2>
+              <p className="text-xs text-muted-foreground">
+                שלב {featuredStep} מתוך 6 ·{' '}
+                {WIZARD_STEPS.find((s) => s.num === featuredStep)?.label ?? ''} ·
+                עודכן{' '}
+                {new Intl.DateTimeFormat('he-IL', {
+                  dateStyle: 'short',
+                  timeStyle: 'short',
+                }).format(featuredInProgress.updatedAt)}
+              </p>
+            </div>
+            <Button asChild size="lg" className="shadow-glow">
+              <Link
+                href={getResumeUrl({
+                  id: featuredInProgress.id,
+                  selectedScriptId: featuredInProgress.selectedScriptId,
+                  productData: featuredInProgress.productData,
+                  scripts: featuredInProgress.scripts,
+                })}
+                className="flex items-center gap-2"
+              >
+                <Rocket className="h-4 w-4" />
+                המשך כאן
+                <ArrowLeft className="h-4 w-4" />
+              </Link>
+            </Button>
+          </div>
+          <WizardProgressStrip
+            projectId={featuredInProgress.id}
+            currentStep={featuredStep}
+          />
+        </div>
+      )}
+
+      {/* In-progress (other projects beyond the featured one) */}
+      {inProgress.length > 1 && (
+        <div className="space-y-5">
+          <SectionKicker
+            text="ממשיכים ממה שהפסקת"
+            english="In Progress"
+            icon={Clock}
+            className="text-muted-foreground/80"
+          />
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {inProgress.map((p, i) => {
+            {inProgress.slice(1).map((p, i) => {
               const step = getCurrentStepNumber({
                 id: p.id,
                 selectedScriptId: p.selectedScriptId,
@@ -481,11 +551,13 @@ async function RecentProjectsSection({ userId }: { userId: string }) {
 
       {/* Completed */}
       {finished.length > 0 && (
-        <div className="space-y-4">
-          <h3 className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.25em] text-muted-foreground">
-            <CheckCircle2 className="h-4 w-4 text-accent" />
-            הושלמו לאחרונה
-          </h3>
+        <div className="space-y-5">
+          <SectionKicker
+            text="הושלמו לאחרונה"
+            english="Recently Completed"
+            icon={CheckCircle2}
+            className="text-accent/80"
+          />
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {finished.map((p, i) => (
               <Card

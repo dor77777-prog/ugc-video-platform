@@ -54,7 +54,7 @@ export function Sidebar({ recentProjects = [] }: { recentProjects?: RecentProjec
   const activeProjectId = projectMatch?.[1] ?? null;
 
   return (
-    <aside className="w-64 border-l border-border-subtle bg-card/40 backdrop-blur-md flex flex-col flex-shrink-0">
+    <aside className="hidden md:flex w-64 border-l border-border-subtle bg-card/40 backdrop-blur-md flex-col flex-shrink-0">
       <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
         {/* PRIMARY NAV */}
         <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-[0.25em] px-3 mb-3">
