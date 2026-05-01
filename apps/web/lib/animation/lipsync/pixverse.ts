@@ -24,6 +24,7 @@
 // the user sees the cause + we don't burn an API call.
 
 import crypto from 'crypto';
+import { withRetry } from '@/lib/utils/retry';
 import {
   LipSyncProvider,
   LipSyncInput,
@@ -262,23 +263,32 @@ class PixverseLipSync implements LipSyncProvider {
       video_media_id: videoMediaId,
       audio_media_id: audioMediaId,
     };
-    const res = await fetch(`${getBaseUrl()}${getLipSyncEndpoint()}`, {
-      method: 'POST',
-      headers: {
-        'API-KEY': getApiKey(),
-        'Ai-Trace-Id': newTraceId(),
-        'Content-Type': 'application/json',
+    // V26.11 — wrap submit (NOT polling) in withRetry. Single
+    // transparent retry on transient (network/5xx) failures inside
+    // the first 15s.
+    const res = await withRetry(
+      async () => {
+        const r = await fetch(`${getBaseUrl()}${getLipSyncEndpoint()}`, {
+          method: 'POST',
+          headers: {
+            'API-KEY': getApiKey(),
+            'Ai-Trace-Id': newTraceId(),
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(body),
+        });
+        if (!r.ok) {
+          const text = await r.text().catch(() => '<no body>');
+          throw new LipSyncProviderError(
+            `PixVerse lipsync submit ${r.status}: ${text.slice(0, 300)}`,
+            'pixverse',
+            r.status,
+          );
+        }
+        return r;
       },
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) {
-      const text = await res.text().catch(() => '<no body>');
-      throw new LipSyncProviderError(
-        `PixVerse lipsync submit ${res.status}: ${text.slice(0, 300)}`,
-        'pixverse',
-        res.status,
-      );
-    }
+      { label: 'pixverse.lipsync.submit', earlyFailWindowMs: 15_000 },
+    );
     const json = (await res.json()) as PixverseEnvelope<LipSyncCreateResp>;
     if (json.ErrCode !== 0) {
       // 500020 = "user not authorized for this functionality" — surface

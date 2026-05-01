@@ -16,6 +16,7 @@
 // believable.
 
 import OpenAI from 'openai';
+import { withRetry } from '@/lib/utils/retry';
 
 const MODEL = process.env.OPENAI_MOTION_VISION_MODEL ?? 'gpt-4o-mini';
 const REQUEST_TIMEOUT_MS = 30_000;
@@ -130,25 +131,30 @@ export async function analyzeSceneForMotion(
   const t = setTimeout(() => ac.abort(), REQUEST_TIMEOUT_MS);
   let resp;
   try {
-    resp = await client.chat.completions.create(
-      {
-        model: MODEL,
-        messages: [
-          { role: 'system', content: SYSTEM },
+    // V26.11 — transparent retry on transient (network/5xx) failures.
+    resp = await withRetry(
+      () =>
+        client.chat.completions.create(
           {
-            role: 'user',
-            content: [
-              { type: 'text', text: userText },
-              imageContent,
+            model: MODEL,
+            messages: [
+              { role: 'system', content: SYSTEM },
+              {
+                role: 'user',
+                content: [
+                  { type: 'text', text: userText },
+                  imageContent,
+                ],
+              },
             ],
+            response_format: {
+              type: 'json_schema',
+              json_schema: { name: 'motion_analysis', strict: true, schema: SCHEMA },
+            },
           },
-        ],
-        response_format: {
-          type: 'json_schema',
-          json_schema: { name: 'motion_analysis', strict: true, schema: SCHEMA },
-        },
-      },
-      { signal: ac.signal },
+          { signal: ac.signal },
+        ),
+      { label: 'openai.motion_analysis', earlyFailWindowMs: 15_000 },
     );
   } finally {
     clearTimeout(t);

@@ -6,6 +6,7 @@ import {
   safetyTokensFor,
 } from '@ugc-video/prompts';
 import { LlmConfigError } from './scripts';
+import { withRetry } from '@/lib/utils/retry';
 
 export type ImageQuality = 'low' | 'medium' | 'high';
 export type AspectRatio = '9:16' | '1:1' | '16:9';
@@ -168,21 +169,31 @@ async function callOpenAi(p: CallParams): Promise<SceneImageResult> {
   const startedAt = Date.now();
   let result;
   try {
+    // V26.11 — single transparent retry on transient failures
+    // (network blip / 5xx) inside the first 15s.
     if (referenceFiles.length === 0) {
-      result = await p.openai.images.generate(
-        { model: p.model, prompt, size: p.size as never, quality: p.quality },
-        { signal: ac.signal },
+      result = await withRetry(
+        () =>
+          p.openai.images.generate(
+            { model: p.model, prompt, size: p.size as never, quality: p.quality },
+            { signal: ac.signal },
+          ),
+        { label: 'openai.images.generate', earlyFailWindowMs: 15_000 },
       );
     } else {
-      result = await p.openai.images.edit(
-        {
-          model: p.model,
-          image: referenceFiles,
-          prompt,
-          size: p.size as never,
-          quality: p.quality,
-        },
-        { signal: ac.signal },
+      result = await withRetry(
+        () =>
+          p.openai.images.edit(
+            {
+              model: p.model,
+              image: referenceFiles,
+              prompt,
+              size: p.size as never,
+              quality: p.quality,
+            },
+            { signal: ac.signal },
+          ),
+        { label: 'openai.images.edit', earlyFailWindowMs: 15_000 },
       );
     }
   } catch (err) {

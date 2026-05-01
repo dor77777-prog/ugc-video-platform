@@ -44,6 +44,7 @@ import {
   VideoProviderConfigError,
   VideoProviderTimeoutError,
 } from './types';
+import { withRetry } from '@/lib/utils/retry';
 
 // Re-exports so existing callers (clip-impl.ts) can import error types
 // from this file even after the architecture refactor.
@@ -275,14 +276,22 @@ class KlingProvider implements VideoGenerationProvider {
         `body=${JSON.stringify(bodyShape)}`,
     );
 
-    const res = await klingFetch<KlingCreateResponse>(
-      endpoint,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      },
-      'i2v',
+    // V26.11 — wrap the submit (NOT the poll) in withRetry. The poll
+    // loop is naturally retry-tolerant — its next 5s tick is the
+    // implicit retry on a transient failure. Wrapping individual poll
+    // calls would compound attempts and waste budget.
+    const res = await withRetry(
+      () =>
+        klingFetch<KlingCreateResponse>(
+          endpoint,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+          },
+          'i2v',
+        ),
+      { label: 'kling.i2v.submit', earlyFailWindowMs: 15_000 },
     );
     if (res.code !== 0 || !res.data?.task_id) {
       throw new VideoProviderApiError(

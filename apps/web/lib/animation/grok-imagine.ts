@@ -37,6 +37,7 @@ import {
   VideoProviderConfigError,
   VideoProviderTimeoutError,
 } from './types';
+import { withRetry } from '@/lib/utils/retry';
 
 const DEFAULT_BASE_URL = 'https://api.x.ai/v1';
 const DEFAULT_MODEL = 'grok-imagine-video';
@@ -198,10 +199,17 @@ class GrokImagineProvider implements VideoGenerationProvider {
       `[grok-imagine i2v] scene=${input.sceneId} model=${model} body=${JSON.stringify(bodyShape)}`,
     );
 
-    const res = await xaiFetch<XaiGenerationsCreateResponse>(
-      '/videos/generations',
-      { method: 'POST', body: JSON.stringify(body) },
-      'i2v',
+    // V26.11 — single transparent retry on transient submit failures.
+    // The poll loop in generateImageToVideo is naturally retry-
+    // tolerant; we only wrap the submit.
+    const res = await withRetry(
+      () =>
+        xaiFetch<XaiGenerationsCreateResponse>(
+          '/videos/generations',
+          { method: 'POST', body: JSON.stringify(body) },
+          'i2v',
+        ),
+      { label: 'grok.i2v.submit', earlyFailWindowMs: 15_000 },
     );
 
     if (!res.request_id) {

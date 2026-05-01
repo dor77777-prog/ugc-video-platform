@@ -29,6 +29,7 @@
 // support matrix per model.
 
 import { GoogleGenAI, ThinkingLevel } from '@google/genai';
+import { withRetry } from '@/lib/utils/retry';
 
 // The SDK's ThinkingLevel enum uses UPPERCASE values (MINIMAL / LOW /
 // MEDIUM / HIGH); the docs show callers passing lowercase strings.
@@ -183,27 +184,34 @@ export async function geminiStructuredCall<T>({
   const effectiveThinkingLevel =
     thinkingLevel ?? (isGemini3 ? 'low' : undefined);
 
-  const response = await client().models.generateContent({
-    model: modelId,
-    contents: userPrompt,
-    config: {
-      ...(systemInstruction ? { systemInstruction } : {}),
-      responseMimeType: 'application/json',
-      // The new SDK's `responseJsonSchema` field accepts arbitrary JSON
-      // Schema (including the OpenAI-flavored ones we emit). Strict typing
-      // would require porting every schema to the SDK's `Schema` type;
-      // instead we cast through `unknown` — the wire format is identical.
-      responseJsonSchema: sanitized,
-      ...(temperature !== undefined ? { temperature } : {}),
-      ...(effectiveThinkingLevel !== undefined
-        ? {
-            thinkingConfig: {
-              thinkingLevel: THINKING_LEVEL_MAP[effectiveThinkingLevel],
-            },
-          }
-        : {}),
-    },
-  });
+  // V26.11 — transparent single retry on transient failures inside
+  // the first 15s.
+  const response = await withRetry(
+    () =>
+      client().models.generateContent({
+        model: modelId,
+        contents: userPrompt,
+        config: {
+          ...(systemInstruction ? { systemInstruction } : {}),
+          responseMimeType: 'application/json',
+          // The new SDK's `responseJsonSchema` field accepts arbitrary
+          // JSON Schema (including the OpenAI-flavored ones we emit).
+          // Strict typing would require porting every schema to the
+          // SDK's `Schema` type; instead we cast through `unknown` —
+          // the wire format is identical.
+          responseJsonSchema: sanitized,
+          ...(temperature !== undefined ? { temperature } : {}),
+          ...(effectiveThinkingLevel !== undefined
+            ? {
+                thinkingConfig: {
+                  thinkingLevel: THINKING_LEVEL_MAP[effectiveThinkingLevel],
+                },
+              }
+            : {}),
+        },
+      }),
+    { label: 'gemini.generateContent', earlyFailWindowMs: 15_000 },
+  );
 
   const text = response.text;
   if (!text) {

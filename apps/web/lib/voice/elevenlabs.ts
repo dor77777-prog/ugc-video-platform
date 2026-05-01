@@ -32,6 +32,7 @@
 
 import { LlmConfigError } from '../llm/scripts';
 import { probeDurationSeconds } from '../scenes/mux-audio';
+import { withRetry } from '@/lib/utils/retry';
 import type { CharacterTiming } from '@ugc-video/shared';
 
 const ELEVENLABS_API_BASE = 'https://api.elevenlabs.io/v1';
@@ -114,44 +115,54 @@ export async function generateHebrewVoiceover(
     ? `${baseUrl}/with-timestamps?output_format=mp3_44100_128`
     : `${baseUrl}?output_format=mp3_44100_128`;
 
-  const ac = new AbortController();
-  const timeoutId = setTimeout(() => ac.abort(), SINGLE_CALL_TIMEOUT_MS);
-  let res: Response;
-  try {
-    res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'xi-api-key': apiKey,
-        'Content-Type': 'application/json',
-        Accept: wantTimings ? 'application/json' : 'audio/mpeg',
-      },
-      body: JSON.stringify({
-        text: input.text,
-        model_id: modelId,
-        voice_settings: {
-          stability: voiceSettings.stability,
-          similarity_boost: voiceSettings.similarityBoost,
-          style: voiceSettings.style,
-          use_speaker_boost: voiceSettings.useSpeakerBoost,
-        },
-      }),
-      signal: ac.signal,
-    });
-  } catch (err) {
-    if (ac.signal.aborted) {
-      throw new VoiceTimeoutError(
-        `ElevenLabs did not respond within ${SINGLE_CALL_TIMEOUT_MS / 1000}s.`,
-      );
-    }
-    throw err;
-  } finally {
-    clearTimeout(timeoutId);
-  }
-
-  if (!res.ok) {
-    const detail = await res.text().catch(() => '<no body>');
-    throw new Error(`ElevenLabs ${res.status}: ${detail.slice(0, 300)}`);
-  }
+  // V26.11 — wrap fetch + status check in withRetry so a transient
+  // network blip / 5xx in the first 15s gets one transparent retry
+  // before we surface an error. The AbortController is recreated per
+  // attempt (a single controller can't be reused). Timeout errors
+  // are not retried — they're already user-visible at 15s+.
+  const res = await withRetry(
+    async () => {
+      const ac = new AbortController();
+      const timeoutId = setTimeout(() => ac.abort(), SINGLE_CALL_TIMEOUT_MS);
+      let r: Response;
+      try {
+        r = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'xi-api-key': apiKey,
+            'Content-Type': 'application/json',
+            Accept: wantTimings ? 'application/json' : 'audio/mpeg',
+          },
+          body: JSON.stringify({
+            text: input.text,
+            model_id: modelId,
+            voice_settings: {
+              stability: voiceSettings.stability,
+              similarity_boost: voiceSettings.similarityBoost,
+              style: voiceSettings.style,
+              use_speaker_boost: voiceSettings.useSpeakerBoost,
+            },
+          }),
+          signal: ac.signal,
+        });
+      } catch (err) {
+        if (ac.signal.aborted) {
+          throw new VoiceTimeoutError(
+            `ElevenLabs did not respond within ${SINGLE_CALL_TIMEOUT_MS / 1000}s.`,
+          );
+        }
+        throw err;
+      } finally {
+        clearTimeout(timeoutId);
+      }
+      if (!r.ok) {
+        const detail = await r.text().catch(() => '<no body>');
+        throw new Error(`ElevenLabs ${r.status}: ${detail.slice(0, 300)}`);
+      }
+      return r;
+    },
+    { label: 'elevenlabs.tts', earlyFailWindowMs: 15_000 },
+  );
 
   let audioBytes: Buffer;
   let characterTimings: CharacterTiming[] | null = null;

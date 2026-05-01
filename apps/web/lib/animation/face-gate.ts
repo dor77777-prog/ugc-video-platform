@@ -23,6 +23,7 @@
 //   }
 
 import OpenAI from 'openai';
+import { withRetry } from '@/lib/utils/retry';
 
 export type FaceVisibility = 'clear_front_facing' | 'partial_face' | 'profile' | 'no_face';
 
@@ -118,27 +119,32 @@ export async function runFaceGate(input: {
   // can see them without a public host.
   const imageContent = await resolveImageForOpenAI(input.imageUrl);
 
-  const response = await openai.chat.completions.create({
-    model,
-    messages: [
-      { role: 'system', content: SYSTEM_PROMPT },
-      {
-        role: 'user',
-        content: [
-          { type: 'text', text: USER_PROMPT },
-          { type: 'image_url', image_url: { url: imageContent } },
+  // V26.11 — transparent retry on transient (network/5xx) failures.
+  const response = await withRetry(
+    () =>
+      openai.chat.completions.create({
+        model,
+        messages: [
+          { role: 'system', content: SYSTEM_PROMPT },
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: USER_PROMPT },
+              { type: 'image_url', image_url: { url: imageContent } },
+            ],
+          },
         ],
-      },
-    ],
-    response_format: {
-      type: 'json_schema',
-      json_schema: {
-        name: 'face_gate',
-        strict: true,
-        schema: FACE_GATE_SCHEMA as unknown as Record<string, unknown>,
-      },
-    },
-  });
+        response_format: {
+          type: 'json_schema',
+          json_schema: {
+            name: 'face_gate',
+            strict: true,
+            schema: FACE_GATE_SCHEMA as unknown as Record<string, unknown>,
+          },
+        },
+      }),
+    { label: 'openai.face_gate', earlyFailWindowMs: 15_000 },
+  );
 
   const content = response.choices[0]?.message?.content;
   if (!content) {

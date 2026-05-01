@@ -18,6 +18,7 @@
 // on a single env var without other code changes.
 
 import OpenAI from 'openai';
+import { withRetry } from '@/lib/utils/retry';
 
 // gpt-5.4-mini is the model the V14 script path was built around.
 // Tunable via OPENAI_SCRIPT_MODEL env (e.g. flip to gpt-5.4 for higher
@@ -95,20 +96,26 @@ export async function openaiStructuredCall<T>({
   //      top level, `input` as a plain string, structured output via
   //      `text.format` (not `response_format`). Output text is read
   //      via the SDK's `output_text` helper.
-  const response = await client().responses.create({
-    model: modelId,
-    instructions: systemInstruction,
-    input: userPrompt,
-    temperature,
-    text: {
-      format: {
-        type: 'json_schema',
-        name: 'script_payload',
-        schema: schemaForCall,
-        strict: true,
-      },
-    },
-  });
+  // V26.11 — transparent single retry on transient (network / 5xx)
+  // failures inside the first 15s. No retry on schema/quota/4xx.
+  const response = await withRetry(
+    () =>
+      client().responses.create({
+        model: modelId,
+        instructions: systemInstruction,
+        input: userPrompt,
+        temperature,
+        text: {
+          format: {
+            type: 'json_schema',
+            name: 'script_payload',
+            schema: schemaForCall,
+            strict: true,
+          },
+        },
+      }),
+    { label: 'openai.responses', earlyFailWindowMs: 15_000 },
+  );
 
   const content = response.output_text;
   if (!content) {
