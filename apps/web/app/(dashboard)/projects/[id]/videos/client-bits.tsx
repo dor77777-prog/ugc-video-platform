@@ -604,12 +604,12 @@ export function SceneClipCard(props: SceneClipCardProps) {
           )}
         </div>
 
-        {/* V26 — per-scene clip-engine picker. Kling default; Grok
-            available for non-lipsync scenes. */}
+        {/* V26 / V26.4 — per-scene clip-engine picker. Either provider
+            works on any scene; PixVerse lipsync runs on top of either
+            silent i2v output if requiresLipSync is set. */}
         <ClipProviderToggle
           sceneId={props.sceneId}
           clipProvider={props.clipProvider}
-          requiresLipSync={props.requiresLipSync}
         />
 
         {/* Lipsync toggle — controls whether the next clip generation
@@ -708,11 +708,9 @@ export function SceneClipCard(props: SceneClipCardProps) {
 function ClipProviderToggle({
   sceneId,
   clipProvider,
-  requiresLipSync,
 }: {
   sceneId: string;
   clipProvider: string | null;
-  requiresLipSync: boolean;
 }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
@@ -722,6 +720,12 @@ function ClipProviderToggle({
     setLocal(clipProvider === 'grok' ? 'grok' : 'kling');
   }, [clipProvider]);
 
+  // V26.4 — Grok works on lipsync scenes too. The lipsync pipeline is
+  // provider-agnostic: PixVerse takes a silent video URL regardless of
+  // whether Kling or Grok produced it, and the face-gate inspects
+  // `scene.imageUrl` (not the video) so source doesn't matter. The
+  // earlier "Grok blocks lipsync" UI was a self-imposed restriction;
+  // removed.
   const set = async (value: 'kling' | 'grok') => {
     if (value === local) return;
     setPending(true);
@@ -736,7 +740,6 @@ function ClipProviderToggle({
     router.refresh();
   };
 
-  const grokDisabled = requiresLipSync;
   return (
     <div className="rounded-md border border-border bg-card/50 px-2.5 py-2 space-y-1.5">
       <div className="flex items-center justify-between gap-2 text-[11px]">
@@ -745,9 +748,6 @@ function ClipProviderToggle({
             {local === 'grok' ? 'Grok Imagine (xAI)' : 'Kling Omni'}
           </span>
         </span>
-        {grokDisabled && local === 'kling' && (
-          <span className="text-[10px] text-muted-foreground italic">סצנת lipsync — Kling בלבד</span>
-        )}
       </div>
       <div className="flex items-center gap-1.5">
         <button
@@ -760,26 +760,21 @@ function ClipProviderToggle({
               ? 'bg-primary text-primary-foreground'
               : 'bg-muted text-muted-foreground hover:bg-secondary',
           )}
-          title="Kling Omni v3 — ספק ברירת מחדל. תומך גם ב-lipsync."
+          title="Kling Omni v3 — ספק ברירת מחדל. תומך גם ב-Lipsync (PixVerse)."
         >
           🎬 Kling
         </button>
         <button
           type="button"
           onClick={() => set('grok')}
-          disabled={pending || grokDisabled}
+          disabled={pending}
           className={cn(
             'flex-1 text-[11px] font-medium rounded px-2 py-1 transition-colors',
             local === 'grok'
               ? 'bg-primary text-primary-foreground'
               : 'bg-muted text-muted-foreground hover:bg-secondary',
-            grokDisabled && 'opacity-50 cursor-not-allowed',
           )}
-          title={
-            grokDisabled
-              ? 'Grok לא תומך כעת ב-lipsync — בחר Kling או בטל את ה-Lipsync על הסצנה.'
-              : 'Grok Imagine (xAI) — i2v חלופי. ב-720p ~$0.75 לקליפ של 5s.'
-          }
+          title="Grok Imagine (xAI) — i2v חלופי. סצנת Lipsync? PixVerse עדיין יבצע סנכרון שפתיים על הוידאו של Grok."
         >
           ✨ Grok
         </button>
