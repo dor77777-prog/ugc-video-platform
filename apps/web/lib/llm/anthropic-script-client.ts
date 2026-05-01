@@ -86,10 +86,24 @@ export class AnthropicConfigError extends Error {
 
 let cachedClient: Anthropic | null = null;
 function client(): Anthropic {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
+  // V27.10.4 — defensive validation. Vercel env vars can be set to:
+  //   • undefined  (variable not declared)
+  //   • ""         (variable declared, empty value — common when user
+  //                clicks "Save" on an empty input box)
+  //   • '""'       (literal two-quote string — common copy-paste mistake)
+  //   • short stub (some users paste partial keys)
+  // Anthropic keys are >40 chars and start with `sk-ant-`. Anything
+  // else is invalid; throw early with an actionable message instead
+  // of letting the SDK send an empty header and surface a generic
+  // "auth error" 6× in parallel that bubbles up as
+  // "All 6 framework generations failed".
+  const raw = process.env.ANTHROPIC_API_KEY;
+  const apiKey = raw?.trim().replace(/^"+|"+$/g, ''); // strip wrapping quotes
+  if (!apiKey || apiKey.length < 20 || !apiKey.startsWith('sk-ant-')) {
     throw new AnthropicConfigError(
-      'ANTHROPIC_API_KEY is not set. Add it to .env / Vercel / Railway env vars to enable script generation via Claude.',
+      apiKey === undefined || apiKey === ''
+        ? 'ANTHROPIC_API_KEY is empty in the production env. Open Vercel → Settings → Environment Variables, paste the real key (starts with sk-ant-) for Production, save. No redeploy needed.'
+        : `ANTHROPIC_API_KEY appears malformed (${apiKey.length} chars, prefix "${apiKey.slice(0, 8)}"). Real keys start with sk-ant- and are 80+ chars. Check Vercel env vars — likely a copy-paste mistake.`,
     );
   }
   if (cachedClient === null) cachedClient = new Anthropic({ apiKey });
