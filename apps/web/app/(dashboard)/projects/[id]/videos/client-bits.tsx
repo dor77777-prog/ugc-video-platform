@@ -564,8 +564,23 @@ export function SceneClipCard(props: SceneClipCardProps) {
   const canGenerateVoice = !!props.imageUrl && props.voiceSelected;
   const canGenerateClip = !!props.imageUrl && hasVoice;
 
+  // V27 — data-ai-active wires this card into the AI breathing contract.
+  // Clip is the heaviest signal (longest wait), voice is the next.
+  // CSS auto-applies glow-ai + motion-pulse-ai via globals.css.
+  const aiActiveValue: 'clip' | 'voice' | undefined = showClipWorking
+    ? 'clip'
+    : showVoiceWorking
+      ? 'voice'
+      : undefined;
+
   return (
-    <Card className={cn(hasClip && 'border-accent/40')}>
+    <Card
+      data-ai-active={aiActiveValue}
+      className={cn(
+        'tier-elevated motion-fade-up',
+        hasClip && !aiActiveValue && 'border-success/40',
+      )}
+    >
       <CardContent className="p-5 space-y-4">
         {/* Header */}
         <div className="flex items-start justify-between gap-3 flex-wrap">
@@ -1307,12 +1322,24 @@ export function RenderFinalButton({
     }
   };
 
+  // V27 — render is the long-running case in the AI breathing contract.
+  // data-ai-active="render" applies a STATIC ring (no pulse) — pulsing for
+  // 5+ minutes is painful. The internal status text + progress carry the
+  // "live" signal; the green static ring on completion will fade in via
+  // [data-state="success"] (handled by parent on success redirect).
+  const aiActive = pending ? 'render' : undefined;
+
   return (
-    <div className="space-y-2" dir="ltr">
+    <div
+      className="space-y-2"
+      dir="ltr"
+      data-ai-active={aiActive}
+      style={pending ? { borderRadius: 'var(--radius-xl)', padding: '0.5rem' } : undefined}
+    >
       <Button
         onClick={start}
         disabled={!allClipsReady || pending}
-        size="lg"
+        intent="hero"
         className="min-w-[220px]"
       >
         {pending
@@ -1322,18 +1349,18 @@ export function RenderFinalButton({
             : 'צור קליפים לכל הסצנות קודם'}
       </Button>
       {jobId && pending && (
-        <div className="text-xs text-muted-foreground">
+        <div className="text-xs text-fg-tertiary">
           ID: <span className="font-mono">{jobId.slice(0, 8)}</span>
-          {' — '}אנעבור לספרייה אוטומטית כשיסתיים
+          {' — '}אעבור לספרייה אוטומטית כשיסתיים
         </div>
       )}
       {error && (
-        <div className="text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2 max-w-md">
+        <div className="text-xs text-destructive-soft bg-destructive/10 border border-destructive/30 rounded-md px-3 py-2 max-w-md">
           {error}
         </div>
       )}
-      <div className="text-[11px] text-muted-foreground">
-        קרדיטים: <span className="font-mono font-semibold">{creditsBalance}</span>
+      <div className="text-[11px] text-fg-tertiary">
+        קרדיטים: <span className="font-mono font-semibold text-fg">{creditsBalance}</span>
       </div>
     </div>
   );

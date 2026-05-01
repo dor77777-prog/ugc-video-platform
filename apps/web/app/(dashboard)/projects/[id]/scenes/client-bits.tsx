@@ -546,8 +546,20 @@ export function SceneCard(props: SceneCardProps) {
     });
   };
 
+  // V27 — data-ai-active wires this card into the AI breathing contract:
+  // * "image" → glow-ai ring + motion-pulse-ai (1.6s breathe)
+  // * complete → automatic [data-state="success"] in CSS via parent flow
+  // CSS auto-promotes the muted kicker (Badge here) to loud-lime.
+  const aiActiveValue = showGeneratingOverlay ? 'image' : undefined;
+
   return (
-    <Card className={cn(hasImage && 'border-accent/40')}>
+    <Card
+      data-ai-active={aiActiveValue}
+      className={cn(
+        'tier-elevated motion-fade-up',
+        hasImage && !showGeneratingOverlay && 'border-success/40',
+      )}
+    >
       <CardContent className="p-5 space-y-4">
         {/* Header row */}
         <div className="flex items-start justify-between gap-3">
@@ -559,7 +571,7 @@ export function SceneCard(props: SceneCardProps) {
               {SCENE_TYPE_LABEL[props.sceneType] ?? props.sceneType}
             </Badge>
           </div>
-          <div className="text-xs text-muted-foreground font-mono">{props.durationSeconds}s</div>
+          <div className="text-xs text-fg-tertiary font-mono">{props.durationSeconds}s</div>
         </div>
 
         {/* Hebrew voiceover text */}

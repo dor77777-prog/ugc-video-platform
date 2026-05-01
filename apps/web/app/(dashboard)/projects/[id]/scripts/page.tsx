@@ -208,17 +208,26 @@ export default async function ScriptsPage({
             })}
             {isStreaming &&
               Array.from({ length: 6 - scripts.length }).map((_, i) => (
+                // V27 — per-card pulse: each pending script breathes
+                // independently with data-ai-active="script-batch". The
+                // grid does NOT pulse as a whole; cards transition to
+                // success ring (800ms, static) when their script returns.
                 <Card
                   key={`pending-${i}`}
-                  className="border-dashed animate-pulse opacity-60"
+                  data-ai-active="script-batch"
+                  className="tier-elevated border-dashed motion-fade-up"
+                  style={{ animationDelay: `${i * 60}ms` }}
                 >
                   <CardContent className="p-6 space-y-3">
-                    <div className="h-4 bg-muted rounded w-2/3" />
-                    <div className="h-3 bg-muted rounded w-full" />
-                    <div className="h-3 bg-muted rounded w-5/6" />
-                    <div className="h-3 bg-muted rounded w-4/6" />
-                    <div className="text-xs text-muted-foreground pt-2">
-                      ⏳ תסריט בתהליך יצירה…
+                    <div className="h-4 bg-elevated/80 rounded w-2/3 motion-shimmer" style={{
+                      backgroundImage: 'linear-gradient(90deg, hsl(var(--elevated)), hsl(var(--ai)/0.2), hsl(var(--elevated)))',
+                      backgroundSize: '200% 100%',
+                    }} />
+                    <div className="h-3 bg-elevated/80 rounded w-full" />
+                    <div className="h-3 bg-elevated/80 rounded w-5/6" />
+                    <div className="h-3 bg-elevated/80 rounded w-4/6" />
+                    <div className="text-xs text-fg-tertiary pt-2 font-mono uppercase tracking-[0.18em]">
+                      תסריט בתהליך יצירה
                     </div>
                   </CardContent>
                 </Card>
@@ -229,7 +238,7 @@ export default async function ScriptsPage({
             <GenerateButton projectId={projectId} regenerate />
             <form action={continueAfterSelectAction}>
               <input type="hidden" name="projectId" value={projectId} />
-              <Button type="submit" size="lg" disabled={!selectedScriptId}>
+              <Button type="submit" intent="action" disabled={!selectedScriptId}>
                 המשך לשלב הבא →
               </Button>
             </form>

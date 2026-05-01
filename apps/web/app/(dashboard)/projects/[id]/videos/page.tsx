@@ -7,6 +7,7 @@ import { findVoicePreset } from '@/lib/voice/voice-presets';
 import { Card, CardContent } from '@/components/ui/card';
 import { Stepper } from '@/components/wizard/stepper';
 import { ProjectHero } from '@/components/wizard/project-hero';
+import { DensityScope } from '@/components/density/density-scope';
 // V14.3-B — MusicPicker is exported from client-bits as a
 // next/dynamic lazy wrapper (ssr: false). VoicePicker is no longer
 // imported here — V14.7 moved all voice UI to step 4 (scenes page).
@@ -126,8 +127,8 @@ export default async function VideosPage({
   const missingImages = sceneInfos.filter((s) => !s.hasImage).length;
 
   return (
-    <div className="relative bg-mesh-soft bg-noise min-h-screen">
-      <div className="relative px-6 md:px-10 py-8 md:py-10 max-w-7xl mx-auto space-y-8">
+    <DensityScope mode="comfortable" as="div" className="relative bg-mesh-soft bg-noise min-h-screen">
+      <div className="relative px-6 md:px-10 py-8 md:py-10 max-w-container-grid mx-auto space-y-8">
         <ProjectHero
           kicker="קליפים"
           title="סצנות מונפשות"
@@ -298,6 +299,6 @@ export default async function VideosPage({
         );
       })()}
       </div>
-    </div>
+    </DensityScope>
   );
 }

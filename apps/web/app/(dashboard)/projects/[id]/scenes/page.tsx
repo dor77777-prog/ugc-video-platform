@@ -9,6 +9,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Stepper } from '@/components/wizard/stepper';
 import { ProjectHero } from '@/components/wizard/project-hero';
+import { DensityScope } from '@/components/density/density-scope';
 import { SceneCard, GenerateAllButton } from './client-bits';
 
 export default async function ScenesPage({
@@ -54,11 +55,11 @@ export default async function ScenesPage({
   const allDone = scenes.length > 0 && scenes.every((s) => !!s.imageUrl);
 
   return (
-    <div className="relative bg-mesh-soft bg-noise min-h-screen">
-      <div className="relative px-6 md:px-10 py-8 md:py-10 max-w-7xl mx-auto space-y-8">
-        {/* V21 — unified ProjectHero. Replaces the previous header
-            block + accent context strip with a single glass-strong
-            hero panel that surfaces avatar + script + step. */}
+    <DensityScope mode="comfortable" as="div" className="relative bg-mesh-soft bg-noise min-h-screen">
+      <div className="relative px-6 md:px-10 py-8 md:py-10 max-w-container-grid mx-auto space-y-8">
+        {/* V27 Krea-mode: scene grid is the canonical comfortable surface.
+            ProjectHero uses tier-atmosphere; SceneCards use tier-elevated
+            with auto-applied data-ai-active styling. */}
         <ProjectHero
           kicker="סצנות"
           title="סצנות תמונות"
@@ -144,16 +145,16 @@ export default async function ScenesPage({
       </div>
 
       <div className="flex items-center justify-between gap-3 pt-4 border-t border-border" dir="ltr">
-        <div className="text-xs text-muted-foreground">
-          קרדיטים: <span className="font-mono font-semibold">{dbUser.creditsBalance}</span>
+        <div className="text-xs text-fg-tertiary">
+          קרדיטים: <span className="font-mono font-semibold text-fg">{dbUser.creditsBalance}</span>
         </div>
-        <Button asChild size="lg" disabled={!allDone}>
+        <Button asChild intent="action" disabled={!allDone}>
           <Link href={`/projects/${projectId}/voices`} aria-disabled={!allDone}>
             המשך לקריינות →
           </Link>
         </Button>
       </div>
       </div>
-    </div>
+    </DensityScope>
   );
 }

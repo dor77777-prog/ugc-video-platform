@@ -1,11 +1,13 @@
-// V23 — wizard progress strip. Visual rendition of the 6-step user
-// flow (URL → avatar → scripts → scenes → videos → finish). Used on
-// the dashboard for in-progress projects to show "you're at step 3"
-// at a glance, matching the landing's pipeline strip.
+// V27 — wizard progress strip.
 //
-// Each cell: monospace step number (01..06) at top-right corner, a
-// gradient icon tile, label, and a "current" accent ring. Past steps
-// dim slightly; future steps stay muted with dashed icon outline.
+// 8-step flow rendered as a tile grid. Each tile uses tier-elevated
+// for the current step (with glow-primary), tier-surface for done,
+// tier-surface (muted) for future. Step numbers are Geist Mono via
+// the global font stack. The current-step "PULSE" indicator uses
+// motion-pulse-ai-soft (legacy alias of tachles-soft-pulse) — Wave 1
+// keeps this until Stage 5 sweep renames it.
+//
+// V26.19 split voice generation into its own step (#6).
 
 import Link from 'next/link';
 import {
@@ -73,41 +75,44 @@ export function WizardProgressStrip({
         const isDone = done.includes(step.num) || step.num < currentStep;
         const isFuture = !isCurrent && !isDone;
         const Icon = step.icon;
+        // V27: tier-elevated for the active step (light blur, glow-primary
+        // halo), tier-surface for done/future (no blur — chrome retreats).
         const tileClass = cn(
-          'relative rounded-2xl glass p-4 transition-all',
-          isCurrent && 'border-primary/50 shadow-glow ring-1 ring-primary/30 cursor-pointer',
-          isDone && !isCurrent && 'border-accent/30 hover:border-accent/50 cursor-pointer',
-          isFuture && 'opacity-50 cursor-default',
+          'relative rounded-xl p-4 transition-all motion-press',
+          isCurrent && 'tier-elevated glow-primary border-primary/50 cursor-pointer',
+          isDone && !isCurrent &&
+            'tier-surface border-success/30 hover:border-success/50 cursor-pointer motion-lift-hover',
+          isFuture && 'tier-surface opacity-50 cursor-default',
         );
         const inner = (
           <>
-            <div className="absolute top-2.5 right-3 text-[10px] font-mono text-muted-foreground/80">
+            <div className="absolute top-2.5 right-3 text-[10px] font-mono text-fg-tertiary">
               {String(step.num).padStart(2, '0')}
             </div>
             <div
               className={cn(
-                'h-10 w-10 rounded-xl flex items-center justify-center mb-3',
+                'h-10 w-10 rounded-md flex items-center justify-center mb-3',
                 isCurrent &&
-                  'bg-gradient-to-br from-primary/40 to-accent/20 text-primary shadow-glow',
-                isDone && !isCurrent && 'bg-accent/20 text-accent',
-                isFuture && 'bg-muted/30 text-muted-foreground border border-dashed border-border',
+                  'bg-gradient-to-br from-primary/30 to-primary-soft/40 text-primary',
+                isDone && !isCurrent && 'bg-success-soft/60 text-success',
+                isFuture && 'bg-elevated/50 text-fg-tertiary border border-dashed border-divider',
               )}
             >
               <Icon className="h-5 w-5" />
             </div>
-            <div className={cn('text-xs font-bold tracking-tight', isFuture && 'text-muted-foreground')}>
+            <div className={cn('text-xs font-bold tracking-tight', isFuture && 'text-fg-tertiary')}>
               {step.label}
             </div>
             {isCurrent && (
               <div className="mt-1.5 flex items-center gap-1 text-[10px] text-primary">
                 <span className="h-1.5 w-1.5 rounded-full bg-primary animate-soft-pulse" />
-                <span className="font-mono uppercase tracking-widest">פעיל</span>
+                <span className="font-mono uppercase tracking-[0.18em]">פעיל</span>
               </div>
             )}
             {isDone && !isCurrent && (
-              <div className="mt-1.5 flex items-center gap-1 text-[10px] text-accent">
+              <div className="mt-1.5 flex items-center gap-1 text-[10px] text-success">
                 <CheckCircle2 className="h-3 w-3" />
-                <span className="font-mono uppercase tracking-widest">בוצע</span>
+                <span className="font-mono uppercase tracking-[0.18em]">בוצע</span>
               </div>
             )}
           </>

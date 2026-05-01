@@ -1,7 +1,11 @@
-// V21 — shared header for all project inner pages (scripts, scenes,
-// videos). Gives the wizard a consistent "Studio" feel — meta info on
-// the right, progress + back link in the middle, workspace actions on
-// the left. Applied across `/projects/[id]/{scripts,scenes,videos}`.
+// V27 — shared header for all project inner pages.
+//
+// Uses tier-atmosphere (28px blur, edge-pearl on top edge) for a
+// hero that reads as "this is a chapter heading," not a stat card.
+// Applied across /projects/[id]/{scripts,scenes,videos,...}.
+// Soft mesh wash kept (radial gradient) — landing-only ambient
+// pattern brought to the wizard heading because the hero is
+// genuinely the chapter spread.
 
 import Link from 'next/link';
 import { ArrowRight, Sparkles, type LucideIcon } from 'lucide-react';
@@ -44,7 +48,7 @@ export function ProjectHero({
   return (
     <div
       className={cn(
-        'relative rounded-3xl glass-strong overflow-hidden animate-fade-in-up',
+        'relative rounded-2xl tier-atmosphere overflow-hidden motion-fade-up',
         className,
       )}
     >
@@ -53,7 +57,7 @@ export function ProjectHero({
         className="absolute inset-0 -z-10 opacity-40"
         style={{
           background:
-            'radial-gradient(circle at 10% 0%, hsl(258 100% 65% / 0.35), transparent 55%), radial-gradient(circle at 90% 100%, hsl(73 95% 60% / 0.18), transparent 55%)',
+            'radial-gradient(circle at 10% 0%, hsl(var(--primary) / 0.32), transparent 55%), radial-gradient(circle at 90% 100%, hsl(var(--ai) / 0.14), transparent 55%)',
         }}
       />
 
@@ -63,23 +67,23 @@ export function ProjectHero({
           <div className="flex items-center flex-wrap gap-3 text-xs">
             <Link
               href={backHref}
-              className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground transition-colors"
+              className="inline-flex items-center gap-1 text-fg-tertiary hover:text-fg transition-colors motion-press"
             >
               <ArrowRight className="h-3.5 w-3.5" />
               {backLabel}
             </Link>
             {projectName && (
               <>
-                <span className="text-muted-foreground">/</span>
-                <span className="font-medium text-foreground/90 truncate max-w-[200px]">
+                <span className="text-fg-tertiary">/</span>
+                <span className="font-medium text-fg-secondary truncate max-w-[200px]">
                   {projectName}
                 </span>
               </>
             )}
             {kicker && (
               <>
-                <span className="text-muted-foreground">/</span>
-                <span className="uppercase tracking-[0.25em] text-primary font-mono">
+                <span className="text-fg-tertiary">/</span>
+                <span className="kicker-loud font-mono text-[11px] uppercase">
                   {kicker}
                 </span>
               </>
@@ -97,7 +101,7 @@ export function ProjectHero({
           </h1>
 
           {description && (
-            <p className="text-sm md:text-base text-muted-foreground max-w-2xl leading-relaxed">
+            <p className="text-sm md:text-base text-fg-secondary max-w-2xl leading-relaxed">
               {description}
             </p>
           )}
