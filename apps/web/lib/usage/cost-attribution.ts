@@ -26,6 +26,7 @@ import {
   priceKling,
   klingPricingKeyForModel,
   priceGeminiText,
+  priceGrokVideo,
 } from '@/lib/usage/pricing';
 
 export type CostSource = 'actual_usage' | 'estimate' | 'observed_constant';
@@ -196,6 +197,49 @@ export function attributeKlingI2vCost(args: {
       model: args.modelUsed,
       durationSeconds: args.durationSeconds,
       note: 'kling token count not exposed; using observed estimate',
+    },
+  };
+}
+
+// ── xAI / Grok video (V26 — image-to-video alternative to Kling) ───────
+//
+// xAI doesn't expose token usage on the video status response — pricing
+// is per-second by resolution. We compute estimated/actual from the
+// returned `video.duration` (when known) at the configured per-sec
+// rate. If neither is known, fall back to the configured per-clip
+// constant. Future: if xAI starts returning a `usage` block on the
+// done payload, pass it via args.tokensUsed and we'll switch to that.
+export function attributeGrokVideoCost(args: {
+  resolution?: '480p' | '720p' | string | null;
+  durationSeconds?: number | null;
+  tokensUsed?: number | null;
+}): AttributedCost {
+  const fallback = PROVIDER_COST_ESTIMATES_USD.xai_video_clip;
+  if (args.durationSeconds && args.durationSeconds > 0) {
+    const perSec = priceGrokVideo({
+      resolution: args.resolution ?? '720p',
+      durationSeconds: args.durationSeconds,
+    });
+    return {
+      costUsd: perSec,
+      estimatedCostUsd: perSec,
+      actualCostUsd: perSec,
+      source: 'observed_constant',
+      metadata: {
+        provider: 'xai',
+        resolution: args.resolution ?? '720p',
+        durationSeconds: args.durationSeconds,
+        ratePerSecondUsd: perSec / args.durationSeconds,
+      },
+    };
+  }
+  return {
+    costUsd: fallback,
+    estimatedCostUsd: fallback,
+    source: 'estimate',
+    metadata: {
+      provider: 'xai',
+      note: 'no duration reported — using xai_video_clip baseline',
     },
   };
 }

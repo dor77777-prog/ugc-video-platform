@@ -405,17 +405,42 @@ export async function fetchGeminiBalance(): Promise<GeminiBalanceError> {
   };
 }
 
+// ── xAI / Grok (V26 — image-to-video alternative to Kling) ─────────────
+// Like Google's Generative Language API, xAI's REST surface doesn't
+// expose a per-API-key cost / balance endpoint. We surface a sentinel
+// error so the dashboard falls back to local ApiCall aggregates (V12.6
+// ProviderFallbackCard). For authoritative spend, check
+// console.x.ai → Billing.
+
+export interface XaiBalanceError {
+  ok: false;
+  error: string;
+}
+
+export async function fetchXaiBalance(): Promise<XaiBalanceError> {
+  const apiKey = process.env.XAI_API_KEY?.trim();
+  if (!apiKey) return { ok: false, error: 'XAI_API_KEY not configured' };
+  return {
+    ok: false,
+    error:
+      'xAI does not expose a per-API-key cost endpoint for the video API. ' +
+      'Check console.x.ai → Billing for authoritative spend; the dashboard below is computed ' +
+      'from local ApiCall rows (always-on, accurate).',
+  };
+}
+
 // ── Convenience: fetch all in parallel ──────────────────────────────────
 
 export async function fetchAllProviderBalances() {
-  const [kling, pixverse, elevenlabs, openai, gemini] = await Promise.all([
+  const [kling, pixverse, elevenlabs, openai, gemini, xai] = await Promise.all([
     fetchKlingBalance(),
     fetchPixVerseBalance(),
     fetchElevenLabsBalance(),
     fetchOpenAIBalance(),
     fetchGeminiBalance(),
+    fetchXaiBalance(),
   ]);
-  return { kling, pixverse, elevenlabs, openai, gemini };
+  return { kling, pixverse, elevenlabs, openai, gemini, xai };
 }
 
 // Re-export for the admin page so it doesn't need two separate imports.

@@ -591,6 +591,29 @@ export default async function AdminUsagePage() {
                 fixHint="Google Cloud Console → Billing → APIs Detail → Generative Language API for authoritative spend (Google doesn't expose per-API-key cost)."
               />
             </div>
+
+            {/* V26 — xAI / Grok Imagine (image-to-video alternative to
+                Kling). Per-scene user toggle in step 5. xAI doesn't
+                expose per-key billing either, so this card always falls
+                back to local ApiCall aggregates. */}
+            <div className="rounded-lg border border-border p-4 space-y-3">
+              <div className="flex items-baseline justify-between">
+                <h3 className="font-semibold">xAI / Grok</h3>
+                <span className="text-[10px] text-muted-foreground">
+                  i2v (grok-imagine-video)
+                </span>
+              </div>
+              <ProviderFallbackCard
+                providerSlug="xai"
+                byProviderRow={byProvider.find((p) => p.provider === 'xai')}
+                errorMsg={
+                  'ok' in providerBalances.xai && !providerBalances.xai.ok
+                    ? providerBalances.xai.error
+                    : 'no balance data'
+                }
+                fixHint="console.x.ai → Billing for authoritative spend (xAI doesn't expose per-API-key cost on the video API)."
+              />
+            </div>
           </div>
 
           <div className="text-[10px] text-muted-foreground border-t border-border pt-2">

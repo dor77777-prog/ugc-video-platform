@@ -79,6 +79,40 @@ export async function setSceneRequiresLipSyncAction(
   };
 }
 
+// V26 — per-scene clip provider selection. The user picks which i2v
+// engine animates this specific scene (Kling default, Grok alternative).
+// Persisted on Scene.clipProvider; clip-impl reads it pre-flight to
+// dispatch and overwrites it post-flight with the actual provider used.
+//
+// Lipsync scenes can't currently route through Grok — face-gate +
+// PixVerse only run against Kling output. We accept the value either
+// way, but the impl quietly falls back to Kling for lipsync.
+const ALLOWED_CLIP_PROVIDERS = new Set(['kling', 'grok']);
+
+export async function setSceneClipProviderAction(
+  sceneId: string,
+  provider: string,
+): Promise<{ ok: boolean; error?: string }> {
+  if (!ALLOWED_CLIP_PROVIDERS.has(provider)) {
+    return { ok: false, error: `ספק לא נתמך: ${provider}` };
+  }
+  const { dbUser } = await getOrCreateAppUser();
+  const scene = await prisma.scene.findUnique({
+    where: { id: sceneId },
+    select: { script: { select: { projectId: true, project: { select: { userId: true } } } } },
+  });
+  if (!scene) return { ok: false, error: 'הסצנה לא נמצאה' };
+  if (scene.script.project.userId !== dbUser.id) {
+    return { ok: false, error: 'אין הרשאה' };
+  }
+  await prisma.scene.update({
+    where: { id: sceneId },
+    data: { clipProvider: provider },
+  });
+  revalidatePath(`/projects/${scene.script.projectId}/videos`);
+  return { ok: true };
+}
+
 export async function generateSceneClipAction(
   sceneId: string,
   _prev: GenerateClipState,

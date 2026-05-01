@@ -23,6 +23,7 @@ import {
   klingProvider,
   buildKlingPromptFromPlan,
 } from '@/lib/animation/kling';
+import { grokImagineProvider } from '@/lib/animation/grok-imagine';
 import { buildAnimationPlan } from '@/lib/animation/animation-plan-builder';
 import {
   detectHandsPhysicsRequired,
@@ -61,6 +62,7 @@ import { recordApiCall, recordApiCallStart, recordApiCallComplete } from '@/lib/
 import {
   attributeOpenAiTextCost,
   attributeKlingI2vCost,
+  attributeGrokVideoCost,
   attributePixVerseLipSyncCost,
   attributeLocalComposeCost,
 } from '@/lib/usage/cost-attribution';
@@ -547,42 +549,92 @@ async function generateSceneClipImplInner(
     scene.durationSeconds, // honor the script's planned scene length
     routing.requiresLipSync,
   );
+  // V26 — per-scene provider choice. The user picks Kling vs Grok in
+  // step 5 before regenerating. We persist the choice on
+  // scene.clipProvider (same column we already write the actual
+  // provider to on success — the column doubles as user-intent
+  // pre-flight and post-flight record). Only b-roll-style scenes can
+  // route through Grok; lipsync scenes always go Kling because
+  // PixVerse's face-gate pipeline is only wired for Kling output.
+  const userPreferredProvider =
+    (scene as { clipProvider?: string | null }).clipProvider ?? null;
+  const grokRequested = userPreferredProvider === 'grok';
+  const useGrok = grokRequested && !routing.requiresLipSync;
+  if (grokRequested && routing.requiresLipSync) {
+    clipLog.info('grok requested but scene needs lipsync — falling back to kling', {
+      sceneId,
+      sceneType: routing.sceneGenerationType,
+    });
+  }
+  const providerName = useGrok ? 'xai' : 'kling';
+  const providerLog = useGrok ? logStage('grok-imagine', sceneId) : klingLog;
+  const grokResolution = (process.env.XAI_VIDEO_RESOLUTION ?? '720p').toLowerCase();
+  const grokModel = process.env.XAI_VIDEO_MODEL ?? 'grok-imagine-video';
+  const i2vModel = useGrok
+    ? grokModel
+    : process.env.KLING_IMAGE_TO_VIDEO_MODEL ?? 'kling-v3-omni';
+
   let i2vResult;
   const i2vStartedAt = Date.now();
-  klingLog.info('calling i2v', {
-    model: process.env.KLING_IMAGE_TO_VIDEO_MODEL ?? 'kling-v3-omni',
+  providerLog.info('calling i2v', {
+    provider: providerName,
+    model: i2vModel,
     durationSeconds: clipDuration,
     aspectRatio: '9:16',
-    referenceCount: productRefUrl ? 1 : 0,
+    referenceCount: productRefUrl && !useGrok ? 1 : 0,
     promptChars: motionPrompt.positive.length,
     negativeChars: motionPrompt.negative.length,
   });
+  const estimatedCostUsd = useGrok
+    ? attributeGrokVideoCost({
+        resolution: grokResolution,
+        durationSeconds: clipDuration,
+      }).estimatedCostUsd
+    : attributeKlingI2vCost({
+        modelUsed: i2vModel,
+        durationSeconds: clipDuration,
+      }).estimatedCostUsd;
   // Two-phase log: row appears in /admin/costs as "in_progress" the
   // moment we start, with createdAt = now. Closes when we know the result.
   const i2vCallId = await recordApiCallStart({
-    provider: 'kling',
+    provider: providerName,
     operation: 'i2v',
-    model: process.env.KLING_IMAGE_TO_VIDEO_MODEL ?? 'kling-v3-omni',
+    model: i2vModel,
     units: 1,
-    estimatedCostUsd: attributeKlingI2vCost({
-      modelUsed: process.env.KLING_IMAGE_TO_VIDEO_MODEL ?? 'kling-v3-omni',
-      durationSeconds: clipDuration,
-    }).estimatedCostUsd,
+    estimatedCostUsd,
     userId,
     projectId,
     sceneId,
-    metadata: { durationSeconds: clipDuration, hasProductRef: !!productRefUrl },
+    metadata: {
+      durationSeconds: clipDuration,
+      hasProductRef: !!productRefUrl && !useGrok,
+      ...(useGrok ? { resolution: grokResolution } : {}),
+    },
   });
   try {
-    i2vResult = await klingProvider.generateImageToVideo({
-      imageUrl: scene.imageUrl!, // null-checked in outer function before in-flight set
-      prompt: motionPrompt.positive,
-      negativePrompt: motionPrompt.negative,
-      referenceImageUrls: productRefUrl ? [productRefUrl] : undefined,
-      durationSeconds: clipDuration,
-      aspectRatio: '9:16',
-      sceneId,
-    });
+    if (useGrok) {
+      // Grok currently single-image i2v only — no reference frames, no
+      // negative prompt as a separate field. The provider folds the
+      // negative into the main prompt (see grok-imagine.ts).
+      i2vResult = await grokImagineProvider.generateImageToVideo({
+        imageUrl: scene.imageUrl!,
+        prompt: motionPrompt.positive,
+        negativePrompt: motionPrompt.negative,
+        durationSeconds: clipDuration,
+        aspectRatio: '9:16',
+        sceneId,
+      });
+    } else {
+      i2vResult = await klingProvider.generateImageToVideo({
+        imageUrl: scene.imageUrl!, // null-checked in outer function before in-flight set
+        prompt: motionPrompt.positive,
+        negativePrompt: motionPrompt.negative,
+        referenceImageUrls: productRefUrl ? [productRefUrl] : undefined,
+        durationSeconds: clipDuration,
+        aspectRatio: '9:16',
+        sceneId,
+      });
+    }
   } catch (err) {
     const errMsg = (err as Error).message;
     const durationMs = Date.now() - i2vStartedAt;
@@ -591,9 +643,11 @@ async function generateSceneClipImplInner(
       errorMessage: errMsg,
       durationMs,
     });
-    klingLog.error('i2v failed', { errMsg, durationMs });
+    providerLog.error('i2v failed', { provider: providerName, errMsg, durationMs });
     // V13 PR7.1 — persist failure state + curated code so the wizard
     // can render the right Hebrew error message via PR5's map.
+    // V26 — Grok errors share the kling.* code prefix because
+    // scene-error-messages.ts groups them as i2v-stage failures.
     const code =
       err instanceof VideoProviderConfigError
         ? 'kling.config'
@@ -612,13 +666,18 @@ async function generateSceneClipImplInner(
   }
 
   const i2vDurationMs = Date.now() - i2vStartedAt;
-  const i2vAttribution = attributeKlingI2vCost({
-    modelUsed: i2vResult.modelUsed,
-    durationSeconds: i2vResult.durationSeconds,
-    // Kling does NOT expose token_count today. If they ever do, pass it
-    // here as `tokensUsed` and the attribution helper will switch from
-    // observed-constant ($0.79/clip) to actual_usage (tokens × $0.546).
-  });
+  const i2vAttribution = useGrok
+    ? attributeGrokVideoCost({
+        resolution: grokResolution,
+        durationSeconds: i2vResult.durationSeconds,
+      })
+    : attributeKlingI2vCost({
+        modelUsed: i2vResult.modelUsed,
+        durationSeconds: i2vResult.durationSeconds,
+        // Kling does NOT expose token_count today. If they ever do, pass it
+        // here as `tokensUsed` and the attribution helper will switch from
+        // observed-constant ($0.79/clip) to actual_usage (tokens × $0.546).
+      });
   await recordApiCallComplete(i2vCallId, {
     success: true,
     model: i2vResult.modelUsed,
@@ -633,7 +692,8 @@ async function generateSceneClipImplInner(
       durationSecondsActual: i2vResult.durationSeconds,
     },
   });
-  klingLog.info('i2v returned', {
+  providerLog.info('i2v returned', {
+    provider: providerName,
     model: i2vResult.modelUsed,
     durationSeconds: i2vResult.durationSeconds,
     bytes: i2vResult.videoBytes.byteLength,
@@ -925,12 +985,18 @@ async function generateSceneClipImplInner(
   const isFirstRegen = previousCount === 1 && FIRST_REGEN_FREE.kling_i2v_clip;
   const klingCharge = isFirstRegen ? 0 : klingCredits;
 
+  // V26 — `clipProvider` reflects who actually produced the i2v. Both
+  // Kling and Grok currently roll up to the SAME Tachles credit charge
+  // (kling_i2v_clip) — provider-cost differences fall on us, not the
+  // user. The user's preference column is overwritten here so the next
+  // regen defaults to the same provider unless they flip it.
+  const recordedProvider = useGrok ? 'grok' : 'kling';
   await prisma.$transaction([
     prisma.scene.update({
       where: { id: sceneId },
       data: {
         clipUrl: url,
-        clipProvider: 'kling',
+        clipProvider: recordedProvider,
         clipGeneratedAt: new Date(),
         clipDurationSeconds: finalDuration,
         clipGenerationCount: { increment: 1 },
@@ -960,6 +1026,7 @@ async function generateSceneClipImplInner(
       metadata: {
         previousCount,
         routing,
+        i2vProvider: recordedProvider,
         i2vModel: i2vResult.modelUsed,
         audioMuxed,
         lipSyncSkipReason,
@@ -981,7 +1048,7 @@ async function generateSceneClipImplInner(
       data: {
         projectId,
         type: 'avatar_video',
-        provider: 'kling',
+        provider: recordedProvider,
         url,
         durationSeconds: finalDuration,
         metadata: {
@@ -990,10 +1057,15 @@ async function generateSceneClipImplInner(
           routing,
           audioMuxed,
           stageA: {
-            provider: 'kling',
+            provider: recordedProvider,
             model: i2vResult.modelUsed,
             taskId: i2vResult.providerJobId,
-            costUsd: priceKling(klingPricingKeyForModel(i2vResult.modelUsed)),
+            costUsd: useGrok
+              ? attributeGrokVideoCost({
+                  resolution: grokResolution,
+                  durationSeconds: finalDuration,
+                }).costUsd
+              : priceKling(klingPricingKeyForModel(i2vResult.modelUsed)),
           },
           stageB:
             lipSyncTaskId != null

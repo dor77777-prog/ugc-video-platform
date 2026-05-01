@@ -65,6 +65,15 @@ export const PROVIDER_COST_ESTIMATES_USD = {
 
   kling_i2v_clip: num('COST_KLING_I2V_CLIP_USD', 0.79),
 
+  // V26 — xAI / Grok video provider. Per-second pricing (xAI publishes
+  // per-second rates, not per-clip). Default tuned so a 5s 720p clip
+  // ≈ $0.75, comparable to Kling's $0.79. Override via env once you
+  // confirm exact numbers in the xAI Console → Billing.
+  xai_video_per_sec_480p: num('XAI_VIDEO_PRICE_PER_SEC_480P_USD', 0.08),
+  xai_video_per_sec_720p: num('XAI_VIDEO_PRICE_PER_SEC_720P_USD', 0.15),
+  // 5s 720p clip baseline used as the "no actual usage" fallback.
+  xai_video_clip: num('COST_XAI_VIDEO_CLIP_USD', 0.75),
+
   pixverse_lipsync_scene: num('COST_PIXVERSE_LIPSYNC_SCENE_USD', 0.071),
   pixverse_lipsync_second: num('COST_PIXVERSE_LIPSYNC_SECOND_USD', 0.018),
   pixverse_lipsync_second_conservative: num('COST_PIXVERSE_LIPSYNC_SECOND_CONSERVATIVE_USD', 0.02),

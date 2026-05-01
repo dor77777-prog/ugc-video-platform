@@ -69,6 +69,7 @@ export default async function VideosPage({
               clipDurationSeconds: true,
               clipGenerationCount: true,
               clipInFlightAt: true,
+              clipProvider: true,
             },
           },
         },
@@ -240,6 +241,7 @@ export default async function VideosPage({
               sceneGenerationType={
                 scene.sceneGenerationType ?? derived.sceneGenerationType
               }
+              clipProvider={scene.clipProvider ?? null}
             />
           );
         })}

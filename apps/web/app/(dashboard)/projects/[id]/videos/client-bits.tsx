@@ -54,6 +54,7 @@ import {
   generateSceneClipAction,
   regenLipSyncOnlyAction,
   setSceneRequiresLipSyncAction,
+  setSceneClipProviderAction,
   type GenerateClipState,
 } from './actions';
 
@@ -261,6 +262,9 @@ interface SceneClipCardProps {
   requiresLipSyncIsExplicit: boolean;
   /** Auto-derived scene type label (talking_head / broll / hands_only / ...). */
   sceneGenerationType: string;
+  /** V26 — per-scene clip-engine choice. 'kling' (default) | 'grok'.
+   *  null is treated as 'kling'. */
+  clipProvider: string | null;
 }
 
 // In-flight TTLs match the server. Past these, the flag is treated as
@@ -600,6 +604,14 @@ export function SceneClipCard(props: SceneClipCardProps) {
           )}
         </div>
 
+        {/* V26 — per-scene clip-engine picker. Kling default; Grok
+            available for non-lipsync scenes. */}
+        <ClipProviderToggle
+          sceneId={props.sceneId}
+          clipProvider={props.clipProvider}
+          requiresLipSync={props.requiresLipSync}
+        />
+
         {/* Lipsync toggle — controls whether the next clip generation
             adds a Kling LipSync pass on top of the silent i2v. */}
         <LipSyncToggle
@@ -682,6 +694,100 @@ export function SceneClipCard(props: SceneClipCardProps) {
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+/* ============================================================
+ * ClipProviderToggle — per-scene i2v engine picker (Kling vs Grok)
+ *
+ * The choice is persisted on Scene.clipProvider. Lipsync scenes are
+ * pinned to Kling because PixVerse's face-gate pipeline is wired only
+ * against Kling output — we surface that as a disabled "Grok" pill.
+ * ============================================================ */
+
+function ClipProviderToggle({
+  sceneId,
+  clipProvider,
+  requiresLipSync,
+}: {
+  sceneId: string;
+  clipProvider: string | null;
+  requiresLipSync: boolean;
+}) {
+  const router = useRouter();
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [local, setLocal] = useState<string>(clipProvider === 'grok' ? 'grok' : 'kling');
+  useEffect(() => {
+    setLocal(clipProvider === 'grok' ? 'grok' : 'kling');
+  }, [clipProvider]);
+
+  const set = async (value: 'kling' | 'grok') => {
+    if (value === local) return;
+    setPending(true);
+    setError(null);
+    const res = await setSceneClipProviderAction(sceneId, value);
+    setPending(false);
+    if (!res.ok) {
+      setError(res.error ?? 'שמירה נכשלה');
+      return;
+    }
+    setLocal(value);
+    router.refresh();
+  };
+
+  const grokDisabled = requiresLipSync;
+  return (
+    <div className="rounded-md border border-border bg-card/50 px-2.5 py-2 space-y-1.5">
+      <div className="flex items-center justify-between gap-2 text-[11px]">
+        <span className="text-muted-foreground">
+          מנוע הנפשה: <span className="font-medium text-foreground">
+            {local === 'grok' ? 'Grok Imagine (xAI)' : 'Kling Omni'}
+          </span>
+        </span>
+        {grokDisabled && local === 'kling' && (
+          <span className="text-[10px] text-muted-foreground italic">סצנת lipsync — Kling בלבד</span>
+        )}
+      </div>
+      <div className="flex items-center gap-1.5">
+        <button
+          type="button"
+          onClick={() => set('kling')}
+          disabled={pending}
+          className={cn(
+            'flex-1 text-[11px] font-medium rounded px-2 py-1 transition-colors',
+            local === 'kling'
+              ? 'bg-primary text-primary-foreground'
+              : 'bg-muted text-muted-foreground hover:bg-secondary',
+          )}
+          title="Kling Omni v3 — ספק ברירת מחדל. תומך גם ב-lipsync."
+        >
+          🎬 Kling
+        </button>
+        <button
+          type="button"
+          onClick={() => set('grok')}
+          disabled={pending || grokDisabled}
+          className={cn(
+            'flex-1 text-[11px] font-medium rounded px-2 py-1 transition-colors',
+            local === 'grok'
+              ? 'bg-primary text-primary-foreground'
+              : 'bg-muted text-muted-foreground hover:bg-secondary',
+            grokDisabled && 'opacity-50 cursor-not-allowed',
+          )}
+          title={
+            grokDisabled
+              ? 'Grok לא תומך כעת ב-lipsync — בחר Kling או בטל את ה-Lipsync על הסצנה.'
+              : 'Grok Imagine (xAI) — i2v חלופי. ב-720p ~$0.75 לקליפ של 5s.'
+          }
+        >
+          ✨ Grok
+        </button>
+      </div>
+      {error && (
+        <div className="text-[10px] text-destructive">{error}</div>
+      )}
+    </div>
   );
 }
 

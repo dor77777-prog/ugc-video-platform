@@ -178,6 +178,26 @@ export function klingPricingKeyForModel(modelId: string | undefined): string {
   return 'i2v_std_5s_no_audio';
 }
 
+// V26 — xAI / Grok video generation pricing.
+//
+// xAI bills per second of generated video, with a separate rate for 480p
+// (faster, lower res) vs 720p (HD). The numbers come from
+// PROVIDER_COST_ESTIMATES_USD.xai_video_per_sec_{480p,720p} so they can
+// be tuned via env vars without redeploying. Defaults are placeholders
+// chosen so a 5s 720p clip ≈ $0.75 (≈ Kling's $0.79). Confirm exact
+// rates in the xAI Console → Billing.
+export function priceGrokVideo(args: {
+  resolution?: '480p' | '720p' | string | null;
+  durationSeconds?: number | null;
+}): number {
+  const dur = args.durationSeconds && args.durationSeconds > 0 ? args.durationSeconds : 5;
+  const is720 = (args.resolution ?? '720p').toLowerCase() === '720p';
+  const perSec = is720
+    ? PROVIDER_COST_ESTIMATES_USD.xai_video_per_sec_720p
+    : PROVIDER_COST_ESTIMATES_USD.xai_video_per_sec_480p;
+  return perSec * dur;
+}
+
 // Creatomate — flat per-render fee for short videos. Their pricing model
 // is per-credit; ~$0.05 covers a sub-60s 1080p export at our usage tier.
 export function priceCreatomate(): number {
@@ -267,6 +287,15 @@ export const PROVIDER_CATALOG: ProviderInfo[] = [
     purpose: 'Image-to-video (kling-v3-omni). Animation only — lipsync is PixVerse.',
     purposeHe: 'הנפשת סצנות (i2v). אין יותר Kling LipSync — PixVerse ירש את התפקיד.',
     costPerCallUsd: '~$0.79 / clip (1.44 tok × $0.546)',
+    active: true,
+    operations: ['i2v'],
+  },
+  {
+    provider: 'xai',
+    displayName: 'xAI / Grok Imagine',
+    purpose: 'Image-to-video alternative to Kling (grok-imagine-video). Per-scene user toggle in step 5.',
+    purposeHe: 'הנפשת סצנות (i2v) — חלופה ל-Kling. בחירה פר-סצנה בשלב 5.',
+    costPerCallUsd: '~$0.75 / 5s 720p clip (per-second pricing)',
     active: true,
     operations: ['i2v'],
   },
