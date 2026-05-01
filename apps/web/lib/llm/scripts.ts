@@ -367,12 +367,15 @@ export async function generateScripts(
     FRAMEWORK_ORDER.map(async (framework, index) => {
       const userPrompt = buildSingleFrameworkPrompt(input, framework);
       try {
+        // V26.1 — no `temperature` override. Gemini 3 docs explicitly
+        // warn that values below 1.0 cause looping / degraded reasoning
+        // performance; defaulting to the model's built-in 1.0 fixes the
+        // "All 6 framework generations failed" hang we hit in V25.
         const { parsed: parsedRegen, usage } = await geminiStructuredCall<LlmRegenResponse>({
           systemInstruction: SCRIPT_SYSTEM_PROMPT,
           userPrompt,
           responseSchema: SINGLE_SCRIPT_JSON_SCHEMA,
           model,
-          temperature: 0.7,
         });
         totalInputTokens += usage.inputTokens;
         totalOutputTokens += usage.outputTokens;

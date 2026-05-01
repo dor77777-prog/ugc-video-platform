@@ -13,7 +13,13 @@
 
 import { GoogleGenerativeAI, type Schema } from '@google/generative-ai';
 
-const DEFAULT_MODEL = 'gemini-3-pro';
+// V26.1 — Gemini 3 family models all end with `-preview` (verified via
+// `GET /v1beta/models`). The `gemini-3-pro` short alias does NOT resolve;
+// using it 404s with "model not found" which is what was crashing the
+// 6-script batch. Default to the canonical preview ID. Override via
+// GEMINI_SCRIPT_MODEL env (e.g. `gemini-3.1-pro-preview` for the latest,
+// or `gemini-3-flash-preview` for a 4× cheaper Flash run).
+const DEFAULT_MODEL = 'gemini-3-pro-preview';
 
 export class GeminiConfigError extends Error {
   constructor(message: string) {
@@ -54,7 +60,7 @@ export function stripIncompatibleKeywords(schema: unknown): unknown {
 }
 
 export interface GeminiUsage {
-  /** Resolved model id (e.g. 'gemini-3-pro'). */
+  /** Resolved model id (e.g. 'gemini-3-pro-preview'). */
   model: string;
   /** Tokens billed as input (system + user prompt). */
   inputTokens: number;
@@ -73,9 +79,20 @@ export interface GeminiStructuredCallOptions {
   responseSchema: unknown;
   /** Override the default model. */
   model?: string;
-  /** Optional temperature (default 0.7 to match the prior OpenAI
-   *  behavior; lower for deterministic generations). */
+  /** Optional temperature override. **Do not pass this for Gemini 3
+   *  models** — Google explicitly recommends keeping it at the default
+   *  (1.0); setting it lower causes looping / degraded performance on
+   *  reasoning tasks. Left optional for callers that target older
+   *  Gemini families (1.5, 2.0, 2.5) where 0.7 is still safe. */
   temperature?: number;
+  /** Optional `thinkingConfig.thinkingLevel` for Gemini 3 models.
+   *  Default `'high'` burns the most thought tokens (104+ even on a
+   *  trivial reply) and frequently exceeds our 60s Server Action
+   *  ceiling on a 6-parallel script batch. We default to `'low'`
+   *  for the script-gen path — Hebrew creative writing doesn't need
+   *  deep multi-step reasoning, and the latency / cost savings are
+   *  significant. Pass `'medium'` or `'high'` for tasks that benefit. */
+  thinkingLevel?: 'minimal' | 'low' | 'medium' | 'high';
 }
 
 export interface GeminiStructuredCallResult<T> {
@@ -93,16 +110,33 @@ export async function geminiStructuredCall<T>({
   responseSchema,
   model: modelId = DEFAULT_MODEL,
   temperature,
+  thinkingLevel,
 }: GeminiStructuredCallOptions): Promise<GeminiStructuredCallResult<T>> {
   const sanitized = stripIncompatibleKeywords(responseSchema) as Schema;
+  // V26.1 — Gemini 3 introduced `thinkingConfig.thinkingLevel`. The
+  // @google/generative-ai v0.24 type doesn't list it (predates Gemini 3),
+  // but the request body is JSON-serialized to the REST API, so unknown
+  // keys pass through. We cast through `unknown` to attach it.
+  const isGemini3 = modelId.startsWith('gemini-3');
+  const effectiveThinkingLevel =
+    thinkingLevel ?? (isGemini3 ? 'low' : undefined);
+  const generationConfig: Record<string, unknown> = {
+    responseMimeType: 'application/json',
+    responseSchema: sanitized,
+    ...(temperature !== undefined ? { temperature } : {}),
+    ...(effectiveThinkingLevel !== undefined
+      ? { thinkingConfig: { thinkingLevel: effectiveThinkingLevel } }
+      : {}),
+  };
+  // The SDK's TypeScript model strips unknown keys at the type layer
+  // but serializes the object as-is over the wire — eslint-disable the
+  // cast to `unknown as` so future Gemini-3-only fields can ride along
+  // without bumping the SDK version.
   const generativeModel = client().getGenerativeModel({
     model: modelId,
     systemInstruction,
-    generationConfig: {
-      responseMimeType: 'application/json',
-      responseSchema: sanitized,
-      ...(temperature !== undefined ? { temperature } : {}),
-    },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    generationConfig: generationConfig as any,
   });
   const result = await generativeModel.generateContent(userPrompt);
   const response = result.response;

@@ -35,11 +35,22 @@ export function priceOpenAiText(model: string, inputTokens: number, outputTokens
   return (inputTokens * p.input + outputTokens * p.output) / 1_000_000;
 }
 
-// V25 — Gemini text pricing per 1M tokens. From the Google AI Studio
-// pricing page (May 2026). Gemini 3 Pro launched at the same tier as
-// 2.5 Pro; Flash variants are cheaper. Numbers are USD / 1M tokens.
+// V25 / V26.1 — Gemini text pricing per 1M tokens. Numbers from the
+// Gemini 3 docs (May 2026); all Gemini 3 models are currently in
+// preview, so model IDs end with `-preview`. Pro tiers are $2 in /
+// $12 out (<200K tokens); Flash is $0.50 / $3; Flash-Lite is
+// $0.25 / $1.50.
 const GEMINI_TEXT_PRICING: Record<string, { input: number; output: number }> = {
-  'gemini-3-pro': { input: 1.25, output: 10.0 },
+  // Gemini 3 series (preview).
+  'gemini-3-pro-preview': { input: 2.0, output: 12.0 },
+  'gemini-3.1-pro-preview': { input: 2.0, output: 12.0 },
+  'gemini-3-flash-preview': { input: 0.5, output: 3.0 },
+  'gemini-3.1-flash-lite-preview': { input: 0.25, output: 1.5 },
+  // Aliases for the legacy short names (so a typo or stale env var
+  // still gets a sensible price line; the API itself will 404 on
+  // these, but if it ever resolved we'd want the right number).
+  'gemini-3-pro': { input: 2.0, output: 12.0 },
+  // Pre-V26 generations.
   'gemini-2.5-pro': { input: 1.25, output: 10.0 },
   'gemini-2.5-flash': { input: 0.075, output: 0.3 },
   'gemini-2.0-flash': { input: 0.1, output: 0.4 },
@@ -54,10 +65,10 @@ export function priceGeminiText(
   outputTokens: number,
 ): number {
   // Gemini model ids don't carry version suffixes the way OpenAI's do
-  // (e.g. -2024-08), so a direct lookup works. Fall back to gemini-3-pro
-  // pricing if the model id isn't recognized — conservative for the
-  // admin cost dashboard.
-  const p = GEMINI_TEXT_PRICING[model] ?? GEMINI_TEXT_PRICING['gemini-3-pro']!;
+  // (e.g. -2024-08), so a direct lookup works. Fall back to
+  // gemini-3-pro-preview pricing if the model id isn't recognized —
+  // conservative for the admin cost dashboard.
+  const p = GEMINI_TEXT_PRICING[model] ?? GEMINI_TEXT_PRICING['gemini-3-pro-preview']!;
   return (inputTokens * p.input + outputTokens * p.output) / 1_000_000;
 }
 
