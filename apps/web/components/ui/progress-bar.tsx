@@ -18,7 +18,7 @@ export function ProgressBar({
   return (
     <div className={cn('relative h-1 w-full overflow-hidden rounded-full bg-muted', className)}>
       {active && (
-        <div className={cn('absolute inset-y-0 w-1/2 animate-progress-shimmer', barClasses)} />
+        <div className={cn('absolute inset-y-0 w-1/2 motion-shimmer', barClasses)} />
       )}
     </div>
   );

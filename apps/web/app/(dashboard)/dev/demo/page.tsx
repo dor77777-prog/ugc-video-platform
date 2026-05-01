@@ -124,7 +124,7 @@ export default function DevDemo() {
                   status === 'failed'
                     ? 'bg-destructive'
                     : status === 'completed'
-                      ? 'bg-accent'
+                      ? 'bg-ai'
                       : 'bg-primary'
                 }`}
                 style={{ width: `${progress}%` }}
@@ -148,7 +148,7 @@ export default function DevDemo() {
                   <span
                     className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-mono flex-shrink-0 ${
                       isDone
-                        ? 'bg-accent text-accent-foreground'
+                        ? 'bg-ai text-ai-foreground'
                         : isActive
                           ? 'bg-primary text-primary-foreground animate-pulse'
                           : 'bg-muted text-muted-foreground'
@@ -169,7 +169,7 @@ export default function DevDemo() {
           )}
 
           {finalUrl && (
-            <div className="bg-accent/15 border border-accent/40 rounded-md p-4 space-y-1">
+            <div className="bg-ai/15 border border-ai/40 rounded-md p-4 space-y-1">
               <div className="text-sm font-semibold">URL סופי (mock)</div>
               <div className="text-xs font-mono break-all" dir="ltr">{finalUrl}</div>
             </div>

@@ -2,7 +2,7 @@
 
 // V20 — cinematic hero showcase. Client component so we can run
 // scroll-driven animations + parallax on cursor + animated counters.
-// Floats actual R2 avatar images as glass cards behind the hero
+// Floats actual R2 avatar images as tier-elevated cards behind the hero
 // headline so visitors immediately SEE the product output, not just
 // read about it.
 
@@ -83,7 +83,7 @@ export function HeroShowcase() {
         return (
           <div
             key={card.src}
-            className="absolute rounded-2xl glass-strong overflow-hidden animate-fade-in-up"
+            className="absolute rounded-2xl tier-elevated glow-primary overflow-hidden motion-fade-up"
             style={{
               top: `${card.topPct}%`,
               left: `${card.leftPct}%`,
@@ -197,10 +197,10 @@ export function LiveActivityTicker() {
   }, [messages.length]);
   const m = messages[idx]!;
   return (
-    <div className="flex items-center gap-3 rounded-full glass px-4 py-2 max-w-fit mx-auto text-xs text-muted-foreground shadow-soft">
+    <div className="flex items-center gap-3 rounded-full tier-elevated px-4 py-2 max-w-fit mx-auto text-xs text-muted-foreground shadow-soft">
       <span className="relative flex h-2 w-2">
-        <span className="absolute inline-flex h-full w-full rounded-full bg-accent opacity-75 animate-ping" />
-        <span className="relative inline-flex rounded-full h-2 w-2 bg-accent" />
+        <span className="absolute inline-flex h-full w-full rounded-full bg-ai opacity-75 animate-ping" />
+        <span className="relative inline-flex rounded-full h-2 w-2 bg-ai" />
       </span>
       <span className="font-medium text-foreground">{m.text}</span>
       <span className="opacity-60">·</span>

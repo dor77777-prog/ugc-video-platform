@@ -130,7 +130,7 @@ export const CATEGORIES: ProductCategory[] = [
     labelHebrew: 'תוספי תזונה / ויטמינים',
     labelEnglish: 'Supplement / vitamins',
     guidance:
-      'Kitchen counter morning routine, water glass nearby, breakfast. Sometimes gym/post-workout. Same outfit across morning beats; variation when showing energy throughout the day.',
+      'Kitchen counter morning routine, water tier-elevated nearby, breakfast. Sometimes gym/post-workout. Same outfit across morning beats; variation when showing energy throughout the day.',
   },
   {
     id: 'other',

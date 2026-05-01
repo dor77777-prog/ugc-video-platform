@@ -98,16 +98,13 @@ export function MobileNav({ recentProjects = [] }: { recentProjects?: RecentProj
         >
           {/* Backdrop */}
           <div
-            className="absolute inset-0 bg-black/70 backdrop-blur-sm animate-fade-in-up"
+            className="absolute inset-0 bg-black/70 backdrop-blur-sm motion-fade-up"
             onClick={() => setOpen(false)}
           />
 
           {/* Drawer panel — slides in from the right (RTL "starting" side) */}
           <aside
-            className="absolute top-0 right-0 bottom-0 w-[300px] max-w-[85vw] bg-card/95 backdrop-blur-2xl border-l border-border-subtle shadow-floating overflow-y-auto"
-            style={{
-              animation: 'tachles-fade-in-up 0.25s cubic-bezier(0.22, 0.61, 0.36, 1) backwards',
-            }}
+            className="absolute top-0 right-0 bottom-0 w-[300px] max-w-[85vw] bg-card/95 backdrop-blur-2xl border-l border-border-subtle shadow-floating overflow-y-auto motion-fade-up"
           >
             <div className="sticky top-0 z-10 flex items-center justify-between px-4 py-3 border-b border-border-subtle bg-background/80 backdrop-blur-xl">
               <div className="text-[11px] font-bold uppercase tracking-[0.25em] text-muted-foreground">
@@ -151,7 +148,7 @@ export function MobileNav({ recentProjects = [] }: { recentProjects?: RecentProj
                         <StatusIcon
                           className={cn(
                             'h-4 w-4 flex-shrink-0',
-                            p.isCompleted ? 'text-accent' : 'text-primary',
+                            p.isCompleted ? 'text-ai' : 'text-primary',
                           )}
                         />
                         <span className="truncate flex-1">{p.name}</span>
@@ -181,7 +178,7 @@ export function MobileNav({ recentProjects = [] }: { recentProjects?: RecentProj
                 <div className="text-[11px] opacity-90 leading-snug">
                   יותר קרדיטים, יותר lipsync, יצוא MP4 מלא.
                 </div>
-                <div className="w-full mt-2 bg-accent text-accent-foreground text-xs font-bold py-2 rounded-lg flex items-center justify-center gap-1.5">
+                <div className="w-full mt-2 bg-ai text-ai-foreground text-xs font-bold py-2 rounded-lg flex items-center justify-center gap-1.5">
                   ראה תוכניות
                   <ArrowLeft className="h-3 w-3" />
                 </div>

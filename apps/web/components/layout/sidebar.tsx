@@ -89,12 +89,12 @@ export function Sidebar({ recentProjects = [] }: { recentProjects?: RecentProjec
                   <StatusIcon
                     className={cn(
                       'h-3.5 w-3.5 flex-shrink-0',
-                      p.isCompleted ? 'text-accent' : 'text-primary',
+                      p.isCompleted ? 'text-ai' : 'text-primary',
                     )}
                   />
                   <span className="truncate flex-1">{p.name}</span>
                   {isActiveProject && (
-                    <span className="h-1.5 w-1.5 rounded-full bg-primary animate-soft-pulse flex-shrink-0" />
+                    <span className="h-1.5 w-1.5 rounded-full bg-primary motion-pulse-ai flex-shrink-0" />
                   )}
                 </Link>
               );
@@ -123,7 +123,7 @@ export function Sidebar({ recentProjects = [] }: { recentProjects?: RecentProjec
           <div className="text-[11px] opacity-90 leading-snug">
             יותר קרדיטים, יותר lipsync, יצוא MP4 מלא.
           </div>
-          <div className="w-full mt-2 bg-accent text-accent-foreground text-xs font-bold py-1.5 rounded-lg flex items-center justify-center gap-1.5">
+          <div className="w-full mt-2 bg-ai text-ai-foreground text-xs font-bold py-1.5 rounded-lg flex items-center justify-center gap-1.5">
             ראה תוכניות
             <ArrowLeft className="h-3 w-3" />
           </div>

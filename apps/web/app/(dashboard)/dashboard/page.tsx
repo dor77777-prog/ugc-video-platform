@@ -54,9 +54,9 @@ export default async function DashboardHome() {
       <DashboardAurora />
       <div className="relative px-6 md:px-10 py-8 md:py-10 space-y-12 max-w-7xl mx-auto">
         {/* ───────────── Header — landing-grade typography ───────────── */}
-        <div className="space-y-3 animate-fade-in-up">
+        <div className="space-y-3 motion-fade-up">
           <div className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-[11px] font-semibold text-primary backdrop-blur-md">
-            <span className="h-1.5 w-1.5 rounded-full bg-accent animate-soft-pulse" />
+            <span className="h-1.5 w-1.5 rounded-full bg-ai motion-pulse-ai" />
             לוח בקרה · Studio
           </div>
           <h1 className="text-4xl md:text-6xl lg:text-7xl font-black tracking-tight leading-[0.95]">
@@ -67,13 +67,13 @@ export default async function DashboardHome() {
 
         {/* ───────────── Live activity ticker (returning users only) ───────────── */}
         {isReturningUser && (
-          <div className="animate-fade-in-up [animation-delay:80ms]">
+          <div className="motion-fade-up [animation-delay:80ms]">
             <LiveActivityTicker />
           </div>
         )}
 
         {/* ───────────── Bento — hero CTA + stats ───────────── */}
-        <div className="bento animate-fade-in-up [animation-delay:160ms]">
+        <div className="bento motion-fade-up [animation-delay:160ms]">
           {!isReturningUser ? (
             <FirstVideoHero />
           ) : (
@@ -151,7 +151,7 @@ async function CompletedVideosShowcase({ userId }: { userId: string }) {
   if (completed.length === 0) return null;
 
   return (
-    <div className="space-y-5 animate-fade-in-up">
+    <div className="space-y-5 motion-fade-up">
       <div className="flex items-end justify-between flex-wrap gap-3">
         <div className="space-y-2">
           <SectionKicker
@@ -180,7 +180,7 @@ async function CompletedVideosShowcase({ userId }: { userId: string }) {
             <Link
               key={job.id}
               href={`/library#job-${job.id}`}
-              className="group relative aspect-[9/16] rounded-2xl overflow-hidden glass card-hover animate-fade-in-up cursor-pointer"
+              className="group relative aspect-[9/16] rounded-2xl overflow-hidden tier-elevated card-hover motion-fade-up cursor-pointer"
               style={{ animationDelay: `${i * 50}ms` }}
             >
               {job.finalVideoUrl ? (
@@ -240,7 +240,7 @@ async function CompletedVideosShowcase({ userId }: { userId: string }) {
 // Encourages them to create their first ad.
 function FirstVideoHero() {
   return (
-    <Card className="bento-2x1 md:bento-2x2 glass-strong gradient-border relative overflow-hidden card-hover">
+    <Card className="bento-2x1 md:bento-2x2 tier-elevated glow-primary gradient-border relative overflow-hidden card-hover">
       <div
         className="absolute inset-0 -z-10 opacity-60"
         style={{
@@ -283,7 +283,7 @@ function FirstVideoHero() {
 // to a returning user.
 function ReturningUserHero({ completedCount }: { completedCount: number }) {
   return (
-    <Card className="bento-2x1 md:bento-2x2 glass-strong gradient-border relative overflow-hidden card-hover">
+    <Card className="bento-2x1 md:bento-2x2 tier-elevated glow-primary gradient-border relative overflow-hidden card-hover">
       <div
         className="absolute inset-0 -z-10 opacity-60"
         style={{
@@ -298,7 +298,7 @@ function ReturningUserHero({ completedCount }: { completedCount: number }) {
         <div className="space-y-4">
           <Badge
             variant="outline"
-            className="border-accent/40 bg-accent/10 text-accent gap-1.5 backdrop-blur-md"
+            className="border-ai/40 bg-ai/10 text-ai gap-1.5 backdrop-blur-md"
           >
             <TrendingUp className="h-3 w-3" />
             סטודיו פעיל · {completedCount} סרטונים
@@ -363,7 +363,7 @@ function StatTile({
     <Card
       className={
         accent
-          ? 'glass card-hover border-accent/40 bg-accent/10'
+          ? 'glass card-hover border-ai/40 bg-ai/10'
           : 'glass card-hover'
       }
     >
@@ -371,7 +371,7 @@ function StatTile({
         <div
           className={
             accent
-              ? 'h-10 w-10 rounded-xl bg-accent/25 text-accent-foreground flex items-center justify-center'
+              ? 'h-10 w-10 rounded-xl bg-ai/25 text-ai-foreground flex items-center justify-center'
               : 'h-10 w-10 rounded-xl bg-gradient-to-br from-primary/30 to-accent/15 text-primary flex items-center justify-center'
           }
         >
@@ -440,7 +440,7 @@ async function RecentProjectsSection({ userId }: { userId: string }) {
       {/* V23 — featured wizard progress strip for the most-recent
           in-progress project. Acts as a workspace pipeline view. */}
       {featuredInProgress && featuredStep && (
-        <div className="space-y-5 animate-fade-in-up">
+        <div className="space-y-5 motion-fade-up">
           <div className="flex items-end justify-between flex-wrap gap-3">
             <div className="space-y-2">
               <SectionKicker variant="loud" text="הפרויקט הפעיל" english="Active Project" icon={Activity} />
@@ -507,7 +507,7 @@ async function RecentProjectsSection({ userId }: { userId: string }) {
               return (
                 <Card
                   key={p.id}
-                  className="glass card-hover tilt-hover animate-fade-in-up"
+                  className="tier-elevated card-hover tilt-hover motion-fade-up"
                   style={{ animationDelay: `${i * 50}ms` }}
                 >
                   <CardContent className="p-5 flex items-center gap-4">
@@ -563,7 +563,7 @@ async function RecentProjectsSection({ userId }: { userId: string }) {
             {finished.map((p, i) => (
               <Card
                 key={p.id}
-                className="glass card-hover tilt-hover animate-fade-in-up"
+                className="tier-elevated card-hover tilt-hover motion-fade-up"
                 style={{ animationDelay: `${i * 50}ms` }}
               >
                 <CardContent className="p-5 flex items-center gap-4">
@@ -579,7 +579,7 @@ async function RecentProjectsSection({ userId }: { userId: string }) {
                   </div>
                   <Badge
                     variant="outline"
-                    className="border-accent/40 bg-accent/10 text-accent gap-1"
+                    className="border-ai/40 bg-ai/10 text-ai gap-1"
                   >
                     <CheckCircle2 className="h-3 w-3" />
                     הושלם
@@ -605,7 +605,7 @@ async function RecentProjectsSection({ userId }: { userId: string }) {
 
       {/* Empty state */}
       {projectCount === 0 && (
-        <Card className="glass-liquid border-dashed border-2 border-primary/30 animate-fade-in-up">
+        <Card className="tier-atmosphere border-dashed border-2 border-primary/30 motion-fade-up">
           <CardContent className="p-12 text-center space-y-5">
             <div className="mx-auto h-16 w-16 rounded-2xl bg-gradient-to-br from-primary/30 to-accent/30 flex items-center justify-center shadow-glow">
               <Sparkles className="h-8 w-8 text-primary" />
@@ -638,7 +638,7 @@ function RecentProjectsSkeleton() {
       <div className="h-3 w-40 bg-muted/40 rounded animate-pulse" />
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {Array.from({ length: 4 }).map((_, i) => (
-          <Card key={i} className="glass opacity-60">
+          <Card key={i} className="tier-elevated opacity-60">
             <CardContent className="p-5 h-[88px] animate-pulse bg-muted/20" />
           </Card>
         ))}

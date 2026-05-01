@@ -175,7 +175,7 @@ export default function NewProjectWizard() {
             <div className="rounded-md border border-primary/30 bg-primary/[0.04] p-3 space-y-2">
               <div className="flex items-center justify-between text-sm">
                 <div className="flex items-center gap-2">
-                  <span className="animate-shimmer-overlay">🔎</span>
+                  <span className="motion-shimmer">🔎</span>
                   <span className="font-medium">מנתח את הדף — מחלץ מוצר, מחיר, תמונות…</span>
                 </div>
                 <span className="text-xs text-muted-foreground">
@@ -429,7 +429,7 @@ function ScrapeResultBanner({ result }: { result: ScrapeResponse }) {
       className={cn(
         'rounded-md border p-3 text-sm space-y-1',
         result.isProduct
-          ? 'border-accent/40 bg-accent/15'
+          ? 'border-ai/40 bg-ai/15'
           : 'border-yellow-500/40 bg-yellow-500/10',
       )}
     >

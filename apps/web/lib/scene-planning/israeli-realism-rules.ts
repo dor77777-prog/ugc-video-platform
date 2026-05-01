@@ -425,7 +425,7 @@ export const CUES: Record<string, IsraeliCue> = {
     id: 'food.cafe_hafuch_glass',
     category: 'food',
     positive:
-      'Cafe hafuch (קפה הפוך) in a glass mug at a sit-down Israeli cafe',
+      'Cafe hafuch (קפה הפוך) in a tier-elevated mug at a sit-down Israeli cafe',
     negative:
       'NOT a Starbucks paper cup, NOT a US drip-coffee mug labelled "World\'s Best Dad"',
   },
@@ -723,7 +723,7 @@ export const SCENE_PRESETS: Record<string, IsraeliScenePreset> = {
       'climate.warm_daylight_indoor',
     ],
     description:
-      'Israeli living room: fabric couch, low coffee table, TV on the wall, glass door onto the mirpeset visible at the edge of the frame',
+      'Israeli living room: fabric couch, low coffee table, TV on the wall, tier-elevated door onto the mirpeset visible at the edge of the frame',
   },
   tel_aviv_street_evening: {
     id: 'tel_aviv_street_evening',

@@ -128,13 +128,9 @@ const config: Config = {
           DEFAULT:    'hsl(var(--muted))',
           foreground: 'hsl(var(--muted-foreground))',
         },
-        accent: {
-          // @deprecated — points to --ai. Pre-commit gate blocks new
-          // bg-accent usage in V27+ code.
-          DEFAULT:    'hsl(var(--accent))',
-          soft:       'hsl(var(--accent-soft))',
-          foreground: 'hsl(var(--accent-foreground))',
-        },
+        // V27 Stage 5 — `accent` namespace removed; bg-accent / text-accent
+        // swept to bg-ai / text-ai. Re-introduce only if a non-AI semantic
+        // accent is needed in the future.
       },
       borderRadius: {
         xs:    'var(--radius-xs)',

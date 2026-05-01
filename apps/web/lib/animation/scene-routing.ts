@@ -31,7 +31,7 @@ export interface SceneRouting {
 
 // Words that indicate the scene is product-focused / hands-on, even if
 // "selfie" appears in the camera direction. Common LLM pattern: "selfie
-// POV of hand pouring HydroPure into a glass on the kitchen counter" —
+// POV of hand pouring HydroPure into a tier-elevated on the kitchen counter" —
 // this is a PRODUCT DEMO with selfie framing, NOT a talking head. Apply
 // these as a HARD VETO before routing to selfie_talking.
 const PRODUCT_DEMO_VETO_PATTERNS = [

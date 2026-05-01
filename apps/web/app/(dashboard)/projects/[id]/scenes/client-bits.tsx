@@ -203,7 +203,7 @@ export function GenerateAllButton({
   const buttonLabel = pending ? 'מייצר…' : `✨ צור ${queue.length} סצנות`;
 
   return (
-    <Card className="glass border-primary/40 bg-primary/[0.04] shadow-glow card-hover animate-fade-in-up">
+    <Card className="tier-elevated border-primary/40 bg-primary/[0.04] shadow-glow card-hover motion-fade-up">
       <CardContent className="p-5 flex flex-col md:flex-row items-start md:items-center gap-4 justify-between">
         <div className="space-y-2 flex-1">
           <div className="text-base font-semibold">{headline}</div>
@@ -601,7 +601,7 @@ export function SceneCard(props: SceneCardProps) {
             // First-time generation: full overlay with progress (no image
             // exists yet to keep visible).
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-center p-4 bg-primary/5 backdrop-blur-[1px]">
-              <div className="text-4xl animate-shimmer-overlay">✨</div>
+              <div className="text-4xl motion-shimmer">✨</div>
               <div className="text-sm font-semibold">ה-AI יוצר תמונה…</div>
               <div className="w-3/4">
                 <ProgressBar variant="accent" />

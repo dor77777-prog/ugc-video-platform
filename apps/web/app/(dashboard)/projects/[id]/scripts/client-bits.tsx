@@ -139,7 +139,7 @@ export function GenerateButton({
       {pending && phase && !timedOutWarning && (
         <div className="rounded-md border border-primary/30 bg-primary/[0.04] p-4 max-w-md mx-auto space-y-3">
           <div className="flex items-center gap-2 text-sm font-medium">
-            <span className="animate-shimmer-overlay text-lg">{phase.emoji}</span>
+            <span className="motion-shimmer text-lg">{phase.emoji}</span>
             <span>{phase.label}</span>
           </div>
           <ProgressBar />
@@ -287,7 +287,7 @@ export function ScriptCard(props: ScriptCardProps) {
         props.isSelected
           ? 'border-primary border-2 shadow-md ring-4 ring-primary/15'
           : 'hover:border-primary/40',
-        editing && 'ring-4 ring-accent/30',
+        editing && 'ring-4 ring-ai/30',
       )}
     >
       <CardContent className="p-5 space-y-4">

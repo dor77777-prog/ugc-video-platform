@@ -114,7 +114,7 @@ export interface BuildImageBriefInput {
    *  doesn't get a noisy "same person across all frames" instruction. */
   totalScenesInScript?: number;
   /** V14 PR2 — opt-in. When the scene has a window or a reflective surface
-   *  the script is committed to (kettle, glass door, computer screen),
+   *  the script is committed to (kettle, tier-elevated door, computer screen),
    *  fires the safe-reflection snippet so the model doesn't try to render
    *  a recognizable second scene. Off by default. */
   hasReflectiveSurfaceInFrame?: boolean;

@@ -42,7 +42,7 @@ export default async function AvatarPage({
 
         <Stepper current={2} done={[1]} projectId={projectId} />
 
-        <Card className="glass">
+        <Card className="tier-elevated">
           <CardContent className="p-6">
             <AvatarPicker
               projectId={projectId}

@@ -1,6 +1,6 @@
 // V21 — custom SVG illustrations for empty states + section dividers.
 // Hand-tuned geometric scenes that match the brand (primary/accent
-// gradient, glass / frame motifs from the logo). Zero external deps,
+// gradient, tier-elevated / frame motifs from the logo). Zero external deps,
 // pure inline SVG. Each picks up `currentColor` for the foreground
 // strokes so they adapt to muted-foreground / primary contexts.
 

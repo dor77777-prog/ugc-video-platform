@@ -124,7 +124,7 @@ export function CommandPalette() {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="fixed bottom-4 right-4 z-40 flex items-center gap-2 px-3 py-2 rounded-lg glass border-border-subtle text-xs text-muted-foreground hover:text-foreground hover:border-primary/30 transition-colors shadow-lg"
+        className="fixed bottom-4 right-4 z-40 flex items-center gap-2 px-3 py-2 rounded-lg tier-elevated border-border-subtle text-xs text-muted-foreground hover:text-foreground hover:border-primary/30 transition-colors shadow-lg"
         aria-label="פתח חיפוש מהיר"
       >
         <Search className="h-3.5 w-3.5" />
@@ -136,12 +136,12 @@ export function CommandPalette() {
 
       {open && (
         <div
-          className="fixed inset-0 z-50 flex items-start justify-center pt-[10vh] bg-black/40 backdrop-blur-sm animate-fade-in-up"
+          className="fixed inset-0 z-50 flex items-start justify-center pt-[10vh] bg-black/40 backdrop-blur-sm motion-fade-up"
           onClick={() => setOpen(false)}
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-xl mx-4 rounded-2xl glass shadow-2xl overflow-hidden border border-primary/20"
+            className="w-full max-w-xl mx-4 rounded-2xl tier-elevated shadow-2xl overflow-hidden border border-primary/20"
           >
             <Command label="Command Menu" className="bg-transparent">
               <div className="flex items-center gap-2 px-4 py-3 border-b border-border-subtle">

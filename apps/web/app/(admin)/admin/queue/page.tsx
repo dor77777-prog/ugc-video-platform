@@ -48,7 +48,7 @@ export default async function AdminQueuePage() {
           </form>
           {isPaused ? (
             <form action={resumeQueueAction}>
-              <button className="text-xs px-3 py-1.5 rounded-md bg-accent text-accent-foreground font-semibold">
+              <button className="text-xs px-3 py-1.5 rounded-md bg-ai text-ai-foreground font-semibold">
                 המשך עיבוד
               </button>
             </form>
@@ -127,7 +127,7 @@ function StatCard({
         danger
           ? 'border-destructive/40 bg-destructive/5'
           : accent
-            ? 'border-accent/60 bg-accent/15'
+            ? 'border-ai/60 bg-ai/15'
             : undefined
       }
     >

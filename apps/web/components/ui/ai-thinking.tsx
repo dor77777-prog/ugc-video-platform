@@ -92,7 +92,7 @@ export function AIThinking({ phases, active, className, compact }: AIThinkingPro
   if (compact) {
     return (
       <div className={cn('flex items-center gap-2 text-xs', className)}>
-        <Icon className="h-3.5 w-3.5 text-primary animate-soft-pulse" />
+        <Icon className="h-3.5 w-3.5 text-primary motion-pulse-ai" />
         <span className="text-foreground/80">{phase.label}</span>
         <span className="text-muted-foreground font-mono">{elapsedSec}s</span>
       </div>
@@ -102,12 +102,12 @@ export function AIThinking({ phases, active, className, compact }: AIThinkingPro
   return (
     <div
       className={cn(
-        'rounded-2xl glass border-primary/30 p-4 flex items-center gap-3',
+        'rounded-2xl tier-elevated border-primary/30 p-4 flex items-center gap-3',
         className,
       )}
     >
       <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center">
-        <Icon className="h-5 w-5 text-primary animate-soft-pulse" />
+        <Icon className="h-5 w-5 text-primary motion-pulse-ai" />
       </div>
       <div className="flex-1 min-w-0">
         <div className="text-sm font-semibold">{phase.label}</div>

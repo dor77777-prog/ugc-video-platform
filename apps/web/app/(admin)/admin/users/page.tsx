@@ -132,7 +132,7 @@ export default async function AdminUsersPage() {
                           <input type="hidden" name="amount" value="10" />
                           <button
                             type="submit"
-                            className="text-xs px-2 py-1 rounded bg-accent/30 hover:bg-accent/60 transition-colors"
+                            className="text-xs px-2 py-1 rounded bg-ai/30 hover:bg-ai/60 transition-colors"
                             title="הענקה (+10)"
                           >
                             +10

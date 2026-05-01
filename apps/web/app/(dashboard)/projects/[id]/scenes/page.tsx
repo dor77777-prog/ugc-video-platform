@@ -73,7 +73,7 @@ export default async function ScenesPage({
           meta={
             <div className="flex items-center gap-3 flex-wrap">
               {avatar && (
-                <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl glass">
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl tier-elevated">
                   <Image
                     src={avatar.imageUrl}
                     alt={avatar.name}
@@ -91,7 +91,7 @@ export default async function ScenesPage({
                   </div>
                 </div>
               )}
-              <div className="px-3 py-1.5 rounded-xl glass max-w-[280px]">
+              <div className="px-3 py-1.5 rounded-xl tier-elevated max-w-[280px]">
                 <div className="text-muted-foreground text-[10px] uppercase tracking-widest">
                   תסריט נבחר
                 </div>

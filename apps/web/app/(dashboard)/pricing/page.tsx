@@ -75,7 +75,7 @@ export default async function PricingPage() {
                 isPopular
                   ? 'border-primary border-2 shadow-lg relative'
                   : isCurrent
-                    ? 'border-accent border-2'
+                    ? 'border-ai border-2'
                     : 'border-border'
               }
             >
@@ -132,7 +132,7 @@ export default async function PricingPage() {
                   {isCurrent ? (
                     <button
                       disabled
-                      className="w-full h-11 rounded-md border border-accent bg-accent/10 text-accent font-semibold text-sm"
+                      className="w-full h-11 rounded-md border border-ai bg-ai/10 text-ai font-semibold text-sm"
                     >
                       ✓ התוכנית הנוכחית שלך
                     </button>

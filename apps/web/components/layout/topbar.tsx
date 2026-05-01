@@ -28,7 +28,7 @@ export function Topbar({ email, creditsBalance, role, mobileNav }: TopbarProps) 
           {isAdmin && (
             <Link
               href="/admin"
-              className="hidden sm:flex text-[10px] items-center gap-1 px-2 h-6 rounded-md bg-accent/15 border border-accent/30 text-accent font-bold tracking-widest uppercase hover:bg-accent/25 transition-colors"
+              className="hidden sm:flex text-[10px] items-center gap-1 px-2 h-6 rounded-md bg-ai/15 border border-ai/30 text-ai font-bold tracking-widest uppercase hover:bg-ai/25 transition-colors"
             >
               <ShieldCheck className="h-3 w-3" />
               Admin
@@ -38,8 +38,8 @@ export function Topbar({ email, creditsBalance, role, mobileNav }: TopbarProps) 
 
         {/* Left (in RTL): credits, plan, user, mobile menu */}
         <div className="flex items-center gap-2 md:gap-3">
-          <div className="hidden sm:flex items-center gap-2 px-3 h-9 rounded-lg bg-accent/15 border border-accent/30 text-sm font-medium">
-            <Coins className="h-3.5 w-3.5 text-accent" />
+          <div className="hidden sm:flex items-center gap-2 px-3 h-9 rounded-lg bg-ai/15 border border-ai/30 text-sm font-medium">
+            <Coins className="h-3.5 w-3.5 text-ai" />
             <span className="font-mono font-bold">{creditsBalance}</span>
             <span className="text-muted-foreground text-xs">קרדיטים</span>
           </div>

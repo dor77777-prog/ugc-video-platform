@@ -64,13 +64,11 @@
     --ai-soft:           78 35% 14%;
     --ai-foreground:     228 6% 4%;
 
-    /* Migration alias — old --accent points here for back-compat.
-     * NEW CODE WRITTEN FROM V27 ONWARD MUST NOT REFERENCE bg-accent /
-     * text-accent. Use bg-ai / text-ai for AI-active surfaces.
-     * Pre-commit gate blocks new bg-accent usage. */
-    --accent:            78 82% 58%;
-    --accent-soft:       78 35% 14%;
-    --accent-foreground: 228 6% 4%;
+    /* --accent / --accent-soft / --accent-foreground swept in Stage 5.
+     * V27 uses --ai for the lime semantic. Tailwind's `accent.*` color
+     * namespace in tailwind.config.ts also points to --ai for any
+     * legacy build artifact that referenced `bg-accent` — but every
+     * source file has been swept to bg-ai/text-ai. */
 
     /* ─── Semantic state ─── */
     --success:               150 60% 50%;
@@ -680,21 +678,18 @@
  * ============================================================ */
 
 /* ============================================================
- * LEGACY UTILITIES — V19.x → V26.x.
+ * V27 — Ambient backgrounds + utility classes still in active use.
  *
- * TODO(wave1-wrap, ~2 weeks from V27 ship):
- *   • Remove .glass / .glass-strong / .glass-liquid utilities entirely
- *   • Remove the entire `tachles-*` keyframe namespace (NOT just aliases)
- *   • Remove .animate-fade-in-up / .animate-progress-shimmer /
- *     .animate-shimmer-overlay / .animate-soft-pulse /
- *     .animate-aurora-drift utility-class aliases. Code must reference
- *     .motion-* exclusively.
- *   • Remove --accent / --accent-soft / --accent-foreground aliases
- *     (after sweeping bg-accent / text-accent → bg-ai / text-ai).
- * Owner: design-language-v27 wave-1 close.
+ * The .bg-mesh / .bg-mesh-soft / .bg-noise / .bg-spotlight ambient
+ * utilities are kept for landing + wizard wash backgrounds. Wave 2
+ * may consolidate these into a single .canvas-ambient utility but
+ * that's not Wave 1 work.
+ *
+ * Legacy .glass / .glass-strong / .glass-liquid have been swept and
+ * removed (Stage 5). Pre-commit gate (scripts/check-v27-legacy.sh
+ * --strict) blocks reintroduction.
  * ============================================================ */
 
-/* @deprecated V19 cinematic mesh — landing only */
 .bg-mesh {
   background-color: hsl(var(--background));
   background-image:
@@ -703,7 +698,6 @@
     radial-gradient(at 50% 100%, hsl(var(--gradient-third) / 0.14) 0px, transparent 60%);
 }
 
-/* @deprecated V19 — tamer mesh */
 .bg-mesh-soft {
   background-color: hsl(var(--background));
   background-image:
@@ -711,7 +705,6 @@
     radial-gradient(at 88% 12%, hsl(var(--gradient-to) / 0.10) 0px, transparent 50%);
 }
 
-/* @deprecated V19 conic spotlight */
 .bg-spotlight {
   background-image: conic-gradient(
     from 220deg at 50% 0%,
@@ -721,7 +714,6 @@
   );
 }
 
-/* @deprecated V19 SVG noise overlay */
 .bg-noise::before {
   content: '';
   position: absolute;
@@ -731,48 +723,6 @@
   mix-blend-mode: overlay;
   z-index: 0;
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-}
-
-/* @deprecated V19.1 — use .tier-elevated instead */
-.glass {
-  background: hsl(var(--card) / 0.55);
-  backdrop-filter: blur(20px) saturate(140%);
-  -webkit-backdrop-filter: blur(20px) saturate(140%);
-  border: 1px solid hsl(var(--border-subtle));
-  box-shadow:
-    inset 0 1px 0 hsl(0 0% 100% / 0.04),
-    0 8px 32px -16px hsl(0 0% 0% / 0.5);
-}
-
-/* @deprecated V19.1 — use .tier-elevated + .glow-primary */
-.glass-strong {
-  background: hsl(var(--card) / 0.75);
-  backdrop-filter: blur(28px) saturate(160%);
-  -webkit-backdrop-filter: blur(28px) saturate(160%);
-  border: 1px solid hsl(var(--border));
-  box-shadow:
-    inset 0 1px 0 hsl(0 0% 100% / 0.06),
-    0 12px 48px -16px hsl(var(--primary) / 0.25);
-}
-
-/* @deprecated V19.1 — use .tier-atmosphere (or .tier-liquid for landing hero) */
-.glass-liquid {
-  background:
-    linear-gradient(
-      135deg,
-      hsl(0 0% 100% / 0.06) 0%,
-      hsl(0 0% 100% / 0.02) 50%,
-      hsl(var(--primary) / 0.04) 100%
-    ),
-    hsl(var(--card) / 0.6);
-  backdrop-filter: blur(40px) saturate(180%);
-  -webkit-backdrop-filter: blur(40px) saturate(180%);
-  border: 1px solid hsl(var(--border));
-  box-shadow:
-    inset 0 1px 0 hsl(0 0% 100% / 0.08),
-    inset 1px 0 0 hsl(0 0% 100% / 0.04),
-    0 1px 0 hsl(0 0% 0% / 0.4),
-    0 24px 60px -20px hsl(var(--primary) / 0.3);
 }
 
 /* Soft elevation shadows (kept; cloud-platform aesthetic) */
@@ -833,15 +783,14 @@
   animation: motion-shimmer-text 6s ease-in-out infinite;
 }
 
-/* @deprecated — use .glow-primary */
+/* .shadow-glow / .shadow-glow-accent kept as aliases — Wave 2 will
+ * sweep call sites and remove. */
 .shadow-glow {
   box-shadow:
     0 0 0 1px hsl(var(--primary) / 0.15),
     0 0 24px -4px hsl(var(--primary) / 0.5),
     0 8px 32px -8px hsl(var(--primary) / 0.4);
 }
-
-/* @deprecated — use .glow-ai */
 .shadow-glow-accent {
   box-shadow:
     0 0 0 1px hsl(var(--ai) / 0.15),
@@ -880,7 +829,7 @@
 .bento-4x1 { grid-column: span 4; }
 .bento-1x2 { grid-row: span 2; }
 
-/* @deprecated — use .motion-tilt-hover */
+/* .tilt-hover kept as alias — Wave 2 will sweep call sites. */
 .tilt-hover {
   transform-style: preserve-3d;
   transition: transform 400ms cubic-bezier(0.22, 0.61, 0.36, 1);
@@ -913,44 +862,7 @@
   pointer-events: none;
 }
 
-/* ─── Legacy keyframes — back-compat aliases.
- * @deprecated wave1-wrap. New code uses .motion-* exclusively. */
-@keyframes tachles-progress-shimmer {
-  0% { transform: translateX(-100%); }
-  100% { transform: translateX(200%); }
-}
-.animate-progress-shimmer {
-  animation: tachles-progress-shimmer 1.4s infinite cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-@keyframes tachles-shimmer-overlay {
-  0%, 100% { opacity: 0.4; }
-  50%      { opacity: 0.85; }
-}
-.animate-shimmer-overlay {
-  animation: tachles-shimmer-overlay 1.6s infinite ease-in-out;
-}
-
-@keyframes tachles-soft-pulse {
-  0%, 100% { opacity: 0.5; transform: scale(1); }
-  50%      { opacity: 1; transform: scale(1.12); }
-}
-.animate-soft-pulse {
-  animation: tachles-soft-pulse 2.2s infinite ease-in-out;
-}
-
-@keyframes tachles-fade-in-up {
-  0%   { opacity: 0; transform: translateY(12px); }
-  100% { opacity: 1; transform: translateY(0); }
-}
-.animate-fade-in-up {
-  animation: tachles-fade-in-up 0.5s cubic-bezier(0.22, 0.61, 0.36, 1) backwards;
-}
-
-@keyframes tachles-aurora-drift {
-  0%, 100% { transform: translate(0, 0) rotate(0deg); }
-  50%      { transform: translate(2%, -3%) rotate(8deg); }
-}
-.animate-aurora-drift {
-  animation: tachles-aurora-drift 22s ease-in-out infinite;
-}
+/* V27 Stage 5 sweep — `tachles-*` keyframe namespace deleted entirely.
+ * The `tachles-` prefix was brand, not system. V27 owns the system
+ * namespace via `motion-*`. Brand keyframes (if introduced again) get
+ * a different prefix and live somewhere else. */

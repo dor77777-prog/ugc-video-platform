@@ -100,7 +100,7 @@ function Kpi({
   accent?: boolean;
 }) {
   return (
-    <Card className={accent ? 'bg-accent/15 border-accent/40' : undefined}>
+    <Card className={accent ? 'bg-ai/15 border-ai/40' : undefined}>
       <CardContent className="p-5">
         <div className="text-xs text-muted-foreground uppercase tracking-wider">{label}</div>
         <div className="text-3xl font-bold font-mono mt-1">{value}</div>

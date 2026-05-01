@@ -210,7 +210,7 @@ export function FeaturePicker({
                           'text-[10px] px-1.5 py-0.5 rounded font-mono',
                           f.source === 'llm'
                             ? 'bg-secondary text-secondary-foreground'
-                            : 'bg-accent/20 text-accent',
+                            : 'bg-ai/20 text-ai',
                         )}
                       >
                         {f.source === 'llm' ? 'הוצע ע״י AI' : 'משלך'}

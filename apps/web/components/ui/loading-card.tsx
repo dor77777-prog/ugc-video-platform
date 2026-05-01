@@ -20,7 +20,7 @@ export function LoadingCard({
   return (
     <Card className="border-primary/30 bg-primary/[0.03]">
       <CardContent className="p-6 space-y-4 text-center">
-        <div className="text-4xl animate-shimmer-overlay">{emoji}</div>
+        <div className="text-4xl motion-shimmer">{emoji}</div>
         <div className="space-y-1">
           <div className="text-base font-semibold">{title}</div>
           {subtitle && <div className="text-sm text-muted-foreground">{subtitle}</div>}

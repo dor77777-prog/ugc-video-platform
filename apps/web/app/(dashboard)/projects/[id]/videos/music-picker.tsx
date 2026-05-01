@@ -242,7 +242,7 @@ export function MusicPicker({
                 className={cn(
                   'rounded-lg border-2 px-3 py-2 transition flex flex-col gap-1',
                   isSelected
-                    ? 'border-accent bg-accent/5'
+                    ? 'border-ai bg-ai/5'
                     : 'border-border hover:border-foreground/30',
                 )}
               >
@@ -254,7 +254,7 @@ export function MusicPicker({
                     className={cn(
                       'shrink-0 size-7 rounded-full border bg-background flex items-center justify-center text-sm',
                       isPlaying
-                        ? 'border-accent text-accent'
+                        ? 'border-ai text-ai'
                         : 'border-border hover:border-foreground/50',
                     )}
                   >
@@ -270,7 +270,7 @@ export function MusicPicker({
                     {track.title}
                   </button>
                   {isSelected && (
-                    <span className="shrink-0 text-[10px] font-semibold text-accent">
+                    <span className="shrink-0 text-[10px] font-semibold text-ai">
                       ✓
                     </span>
                   )}

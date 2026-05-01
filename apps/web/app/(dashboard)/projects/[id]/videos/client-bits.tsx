@@ -202,7 +202,7 @@ export function GenerateAllClipsButton({
   };
 
   return (
-    <Card className="border-accent/40 bg-accent/[0.04]">
+    <Card className="border-ai/40 bg-ai/[0.04]">
       <CardContent className="p-4 flex items-center gap-3 justify-between">
         <div className="flex-1 space-y-0.5">
           <div className="text-sm font-semibold">
@@ -641,7 +641,7 @@ export function SceneClipCard(props: SceneClipCardProps) {
             )}
             {showClipWorking && (
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-center p-4 bg-black/40 backdrop-blur-[2px]">
-                <div className="text-4xl animate-shimmer-overlay">🎬</div>
+                <div className="text-4xl motion-shimmer">🎬</div>
                 <div className="text-sm font-semibold text-white">מנפיש את הסצנה…</div>
                 <div className="w-3/4">
                   <ProgressBar variant="accent" />
@@ -680,7 +680,7 @@ export function SceneClipCard(props: SceneClipCardProps) {
             </div>
           ) : showVoiceWorking ? (
             <div className="rounded-md border border-primary/30 bg-primary/[0.04] p-3 flex items-center gap-3">
-              <span className="text-xl animate-shimmer-overlay">🎙️</span>
+              <span className="text-xl motion-shimmer">🎙️</span>
               <div className="flex-1">
                 <div className="text-xs font-semibold">יוצר voice-over…</div>
                 <div className="text-[11px] text-muted-foreground flex items-center gap-1.5 mt-0.5">
@@ -1086,9 +1086,9 @@ export function CaptionPresetPicker({
               type="button"
               onClick={() => onPick(preset.id)}
               className={cn(
-                'group relative rounded-xl border-2 overflow-hidden text-right transition focus:outline-none focus:ring-2 focus:ring-accent bg-card',
+                'group relative rounded-xl border-2 overflow-hidden text-right transition focus:outline-none focus:ring-2 focus:ring-ai bg-card',
                 isSelected
-                  ? 'border-accent ring-2 ring-accent/40'
+                  ? 'border-ai ring-2 ring-ai/40'
                   : 'border-border hover:border-foreground/40',
               )}
               title={preset.descriptionHe}

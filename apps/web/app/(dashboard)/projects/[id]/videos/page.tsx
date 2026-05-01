@@ -98,7 +98,7 @@ export default async function VideosPage({
             backLabel="חזרה לתסריטים"
           />
           <Stepper current={7} done={[1, 2, 3, 4, 5, 6]} projectId={projectId} />
-          <Card className="glass border-amber-500/30">
+          <Card className="tier-elevated border-amber-500/30">
             <CardContent className="p-6 text-sm text-muted-foreground flex items-center gap-3">
               <AlertTriangle className="h-5 w-5 text-amber-500 flex-shrink-0" />
               <div>
@@ -141,8 +141,8 @@ export default async function VideosPage({
           backLabel="חזרה לקריינות"
           meta={
             voicePreset ? (
-              <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl glass max-w-fit">
-                <Mic2 className="h-3.5 w-3.5 text-accent" />
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl tier-elevated max-w-fit">
+                <Mic2 className="h-3.5 w-3.5 text-ai" />
                 <div className="text-xs">
                   <span className="text-muted-foreground">קול:</span>{' '}
                   <span className="font-semibold">{voicePreset.displayName}</span>
@@ -165,7 +165,7 @@ export default async function VideosPage({
 
         {/* Block clearly when prerequisites are missing */}
         {missingImages > 0 && (
-          <Card className="glass border-amber-500/30">
+          <Card className="tier-elevated border-amber-500/30">
             <CardContent className="p-4 text-sm flex items-center gap-3">
               <AlertTriangle className="h-5 w-5 text-amber-500 flex-shrink-0" />
               <div>
@@ -186,7 +186,7 @@ export default async function VideosPage({
           shows the picked voice; this banner only fires when the user
           hasn't picked yet. */}
       {!voicePreset && (
-        <Card className="glass border-amber-500/30">
+        <Card className="tier-elevated border-amber-500/30">
           <CardContent className="p-4 text-sm">
             ⚠ עדיין לא נבחר קול.{' '}
             <Link

@@ -6,7 +6,7 @@
 // previous text prompts were GENERIC ("hands move naturally", "subtle
 // blinks") so Kling defaulted to "make the avatar blink and breathe"
 // regardless of what was in the frame. An image of "hand pouring
-// HydroPure into a glass" got the same blinks treatment as a face
+// HydroPure into a tier-elevated" got the same blinks treatment as a face
 // close-up — total disconnect between frame content and motion.
 //
 // Now: vision model reads the frame and produces a SPECIFIC motion

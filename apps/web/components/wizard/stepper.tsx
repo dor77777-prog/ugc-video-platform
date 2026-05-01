@@ -45,7 +45,7 @@ export function Stepper({ steps = WIZARD_STEPS, current, done = [], projectId }:
               className={cn(
                 'w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold transition-colors',
                 isDone && !isActive && 'bg-primary text-primary-foreground',
-                isActive && 'bg-accent text-accent-foreground ring-4 ring-accent/30',
+                isActive && 'bg-ai text-ai-foreground ring-4 ring-ai/30',
                 !isDone && !isActive && 'border-2 border-muted-foreground/30 text-muted-foreground',
               )}
             >

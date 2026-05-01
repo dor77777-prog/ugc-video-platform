@@ -108,7 +108,7 @@ export function GenerateAllVoicesButton({
       : '⚠ בחר קול בראש העמוד לפני יצירת קריינות.';
 
   return (
-    <Card className="glass border-primary/40 bg-primary/[0.04] shadow-glow">
+    <Card className="tier-elevated border-primary/40 bg-primary/[0.04] shadow-glow">
       <CardContent className="p-5 flex flex-col md:flex-row items-start md:items-center gap-4 justify-between">
         <div className="space-y-2 flex-1">
           <div className="text-base font-semibold">{headline}</div>

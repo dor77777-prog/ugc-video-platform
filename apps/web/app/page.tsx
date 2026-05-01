@@ -1,5 +1,5 @@
 // V20 — cinematic landing rebuild. Goes well beyond V19's "dark theme
-// over shadcn" — adds a real visual showcase (floating glass cards
+// over shadcn" — adds a real visual showcase (floating tier-elevated cards
 // with R2 avatars), animated SVG aurora, mouse-parallax, animated
 // counters on scroll, live activity ticker, real avatar grid as
 // "30 voices · 25 avatars" proof.
@@ -94,13 +94,13 @@ export default async function RootPage() {
         <div className="grid lg:grid-cols-12 gap-8 items-center">
           {/* Right side: copy (RTL → right column lg:col-7) */}
           <div className="lg:col-span-7 text-center lg:text-right space-y-8">
-            <div className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-4 py-1.5 text-xs font-semibold text-primary backdrop-blur-md animate-fade-in-up">
-              <span className="h-1.5 w-1.5 rounded-full bg-accent animate-soft-pulse" />
+            <div className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-4 py-1.5 text-xs font-semibold text-primary backdrop-blur-md motion-fade-up">
+              <span className="h-1.5 w-1.5 rounded-full bg-ai motion-pulse-ai" />
               AI-native לשוק הישראלי · 2026
             </div>
 
             <h1
-              className="text-5xl md:text-7xl lg:text-[6.5rem] xl:text-[8rem] font-black leading-[0.92] animate-fade-in-up [animation-delay:80ms]"
+              className="text-5xl md:text-7xl lg:text-[6.5rem] xl:text-[8rem] font-black leading-[0.92] motion-fade-up [animation-delay:80ms]"
               style={{ letterSpacing: '-0.05em' }}
             >
               <span className="block">
@@ -114,12 +114,12 @@ export default async function RootPage() {
               </span>
             </h1>
 
-            <p className="text-lg md:text-xl text-muted-foreground max-w-xl mx-auto lg:mx-0 leading-relaxed animate-fade-in-up [animation-delay:160ms]">
+            <p className="text-lg md:text-xl text-muted-foreground max-w-xl mx-auto lg:mx-0 leading-relaxed motion-fade-up [animation-delay:160ms]">
               URL של מוצר → מודעת וידאו 9:16 בעברית, מוכנה לפייסבוק וטיקטוק.{' '}
               <span className="text-foreground font-semibold">בפחות מ־5 דקות.</span>
             </p>
 
-            <div className="flex flex-col sm:flex-row items-center lg:items-start lg:justify-start justify-center gap-3 animate-fade-in-up [animation-delay:240ms]">
+            <div className="flex flex-col sm:flex-row items-center lg:items-start lg:justify-start justify-center gap-3 motion-fade-up [animation-delay:240ms]">
               <Button asChild size="lg" className="shadow-glow h-14 px-8 text-base">
                 <Link href="/register" className="flex items-center gap-2">
                   <Sparkles className="h-4 w-4" />
@@ -140,18 +140,18 @@ export default async function RootPage() {
               </Button>
             </div>
 
-            <div className="flex items-center justify-center lg:justify-start gap-5 text-xs text-muted-foreground animate-fade-in-up [animation-delay:320ms]">
+            <div className="flex items-center justify-center lg:justify-start gap-5 text-xs text-muted-foreground motion-fade-up [animation-delay:320ms]">
               <span className="flex items-center gap-1.5">
-                <CircleCheckBig className="h-3.5 w-3.5 text-accent" />
+                <CircleCheckBig className="h-3.5 w-3.5 text-ai" />
                 ללא כרטיס אשראי
               </span>
               <span className="flex items-center gap-1.5">
-                <CircleCheckBig className="h-3.5 w-3.5 text-accent" />
+                <CircleCheckBig className="h-3.5 w-3.5 text-ai" />
                 ביטול בכל רגע
               </span>
             </div>
 
-            <div className="pt-4 animate-fade-in-up [animation-delay:480ms]">
+            <div className="pt-4 motion-fade-up [animation-delay:480ms]">
               <LiveActivityTicker />
             </div>
           </div>
@@ -174,7 +174,7 @@ export default async function RootPage() {
           ].map((s, i) => (
             <div
               key={s.label}
-              className="rounded-3xl glass-strong p-6 md:p-8 text-center card-hover animate-fade-in-up"
+              className="rounded-3xl tier-elevated glow-primary p-6 md:p-8 text-center card-hover motion-fade-up"
               style={{ animationDelay: `${i * 80}ms` }}
             >
               <div className="h-10 w-10 mx-auto rounded-2xl bg-gradient-to-br from-primary/30 to-accent/20 flex items-center justify-center mb-4">
@@ -212,7 +212,7 @@ export default async function RootPage() {
           {AVATAR_PROOF_GRID.map((id, i) => (
             <div
               key={id}
-              className="group relative aspect-[4/5] rounded-2xl overflow-hidden glass card-hover animate-fade-in-up cursor-pointer"
+              className="group relative aspect-[4/5] rounded-2xl overflow-hidden tier-elevated card-hover motion-fade-up cursor-pointer"
               style={{ animationDelay: `${i * 40}ms` }}
             >
               <Image
@@ -262,7 +262,7 @@ export default async function RootPage() {
           {PIPELINE_STEPS.map((step, i) => (
             <div
               key={step.label}
-              className="relative rounded-2xl glass p-5 card-hover animate-fade-in-up"
+              className="relative rounded-2xl tier-elevated p-5 card-hover motion-fade-up"
               style={{ animationDelay: `${i * 60}ms` }}
             >
               <div className="absolute top-3 right-3 text-[10px] font-mono text-primary opacity-60">
@@ -297,7 +297,7 @@ export default async function RootPage() {
           {FEATURES.map((f, i) => (
             <Card
               key={f.title}
-              className="glass card-hover tilt-hover animate-fade-in-up bg-card/40 group"
+              className="tier-elevated card-hover tilt-hover motion-fade-up bg-card/40 group"
               style={{ animationDelay: `${i * 60}ms` }}
             >
               <CardContent className="p-7 space-y-5 h-full">
@@ -336,9 +336,9 @@ export default async function RootPage() {
             return (
               <Card
                 key={slug}
-                className={`relative animate-fade-in-up ${
+                className={`relative motion-fade-up ${
                   isFeatured
-                    ? 'glass-liquid gradient-border card-hover lg:scale-[1.04] z-10'
+                    ? 'tier-atmosphere gradient-border card-hover lg:scale-[1.04] z-10'
                     : 'glass card-hover bg-card/40'
                 }`}
                 style={{ animationDelay: `${i * 80}ms` }}
@@ -418,7 +418,7 @@ export default async function RootPage() {
 
       {/* ───────────── Big bottom CTA ───────────── */}
       <section className="relative max-w-5xl mx-auto px-6 md:px-10 py-24 md:py-32">
-        <div className="rounded-[2rem] glass-liquid p-12 md:p-20 relative overflow-hidden text-center">
+        <div className="rounded-[2rem] tier-liquid p-12 md:p-20 relative overflow-hidden text-center">
           <div
             className="absolute inset-0 -z-10 opacity-80"
             style={{
@@ -560,7 +560,7 @@ function NavLink({ href, children }: { href: string; children: React.ReactNode }
 function Bullet({ text }: { text: string }) {
   return (
     <div className="flex items-start gap-2 text-sm">
-      <CircleCheckBig className="h-4 w-4 text-accent flex-shrink-0 mt-0.5" />
+      <CircleCheckBig className="h-4 w-4 text-ai flex-shrink-0 mt-0.5" />
       <span className="text-foreground/85">{text}</span>
     </div>
   );
@@ -577,7 +577,7 @@ function FAQItem({
 }) {
   return (
     <details
-      className="group glass rounded-2xl px-6 py-5 cursor-pointer hover:border-primary/30 transition-colors"
+      className="group tier-elevated rounded-2xl px-6 py-5 cursor-pointer hover:border-primary/30 transition-colors"
       open={defaultOpen}
     >
       <summary className="flex items-center justify-between gap-4 text-base font-bold list-none">

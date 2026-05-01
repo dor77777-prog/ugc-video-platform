@@ -3,9 +3,8 @@
 // 8-step flow rendered as a tile grid. Each tile uses tier-elevated
 // for the current step (with glow-primary), tier-surface for done,
 // tier-surface (muted) for future. Step numbers are Geist Mono via
-// the global font stack. The current-step "PULSE" indicator uses
-// motion-pulse-ai-soft (legacy alias of tachles-soft-pulse) — Wave 1
-// keeps this until Stage 5 sweep renames it.
+// the global font stack. The current-step "PULSE" dot uses
+// motion-pulse-ai (V27 motion namespace).
 //
 // V26.19 split voice generation into its own step (#6).
 
@@ -105,7 +104,7 @@ export function WizardProgressStrip({
             </div>
             {isCurrent && (
               <div className="mt-1.5 flex items-center gap-1 text-[10px] text-primary">
-                <span className="h-1.5 w-1.5 rounded-full bg-primary animate-soft-pulse" />
+                <span className="h-1.5 w-1.5 rounded-full bg-primary motion-pulse-ai" />
                 <span className="font-mono uppercase tracking-[0.18em]">פעיל</span>
               </div>
             )}

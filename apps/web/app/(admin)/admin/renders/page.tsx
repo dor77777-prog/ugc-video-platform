@@ -126,7 +126,7 @@ export default async function AdminRendersPage({
                       {j.status === RenderJobStatus.failed && (
                         <form action={retryRenderAction}>
                           <input type="hidden" name="renderJobId" value={j.id} />
-                          <button className="text-xs px-2 py-1 rounded bg-accent/40 hover:bg-accent/70 transition-colors">
+                          <button className="text-xs px-2 py-1 rounded bg-ai/40 hover:bg-ai/70 transition-colors">
                             הרץ שוב
                           </button>
                         </form>
