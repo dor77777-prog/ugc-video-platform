@@ -15,7 +15,7 @@ export default async function FinishPlaceholder({
         <div className="text-xs uppercase tracking-widest text-muted-foreground">סיום</div>
         <h1 className="text-3xl font-bold tracking-tight">הרכבה סופית</h1>
       </div>
-      <Stepper current={6} done={[1, 2, 3, 4, 5]} projectId={id} />
+      <Stepper current={8} done={[1, 2, 3, 4, 5, 6, 7]} projectId={id} />
       <Card className="border-dashed">
         <CardContent className="p-12 text-center space-y-3">
           <div className="text-5xl">📦</div>

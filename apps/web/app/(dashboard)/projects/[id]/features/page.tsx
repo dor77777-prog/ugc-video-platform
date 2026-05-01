@@ -50,7 +50,7 @@ export default async function FeaturesPage({
         description="ה-AI חילץ את התכונות המנצחות של המוצר. בחר אחת או כמה — התסריטים ייבנו סביבן במקום לנסות לכסות הכל. אפשר להוסיף תכונה משלך."
         projectName={project.productName}
         step={3}
-        totalSteps={7}
+        totalSteps={8}
         backHref={`/projects/${projectId}/avatar`}
         backLabel="אווטאר"
       />

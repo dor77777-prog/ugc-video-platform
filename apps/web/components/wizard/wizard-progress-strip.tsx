@@ -16,6 +16,7 @@ import {
   Film,
   CheckCircle2,
   Target,
+  Mic2,
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -27,17 +28,19 @@ interface Step {
   href?: string;
 }
 
-// V26.18 — added "תכונות מנצחות" between Avatar and Script. The user
-// picks 1+ product features the ad should focus on; scripts then get
-// generated around those instead of trying to cover everything.
+// V26.19 — 8 steps. V26.18 added Feature Focus (#3); V26.19 splits
+// voice selection + voice-over generation out of the scenes step into
+// its own /voices step (#6) so users land on a single-purpose screen
+// instead of juggling images + voices on the same grid.
 const STEPS: Step[] = [
   { num: 1, label: 'URL מוצר', icon: Globe },
   { num: 2, label: 'אווטאר', icon: Users },
   { num: 3, label: 'תכונות מנצחות', icon: Target },
   { num: 4, label: 'תסריט', icon: Wand2 },
   { num: 5, label: 'סצנות', icon: ImageIcon },
-  { num: 6, label: 'קליפים', icon: Film },
-  { num: 7, label: 'מוכן', icon: CheckCircle2 },
+  { num: 6, label: 'קולות', icon: Mic2 },
+  { num: 7, label: 'קליפים', icon: Film },
+  { num: 8, label: 'מוכן', icon: CheckCircle2 },
 ];
 
 const STEP_ROUTES: Record<number, string> = {
@@ -46,8 +49,9 @@ const STEP_ROUTES: Record<number, string> = {
   3: '/features',
   4: '/scripts',
   5: '/scenes',
-  6: '/videos',
+  6: '/voices',
   7: '/videos',
+  8: '/videos',
 };
 
 export function WizardProgressStrip({
@@ -63,7 +67,7 @@ export function WizardProgressStrip({
   className?: string;
 }) {
   return (
-    <div className={cn('grid grid-cols-3 md:grid-cols-6 gap-2', className)}>
+    <div className={cn('grid grid-cols-3 md:grid-cols-4 lg:grid-cols-8 gap-2', className)}>
       {STEPS.map((step) => {
         const isCurrent = step.num === currentStep;
         const isDone = done.includes(step.num) || step.num < currentStep;

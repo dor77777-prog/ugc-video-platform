@@ -447,7 +447,7 @@ async function RecentProjectsSection({ userId }: { userId: string }) {
                 {featuredInProgress.productName ?? 'פרויקט ללא שם'}
               </h2>
               <p className="text-xs text-muted-foreground">
-                שלב {featuredStep} מתוך 6 ·{' '}
+                שלב {featuredStep} מתוך 8 ·{' '}
                 {WIZARD_STEPS.find((s) => s.num === featuredStep)?.label ?? ''} ·
                 עודכן{' '}
                 {new Intl.DateTimeFormat('he-IL', {

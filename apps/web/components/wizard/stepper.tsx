@@ -7,13 +7,18 @@ export interface WizardStep {
   label: string;
 }
 
+// V26.19 — 8 steps now. V26.18 added "תכונות מנצחות" (#3) between
+// avatar and script; V26.19 added "קולות" (#6) between scenes and
+// clips. Numbering propagates to STEP_PATH + getCurrentStepNumber.
 export const WIZARD_STEPS: WizardStep[] = [
   { num: 1, label: 'מוצר ופרטים' },
   { num: 2, label: 'אווטאר' },
-  { num: 3, label: 'תסריט' },
-  { num: 4, label: 'סצנות תמונות' },
-  { num: 5, label: 'סצנות מונפשות' },
-  { num: 6, label: 'הרכבה סופית' },
+  { num: 3, label: 'תכונות מנצחות' },
+  { num: 4, label: 'תסריט' },
+  { num: 5, label: 'סצנות תמונות' },
+  { num: 6, label: 'קולות' },
+  { num: 7, label: 'סצנות מונפשות' },
+  { num: 8, label: 'הרכבה סופית' },
 ];
 
 interface StepperProps {

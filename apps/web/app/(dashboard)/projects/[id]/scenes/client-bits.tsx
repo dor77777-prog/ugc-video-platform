@@ -3,24 +3,8 @@
 import { useCallback, useEffect, useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
-import dynamic from 'next/dynamic';
 
-// V14.2-B — lazy VoicePicker on the scenes page. Same module that the
-// videos page uses; here it appears at step 4 so the user picks their
-// voice while choosing scene images, and the "Generate all" batch
-// kicks off voice gen in parallel with image gen. ssr:false so the
-// 312-line picker JS only loads when the user actually opens the
-// picker (most flows pick voice once and never reopen).
-export const VoicePicker = dynamic(
-  () => import('../videos/voice-picker').then((m) => ({ default: m.VoicePicker })),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="text-xs text-muted-foreground p-3">טוען בורר קולות…</div>
-    ),
-  },
-);
-
+// V26.19 — voice UI moved to /voices step. Scenes page is image-only.
 // Custom events used by GenerateAllButton ↔ SceneCard so each tile can
 // poll its own state during a batch run. router.refresh() in Next.js 15
 // is unreliable when called rapidly in a loop (the refreshes get
@@ -35,7 +19,6 @@ import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import { ProgressBar } from '@/components/ui/progress-bar';
 import { ElapsedTimer } from '@/components/ui/elapsed-timer';
-import { AudioPreview } from '@/components/ui/audio-preview';
 import {
   AIThinking,
   IMAGE_GEN_PHASES,
@@ -60,8 +43,6 @@ interface SceneInfo {
   id: string;
   sceneOrder: number;
   hasImage: boolean;
-  // V14.2-B — voice prereq tracking for the parallel batch run.
-  hasVoice?: boolean;
 }
 
 // Race a promise against a timeout so the UI never blocks indefinitely on
@@ -84,24 +65,15 @@ function raceWithTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
   });
 }
 
-// Top-of-page button. Generates every scene that doesn't have an image yet,
-// sequentially (safer for OpenAI rate limits than firing all in parallel).
-// router.refresh() between iterations lets the user see scenes appear one by
-// one as the loop progresses.
+// V26.19 — image-only batch button. Voice gen moved to its own /voices
+// step (the parallel image+voice run was a V14.2-B optimisation; with
+// the wizard split, voice has its own batch and per-scene UI).
 export function GenerateAllButton({
   scenes,
   creditsBalance,
-  voicePresetId,
-  voicesPending,
 }: {
   scenes: SceneInfo[];
   creditsBalance: number;
-  // V14.2-B — when a voice preset is set on the project (avatar
-  // selection sets a default), the batch loop ALSO fires voice gen for
-  // every scene that lacks voiceUrl, in parallel with image gen. This
-  // gets the user to step 5 with voice already done.
-  voicePresetId?: string | null;
-  voicesPending?: number;
 }) {
   const router = useRouter();
   // We deliberately do NOT use useTransition here — router.refresh() inside
@@ -118,15 +90,11 @@ export function GenerateAllButton({
   const [error, setError] = useState<string | null>(null);
 
   const queue = scenes.filter((s) => !s.hasImage);
-  const voiceQueue = scenes.filter((s) => !s.hasVoice);
   const allDone = scenes.length > 0 && queue.length === 0;
 
   if (allDone) return null;
 
-  // V14.2-B — credits charged: 1 per missing image + 1 per missing voice
-  // (only when voicePresetId is set and there are voices to gen).
-  const willGenerateVoices = !!voicePresetId && (voicesPending ?? voiceQueue.length) > 0;
-  const cost = queue.length + (willGenerateVoices ? voiceQueue.length : 0);
+  const cost = queue.length;
   const canRun = creditsBalance >= cost;
 
   const run = async () => {
@@ -211,25 +179,6 @@ export function GenerateAllButton({
         setProgress({ done, total: queue.length, failed });
       };
 
-      // V14.2-B — kick off voice gen for all scenes that lack voiceUrl
-      // IN PARALLEL with the image batch. Voice doesn't depend on the
-      // image; both fetch via /api/scenes/[id]/{generate,voice} which
-      // run independently on the server. We don't await this — the
-      // voice batch races to completion in the background and the next
-      // page (videos) sees the results when the user gets there. Voice
-      // gen errors are silent here; voice-impl logs to ApiCall and the
-      // user can retry per-scene from the videos page.
-      const voicePromise = willGenerateVoices
-        ? Promise.all(
-            voiceQueue.map((s) =>
-              fetch(`/api/scenes/${s.id}/voice`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-              }).catch(() => null),
-            ),
-          )
-        : Promise.resolve();
-
       for (let i = 0; i < queue.length; i += PARALLELISM) {
         if (abortRest) break;
         const chunk = queue.slice(i, i + PARALLELISM);
@@ -239,15 +188,6 @@ export function GenerateAllButton({
         // image swap doesn't depend on this refresh succeeding.
         router.refresh();
       }
-
-      // Wait for the voice batch to finish before clearing the spinner
-      // so the user knows everything is done. Voice is much faster than
-      // image (~5-15s vs 30-60s) so this usually adds zero wall-clock.
-      try {
-        await voicePromise;
-      } catch {
-        /* voice errors don't fail the image batch */
-      }
     } finally {
       setPending(false);
       if (typeof window !== 'undefined') {
@@ -256,26 +196,11 @@ export function GenerateAllButton({
     }
   };
 
-  // V14.2-B — explain the parallel run in the cost copy. When voice is
-  // included, the credits sum is image + voice and the headline says so.
-  const voiceCount = willGenerateVoices ? voiceQueue.length : 0;
-  const headline = pending
-    ? willGenerateVoices
-      ? 'יוצר תמונות + קריינות במקביל…'
-      : 'יוצר את כל הסצנות…'
-    : willGenerateVoices
-      ? 'צור תמונות + קריינות בלחיצה אחת'
-      : 'צור את כל הסצנות בלחיצה אחת';
+  const headline = pending ? 'יוצר את כל הסצנות…' : 'צור את כל הסצנות בלחיצה אחת';
   const subline = pending
-    ? `${progress.done + progress.failed} מתוך ${progress.total} ${progress.failed > 0 ? `(${progress.failed} נכשלו) ` : ''}— תמונות מופיעות בהדרגה למטה${willGenerateVoices ? '. הקריינות נוצרת ברקע' : ''}`
-    : willGenerateVoices
-      ? `${queue.length} תמונות + ${voiceCount} קריינויות = ${cost} קרדיטים. (יש לך ${creditsBalance})`
-      : `${queue.length} סצנות חסרות. ${cost} קרדיטים סך הכל. (יש לך ${creditsBalance})`;
-  const buttonLabel = pending
-    ? 'מייצר…'
-    : willGenerateVoices
-      ? `✨ צור ${queue.length} תמונות + ${voiceCount} קריינויות`
-      : `✨ צור ${queue.length} סצנות`;
+    ? `${progress.done + progress.failed} מתוך ${progress.total} ${progress.failed > 0 ? `(${progress.failed} נכשלו) ` : ''}— תמונות מופיעות בהדרגה למטה`
+    : `${queue.length} סצנות חסרות. ${cost} קרדיטים סך הכל. (יש לך ${creditsBalance})`;
+  const buttonLabel = pending ? 'מייצר…' : `✨ צור ${queue.length} סצנות`;
 
   return (
     <Card className="glass border-primary/40 bg-primary/[0.04] shadow-glow card-hover animate-fade-in-up">
@@ -323,14 +248,6 @@ interface SceneCardProps {
   // try/finally. Survives page refresh so the user keeps seeing the
   // overlay even if they reload mid-generation.
   imageInFlightAt: string | null;
-  // V14.6 — voice props on scenes page so user can regen voice without
-  // navigating to step 5. Voice prereqs are textHebrew (always present
-  // by step 4) + a project voiceId (set via VoicePicker on this page).
-  voiceUrl: string | null;
-  voiceDurationSeconds: number | null;
-  voiceGenerationCount: number;
-  voiceInFlightAt: string | null;
-  voiceSelected: boolean;
 }
 
 // V17 — prompt tweak chips shown under the prompt textarea on
@@ -349,9 +266,6 @@ const PROMPT_TWEAK_CHIPS: Array<{ label: string; append: string }> = [
 // 3 min budget — Image gen is fast (gpt-image-1 ~30s) but we leave headroom
 // for network blips so a stale flag doesn't pin the overlay forever.
 const IMAGE_IN_FLIGHT_TTL_MS = 3 * 60 * 1000;
-// Voice gen is faster (~5-15s) but ElevenLabs occasional hiccups extend
-// it; 90s ceiling matches the per-scene budget in GenerateAllVoicesButton.
-const VOICE_IN_FLIGHT_TTL_MS = 90 * 1000;
 function isFresh(at: string | null, ttlMs: number): boolean {
   if (!at) return false;
   return Date.now() - new Date(at).getTime() < ttlMs;
@@ -632,80 +546,6 @@ export function SceneCard(props: SceneCardProps) {
     });
   };
 
-  // V14.6 — voice state machine for the per-scene "regenerate voice"
-  // button. Mirrors the image flow (clientPolls server-side flag, then
-  // falls back to a /api/scenes/[id] poll burst). Voice is independent
-  // of image: regenerating the image does NOT touch voice and vice
-  // versa.
-  const [voicePending, setVoicePending] = useState(false);
-  const [voiceError, setVoiceError] = useState<string | null>(null);
-  const [liveVoiceUrl, setLiveVoiceUrl] = useState<string | null>(null);
-  const effectiveVoiceUrl = liveVoiceUrl ?? props.voiceUrl;
-  const hasVoice = !!effectiveVoiceUrl;
-  const voiceInFlightServer = isFresh(props.voiceInFlightAt, VOICE_IN_FLIGHT_TTL_MS);
-  const showVoiceWorking = voicePending || voiceInFlightServer;
-
-  const handleRegenerateVoice = useCallback(async () => {
-    if (voicePending || !props.voiceSelected) return;
-    setVoicePending(true);
-    setVoiceError(null);
-    try {
-      const res = await fetch(`/api/scenes/${props.sceneId}/voice`, {
-        method: 'POST',
-      });
-      const body = (await res.json().catch(() => null)) as
-        | { success?: boolean; error?: string; voiceUrl?: string | null }
-        | null;
-      if (!body) {
-        setVoiceError('יצירת הקול נכשלה: תגובה לא תקינה מהשרת');
-        return;
-      }
-      if (body.success) {
-        if (body.voiceUrl) setLiveVoiceUrl(body.voiceUrl);
-        router.refresh();
-      } else {
-        setVoiceError(body.error ?? 'יצירת הקול נכשלה');
-      }
-    } catch (err) {
-      setVoiceError(`שגיאה: ${(err as Error).message}`);
-    } finally {
-      setVoicePending(false);
-    }
-  }, [voicePending, props.voiceSelected, props.sceneId, router]);
-
-  // Poll for the new voice URL while a regen is in-flight server-side.
-  // Same shape as the image-flight effect above.
-  const initialVoiceUrlRef = useRef(props.voiceUrl);
-  useEffect(() => {
-    if (!voiceInFlightServer) return;
-    const baselineUrl = initialVoiceUrlRef.current;
-    const id = setInterval(async () => {
-      if (!isPageVisible()) return;
-      try {
-        const res = await fetch(`/api/scenes/${propsRef.current.sceneId}`, {
-          cache: 'no-store',
-        });
-        if (!res.ok) return;
-        const json = (await res.json()) as {
-          voiceUrl: string | null;
-          voiceInFlightAt: string | null;
-        };
-        if (json.voiceUrl && json.voiceUrl !== baselineUrl) {
-          setLiveVoiceUrl(json.voiceUrl);
-          initialVoiceUrlRef.current = json.voiceUrl;
-          clearInterval(id);
-          router.refresh();
-        } else if (!json.voiceInFlightAt) {
-          clearInterval(id);
-          router.refresh();
-        }
-      } catch {
-        /* keep trying */
-      }
-    }, 3000);
-    return () => clearInterval(id);
-  }, [voiceInFlightServer, router]);
-
   return (
     <Card className={cn(hasImage && 'border-accent/40')}>
       <CardContent className="p-5 space-y-4">
@@ -889,71 +729,6 @@ export function SceneCard(props: SceneCardProps) {
             {state.error}
           </div>
         )}
-
-        {/* V14.6 / V14.8 — voice section: ALWAYS visible so the user
-            can find it. When no voice is picked yet, the button is
-            disabled with a hint to pick one at the top of the page.
-            When voice exists, AudioPreview is shown so the user can
-            listen + regenerate per scene. */}
-        <div className="pt-3 border-t border-border space-y-2">
-          <div className="flex items-center justify-between gap-2 flex-wrap">
-            <div className="flex items-center gap-2 text-xs">
-              <span className="text-muted-foreground">קריינות:</span>
-              {showVoiceWorking ? (
-                <span className="flex items-center gap-1 text-primary">
-                  <span className="animate-pulse">🎙</span>
-                  <span>יוצר…</span>
-                </span>
-              ) : hasVoice ? (
-                <span className="text-emerald-600 dark:text-emerald-400">
-                  ✓ נוצרה
-                </span>
-              ) : !props.voiceSelected ? (
-                <span className="text-amber-600 dark:text-amber-400">
-                  ⚠ בחר קול בראש העמוד
-                </span>
-              ) : (
-                <span className="text-muted-foreground">לא נוצרה</span>
-              )}
-              {props.voiceGenerationCount > 0 && !showVoiceWorking && (
-                <span className="text-muted-foreground">
-                  · {props.voiceGenerationCount} ניסיונות
-                </span>
-              )}
-            </div>
-            <Button
-              type="button"
-              size="sm"
-              variant={hasVoice ? 'outline' : 'default'}
-              disabled={showVoiceWorking || !props.voiceSelected}
-              onClick={handleRegenerateVoice}
-              title={
-                !props.voiceSelected
-                  ? 'בחר קול בראש העמוד לפני יצירה'
-                  : hasVoice
-                    ? 'יוצר קול חדש לפי התסריט'
-                    : 'יוצר קול לפי התסריט'
-              }
-            >
-              {showVoiceWorking
-                ? 'יוצר…'
-                : hasVoice
-                  ? '↻ צור מחדש (1 קרדיט)'
-                  : '🎙 צור קול (1 קרדיט)'}
-            </Button>
-          </div>
-          {hasVoice && (
-            <AudioPreview
-              src={effectiveVoiceUrl!}
-              durationSeconds={props.voiceDurationSeconds}
-            />
-          )}
-          {voiceError && (
-            <div className="text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded-md p-2">
-              {voiceError}
-            </div>
-          )}
-        </div>
       </CardContent>
     </Card>
   );

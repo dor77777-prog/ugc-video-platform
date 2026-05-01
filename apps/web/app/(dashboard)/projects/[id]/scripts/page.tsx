@@ -130,14 +130,14 @@ export default async function ScriptsPage({
           title="בחר תסריט"
           description="ה-AI כותב 6 תסריטים בזוויות שיווקיות שונות (problem-agitation, סקפטיקל, הוכחה, עוגן מחיר, רגע ישראלי, דיירקט). בחר אחד שמדבר אליך — תוכל גם לערוך אותו ידנית בשלבים הבאים."
           projectName={project.productName}
-          step={3}
-          totalSteps={6}
+          step={4}
+          totalSteps={8}
           icon={Wand2}
-          backHref={`/projects/${projectId}/avatar`}
-          backLabel="חזרה לאווטאר"
+          backHref={`/projects/${projectId}/features`}
+          backLabel="חזרה לתכונות"
         />
 
-        <Stepper current={3} done={[1, 2]} projectId={projectId} />
+        <Stepper current={4} done={[1, 2, 3]} projectId={projectId} />
 
       {!hasScripts ? (
         <Card className="border-dashed">

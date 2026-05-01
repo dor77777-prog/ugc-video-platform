@@ -34,7 +34,7 @@ export default async function AvatarPage({
           description="בחר את הדמות שתופיע בכל הסצנות. ה-AI ישמור על אותה דמות לאורך כל הסרטון — אותו מראה, אותם מאפיינים. תוכל לסנן לפי מגדר וטווח גיל."
           projectName={project.productName}
           step={2}
-          totalSteps={6}
+          totalSteps={8}
           icon={Users}
           backHref={`/projects/${projectId}/edit`}
           backLabel="חזרה לפרטי המוצר"

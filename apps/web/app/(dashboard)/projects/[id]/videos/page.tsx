@@ -90,13 +90,13 @@ export default async function VideosPage({
             kicker="קליפים"
             title="סצנות מונפשות"
             projectName={project.productName}
-            step={5}
-            totalSteps={6}
+            step={7}
+            totalSteps={8}
             icon={Film}
             backHref={`/projects/${projectId}/scripts`}
             backLabel="חזרה לתסריטים"
           />
-          <Stepper current={5} done={[1, 2, 3, 4]} projectId={projectId} />
+          <Stepper current={7} done={[1, 2, 3, 4, 5, 6]} projectId={projectId} />
           <Card className="glass border-amber-500/30">
             <CardContent className="p-6 text-sm text-muted-foreground flex items-center gap-3">
               <AlertTriangle className="h-5 w-5 text-amber-500 flex-shrink-0" />
@@ -133,11 +133,11 @@ export default async function VideosPage({
           title="סצנות מונפשות"
           description="לכל סצנה — קליפ מונפש עם lip-sync על voice-over שיצרת בשלב הסצנות. תוכל לרגנר כל קליפ בנפרד. כשכל הסצנות מוכנות, לחץ 'הרכב סרטון סופי' למטה."
           projectName={project.productName}
-          step={5}
-          totalSteps={6}
+          step={7}
+          totalSteps={8}
           icon={Film}
-          backHref={`/projects/${projectId}/scenes`}
-          backLabel="חזרה לסצנות"
+          backHref={`/projects/${projectId}/voices`}
+          backLabel="חזרה לקריינות"
           meta={
             voicePreset ? (
               <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl glass max-w-fit">
@@ -150,7 +150,7 @@ export default async function VideosPage({
                   </span>
                 </div>
                 <Link
-                  href={`/projects/${projectId}/scenes`}
+                  href={`/projects/${projectId}/voices`}
                   className="text-[10px] text-primary hover:underline ms-1"
                 >
                   שנה
@@ -160,7 +160,7 @@ export default async function VideosPage({
           }
         />
 
-        <Stepper current={5} done={[1, 2, 3, 4]} projectId={projectId} />
+        <Stepper current={7} done={[1, 2, 3, 4, 5, 6]} projectId={projectId} />
 
         {/* Block clearly when prerequisites are missing */}
         {missingImages > 0 && (
@@ -181,18 +181,18 @@ export default async function VideosPage({
           </Card>
         )}
 
-      {/* V14.7 — voice picker moved to step 4. V21 — moved this
-          read-only voice indicator into the ProjectHero meta slot;
-          only the missing-voice warning remains here. */}
+      {/* V26.19 — voice picker lives at /voices (step 6). The hero meta
+          shows the picked voice; this banner only fires when the user
+          hasn't picked yet. */}
       {!voicePreset && (
         <Card className="glass border-amber-500/30">
           <CardContent className="p-4 text-sm">
             ⚠ עדיין לא נבחר קול.{' '}
             <Link
-              href={`/projects/${projectId}/scenes`}
+              href={`/projects/${projectId}/voices`}
               className="font-semibold text-primary underline"
             >
-              חזור לשלב הסצנות וסמן קול →
+              חזור לשלב הקריינות וסמן קול →
             </Link>
           </CardContent>
         </Card>
@@ -281,10 +281,10 @@ export default async function VideosPage({
             )}
             <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
               <Link
-                href={`/projects/${projectId}/scenes`}
+                href={`/projects/${projectId}/voices`}
                 className="text-xs text-muted-foreground hover:text-foreground"
               >
-                ← חזרה לסצנות (תמונות)
+                ← חזרה לקריינות
               </Link>
               <RenderFinalButton
                 projectId={projectId}
