@@ -34,6 +34,9 @@ interface SceneLogViewerProps {
   compact?: boolean;
 }
 
+// V27.8 — vendor-named stages (kling / pixverse) renamed to functional
+// Hebrew labels. The DB still stores the raw stage key from each
+// provider client; this map controls what the user sees.
 const STAGE_HEBREW: Record<string, string> = {
   scrape: 'סקרייפר',
   intelligence: 'תובנות מוצר',
@@ -44,10 +47,10 @@ const STAGE_HEBREW: Record<string, string> = {
   voice: 'קול',
   'motion-analysis': 'ניתוח תנועה',
   'animation-plan': 'תוכנית אנימציה',
-  kling: 'Kling',
+  kling: 'הנפשה',
   'face-gate': 'בדיקת פנים',
-  pixverse: 'PixVerse',
-  render: 'render',
+  pixverse: 'סנכרון שפתיים',
+  render: 'הרכבה',
   clip: 'קליפ',
 };
 

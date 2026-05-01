@@ -597,20 +597,20 @@ function FAQItem({
   );
 }
 
-// V26.15 — public-page IP scrub. The strip + features + FAQ used to
-// name every provider in the stack (Kling, PixVerse, ElevenLabs, gpt-
-// image-2, etc.). Replaced with marketing-focused copy that describes
-// the OUTCOME for the user — not the engine. Internal pipeline detail
-// stays in private MD files (STATUS.md / CLAUDE.md / BUSINESS_MODEL.md
-// are gitignored as of V26.15).
+// V27.8 — pipeline mirrors the 8 wizard steps a user actually walks
+// through (V26.18 added "תכונות מנצחות"; V26.19 split voice gen out
+// of scenes into its own step). Provider/model names stay out — the
+// row describes the OUTCOME for the user, not the engine. Internal
+// pipeline detail stays in private MD files.
 const PIPELINE_STEPS = [
-  { label: 'הזן URL', detail: 'דף מוצר → מוכן', icon: Layers },
-  { label: 'מודיעין מוצר', detail: 'נישה + קהל יעד', icon: Wand2 },
-  { label: 'אווטאר', detail: '25 דמויות', icon: Sparkles },
-  { label: 'תסריטים', detail: '6 גרסאות', icon: Wand2 },
-  { label: 'קריינות', detail: 'עברית טבעית', icon: Mic2 },
-  { label: 'הנפשה', detail: 'תמונה → וידאו', icon: Film },
-  { label: 'הרכבה', detail: 'MP4 לשיתוף', icon: Zap },
+  { label: 'URL מוצר', detail: 'הדבק והמערכת לומדת',         icon: Layers },
+  { label: 'אווטאר',    detail: '25 דמויות ישראליות',          icon: Sparkles },
+  { label: 'תכונות מנצחות', detail: 'AI מזקק זוויות שיווקיות', icon: Wand2 },
+  { label: 'תסריט',     detail: '6 גרסאות במקביל',             icon: Wand2 },
+  { label: 'סצנות',     detail: 'תמונות 9:16 לכל בלוק',         icon: Film },
+  { label: 'קולות',     detail: 'קריינות עברית טבעית',          icon: Mic2 },
+  { label: 'קליפים',    detail: 'הנפשה + סנכרון שפתיים',         icon: Film },
+  { label: 'מוכן',      detail: 'MP4 9:16 מורכב לשיתוף',        icon: Zap },
 ];
 
 const FEATURES = [

@@ -8,10 +8,13 @@
 // progress (e.g. the moment the user clicks "Generate all").
 //
 // Why phase-anchored vs %: image gen has no real progress events from
-// gpt-image-2 — it just blocks for 30-60s. Showing fake percentages
-// is dishonest; showing the AI's actual stages ("planning the shot →
-// composing → rendering...") feels both transparent and modern. Same
-// logic as ChatGPT's "Thinking → Researching → Writing..." UI.
+// the underlying model — it just blocks for 30-60s. Showing fake
+// percentages is dishonest; the AI's actual stages ("planning →
+// composing → rendering") feel transparent and modern. Same logic as
+// ChatGPT's "Thinking → Researching → Writing" UI.
+//
+// V27.8 — phases describe the user's outcome, not the engine. No
+// vendor / model names visible to end users.
 
 import { useEffect, useState } from 'react';
 import { Sparkles, Brain, Palette, Camera, Wand2, type LucideIcon } from 'lucide-react';
@@ -27,22 +30,22 @@ export const IMAGE_GEN_PHASES: ThinkingPhase[] = [
   { atMs: 0, label: 'בונה תיאור ויזואלי…', icon: Brain },
   { atMs: 4000, label: 'בוחר זווית מצלמה ותאורה…', icon: Camera },
   { atMs: 12000, label: 'מערבב את האווטאר עם הסצנה…', icon: Palette },
-  { atMs: 22000, label: 'מייצר את התמונה ב־gpt-image-2…', icon: Sparkles },
+  { atMs: 22000, label: 'מייצר את התמונה…', icon: Sparkles },
   { atMs: 38000, label: 'משלים פרטים אחרונים…', icon: Wand2 },
 ];
 
 export const VOICE_GEN_PHASES: ThinkingPhase[] = [
   { atMs: 0, label: 'מנתח את התסריט בעברית…', icon: Brain },
   { atMs: 2000, label: 'מסנכרן עם פרופיל הקול…', icon: Sparkles },
-  { atMs: 5000, label: 'מייצר את ה־voice-over ב־ElevenLabs…', icon: Wand2 },
-  { atMs: 10000, label: 'מודד timestamps לכל מילה…', icon: Camera },
+  { atMs: 5000, label: 'מייצר את הקריינות…', icon: Wand2 },
+  { atMs: 10000, label: 'מודד תזמון לכל מילה…', icon: Camera },
 ];
 
 export const CLIP_GEN_PHASES: ThinkingPhase[] = [
-  { atMs: 0, label: 'בודק אם נדרש lipsync…', icon: Brain },
-  { atMs: 3000, label: 'מנתח את התמונה (motion analysis)…', icon: Camera },
-  { atMs: 8000, label: 'מנפיש את הסצנה ב־Kling Omni v3…', icon: Palette },
-  { atMs: 60000, label: 'מסנכרן שפתיים עם ElevenLabs (PixVerse)…', icon: Wand2 },
+  { atMs: 0, label: 'בודק אם נדרש סנכרון שפתיים…', icon: Brain },
+  { atMs: 3000, label: 'מנתח את התמונה ובוחר תנועה…', icon: Camera },
+  { atMs: 8000, label: 'מנפיש את הסצנה…', icon: Palette },
+  { atMs: 60000, label: 'מסנכרן שפתיים עם הקריינות…', icon: Wand2 },
   { atMs: 120000, label: 'משלים את הקליפ…', icon: Sparkles },
 ];
 
