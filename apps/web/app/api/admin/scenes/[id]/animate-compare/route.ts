@@ -44,7 +44,12 @@ import {
   attributeGrokVideoCost,
 } from '@/lib/usage/cost-attribution';
 
-export const maxDuration = 800; // matches Kling poll cap (~13 min)
+// Vercel Hobby plan caps serverless functions at 300s; Pro raises it
+// to 800s. Most i2v jobs finish in 2-4 min, so 300s usually suffices —
+// but a slow Kling queue may push us over and the request will time
+// out. If that becomes common, split this into one endpoint per engine
+// (each ≤300s) and have the client fan-out.
+export const maxDuration = 300;
 export const dynamic = 'force-dynamic';
 
 type Engine = 'kling-omni-v3' | 'kling-video-o1' | 'grok';
