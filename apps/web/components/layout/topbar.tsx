@@ -45,9 +45,15 @@ export function Topbar({ email, creditsBalance, role, mobileNav }: TopbarProps) 
 
         {/* Left (in RTL): credits, plan, user, mobile menu */}
         <div className="flex items-center gap-2 md:gap-3">
-          <div className="hidden sm:flex items-center gap-2 px-3 h-9 rounded-md tier-surface text-sm font-medium">
+          {/* V27 Wave 3: view-transition-name persists this credit meter
+              across route changes, so navigating step 4 → step 5 doesn't
+              flicker the credits chip out and back in. */}
+          <div
+            className="hidden sm:flex items-center gap-2 px-3 h-9 rounded-md tier-surface text-sm font-medium"
+            style={{ viewTransitionName: '--vt-credits-meter' } as React.CSSProperties}
+          >
             <Coins className="h-3.5 w-3.5 text-primary" />
-            <span className="font-mono font-bold">{creditsBalance}</span>
+            <span className="font-mono font-bold tabular-nums">{creditsBalance}</span>
             <span className="text-fg-tertiary text-xs">קרדיטים</span>
           </div>
 

@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Stepper } from '@/components/wizard/stepper';
 import { ProjectHero } from '@/components/wizard/project-hero';
 import { DensityScope } from '@/components/density/density-scope';
+import { TransitionLink } from '@/lib/view-transition/transition-link';
 import { SceneCard, GenerateAllButton } from './client-bits';
 
 export default async function ScenesPage({
@@ -149,9 +150,9 @@ export default async function ScenesPage({
           קרדיטים: <span className="font-mono font-semibold text-fg">{dbUser.creditsBalance}</span>
         </div>
         <Button asChild intent="action" disabled={!allDone}>
-          <Link href={`/projects/${projectId}/voices`} aria-disabled={!allDone}>
+          <TransitionLink href={`/projects/${projectId}/voices`} aria-disabled={!allDone}>
             המשך לקריינות →
-          </Link>
+          </TransitionLink>
         </Button>
       </div>
       </div>

@@ -12,6 +12,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Stepper } from '@/components/wizard/stepper';
 import { ProjectHero } from '@/components/wizard/project-hero';
+import { TransitionLink } from '@/lib/view-transition/transition-link';
 import {
   VoicePicker,
   GenerateAllVoicesButton,
@@ -214,10 +215,10 @@ export default async function VoicesPage({
           <div className="text-xs text-muted-foreground">
             קרדיטים: <span className="font-mono font-semibold">{dbUser.creditsBalance}</span>
           </div>
-          <Button asChild size="lg" disabled={!allVoicesReady}>
-            <Link href={`/projects/${projectId}/videos`} aria-disabled={!allVoicesReady}>
+          <Button asChild intent="action" disabled={!allVoicesReady}>
+            <TransitionLink href={`/projects/${projectId}/videos`} aria-disabled={!allVoicesReady}>
               המשך לקליפים מונפשים →
-            </Link>
+            </TransitionLink>
           </Button>
         </div>
       </div>
