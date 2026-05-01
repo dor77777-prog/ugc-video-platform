@@ -1,8 +1,8 @@
 import Link from 'next/link';
 import type { UserRole } from '@prisma/client';
-import { Sparkles, Coins, ShieldCheck } from 'lucide-react';
+import { Coins, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { BRAND } from '@/lib/brand';
+import { Logo } from '@/components/brand/logo';
 
 interface TopbarProps {
   email: string;
@@ -19,13 +19,8 @@ export function Topbar({ email, creditsBalance, role }: TopbarProps) {
       <div className="h-full flex items-center justify-between gap-4 px-6">
         {/* Right (in RTL): logo + admin pill */}
         <div className="flex items-center gap-3">
-          <Link href="/dashboard" className="flex items-center gap-2 group">
-            <span className="h-7 w-7 rounded-lg bg-gradient-to-br from-primary via-primary to-accent flex items-center justify-center shadow-glow group-hover:scale-105 transition-transform">
-              <Sparkles className="h-4 w-4 text-background" />
-            </span>
-            <span className="text-base font-bold tracking-tight text-gradient">
-              {BRAND.name}
-            </span>
+          <Link href="/dashboard" className="hover:opacity-90 transition-opacity">
+            <Logo size="md" />
           </Link>
           {isAdmin && (
             <Link

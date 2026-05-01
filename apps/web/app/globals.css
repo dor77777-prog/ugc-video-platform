@@ -209,29 +209,59 @@
     0 24px 48px -12px hsl(0 0% 0% / 0.5);
 }
 
-/* Refined gradient text — three-stop. */
+/* V20.1 — refined gradient text. The previous 3-stop rainbow read as
+   amateur (violet→magenta→lime is "pride flag", not premium AI tool).
+   Replaced with mono-accent gradients used by Linear, Stripe, Anthropic:
+   one tone, with tonal shifts for depth, not multi-color. */
 .text-gradient {
+  /* Two-stop, both within the primary family. Bright on top, slightly
+     dimmer / shifted on bottom — reads as a metallic sheen on the
+     accent word, not a rainbow. */
   background-image: linear-gradient(
-    135deg,
-    hsl(var(--gradient-from)) 0%,
-    hsl(var(--gradient-to)) 50%,
-    hsl(var(--gradient-third)) 100%
+    180deg,
+    hsl(var(--primary) / 1) 0%,
+    hsl(var(--primary) / 0.75) 100%
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  /* Slight horizontal shimmer suggestion via 0px shadow — keeps the
+     letterform crisp against dark BG. */
+  filter: drop-shadow(0 0 24px hsl(var(--primary) / 0.25));
+}
+
+/* For headlines that want a subtle white-to-primary fade, used on
+   one accent word per heading. Reads as a "highlight" not a "color". */
+.text-gradient-cool {
+  background-image: linear-gradient(
+    180deg,
+    hsl(0 0% 100%) 0%,
+    hsl(0 0% 75%) 100%
   );
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
 }
 
-/* Two-stop gradient for headings that want less rainbow energy. */
-.text-gradient-cool {
+/* For when you really want a glow/shimmer accent — sparingly, on hero
+   key words. Single tone with a soft glow halo. */
+.text-gradient-shimmer {
   background-image: linear-gradient(
-    135deg,
-    hsl(0 0% 96%) 0%,
-    hsl(var(--primary)) 100%
+    100deg,
+    hsl(var(--primary) / 1) 0%,
+    hsl(0 0% 100% / 0.95) 30%,
+    hsl(var(--primary) / 1) 60%,
+    hsl(0 0% 100% / 0.85) 100%
   );
+  background-size: 200% 100%;
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
+  animation: tachles-text-shimmer 6s ease-in-out infinite;
+}
+@keyframes tachles-text-shimmer {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
 }
 
 /* Strong neon glow for CTAs. Layered: tight inner ring + soft outer. */

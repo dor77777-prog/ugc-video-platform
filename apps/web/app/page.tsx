@@ -1,9 +1,15 @@
-// V19 — cinematic landing page rebuild. Dark-mode first, massive
-// typography, aurora gradient washes, glass panels, refined hover.
-// Inspiration: kling.ai (cinematic deep-violet) + krea.ai (workspace
-// glass + neon accents).
+// V20 — cinematic landing rebuild. Goes well beyond V19's "dark theme
+// over shadcn" — adds a real visual showcase (floating glass cards
+// with R2 avatars), animated SVG aurora, mouse-parallax, animated
+// counters on scroll, live activity ticker, real avatar grid as
+// "30 voices · 25 avatars" proof.
+//
+// Inspiration honestly applied: krea.ai (workspace + showcase canvas),
+// kling.ai (cinematic dark + neon), runway.ml (heavy hero typography),
+// stripe.com (premium layering).
 
 import Link from 'next/link';
+import Image from 'next/image';
 import { redirect } from 'next/navigation';
 import {
   Sparkles,
@@ -16,12 +22,23 @@ import {
   ChevronDown,
   CircleCheckBig,
   Layers,
+  Globe,
 } from 'lucide-react';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { BRAND } from '@/lib/brand';
+import { Logo } from '@/components/brand/logo';
 import { PLAN_CONFIGS } from '@/lib/plans';
+import { HeroShowcase, AnimatedCounter, LiveActivityTicker } from './landing-hero';
+
+const R2_BASE = 'https://pub-eb116bdbeab8486f96ecf7c4fbc1014a.r2.dev';
+
+// 25 avatars in catalog — show 12 in the proof grid below the hero.
+const AVATAR_PROOF_GRID = [
+  'noa', 'liat', 'shira', 'maya', 'tamar', 'galit',
+  'einat', 'ortal', 'avi', 'yossi', 'eyal', 'guy',
+];
 
 export default async function RootPage() {
   if (
@@ -38,50 +55,21 @@ export default async function RootPage() {
   if (user) redirect('/dashboard');
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-background text-foreground">
-      {/* ───────────── Aurora background layers ───────────── */}
-      <div className="fixed inset-0 -z-10 bg-mesh bg-noise" aria-hidden />
-      <div
-        className="fixed inset-0 -z-10 opacity-60 mix-blend-screen pointer-events-none animate-aurora-drift"
-        aria-hidden
-      >
-        <div
-          className="absolute -top-[20%] -right-[10%] w-[60vw] h-[60vw] rounded-full opacity-50 blur-3xl"
-          style={{
-            background:
-              'radial-gradient(circle, hsl(258 100% 65% / 0.55), transparent 60%)',
-          }}
-        />
-        <div
-          className="absolute top-[10%] -left-[15%] w-[55vw] h-[55vw] rounded-full opacity-40 blur-3xl"
-          style={{
-            background:
-              'radial-gradient(circle, hsl(290 100% 60% / 0.45), transparent 60%)',
-          }}
-        />
-        <div
-          className="absolute bottom-[5%] left-[30%] w-[40vw] h-[40vw] rounded-full opacity-30 blur-3xl"
-          style={{
-            background:
-              'radial-gradient(circle, hsl(73 95% 60% / 0.3), transparent 60%)',
-          }}
-        />
-      </div>
+    <div className="relative min-h-screen overflow-x-hidden bg-background text-foreground">
+      {/* ───────────── Animated SVG Aurora Background ───────────── */}
+      <AuroraBackground />
 
       {/* ───────────── Top nav ───────────── */}
-      <nav className="sticky top-0 z-30 border-b border-border-subtle backdrop-blur-xl bg-background/60">
-        <div className="max-w-6xl mx-auto px-6 md:px-8 py-4 flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-2 text-lg font-bold tracking-tight">
-            <span className="h-7 w-7 rounded-lg bg-gradient-to-br from-primary via-primary to-accent flex items-center justify-center shadow-glow">
-              <Sparkles className="h-4 w-4 text-background" />
-            </span>
-            <span className="text-gradient">{BRAND.name}</span>
+      <nav className="sticky top-0 z-40 border-b border-border-subtle backdrop-blur-2xl bg-background/70">
+        <div className="max-w-7xl mx-auto px-6 md:px-10 py-4 flex items-center justify-between">
+          <Link href="/" className="hover:opacity-90 transition-opacity">
+            <Logo size="md" />
           </Link>
           <div className="hidden md:flex items-center gap-1 text-sm">
-            <NavLink href="#features">תכונות</NavLink>
+            <NavLink href="#showcase">דוגמאות</NavLink>
             <NavLink href="#pipeline">איך זה עובד</NavLink>
+            <NavLink href="#features">תכונות</NavLink>
             <NavLink href="#pricing">מחירים</NavLink>
-            <NavLink href="#faq">שאלות</NavLink>
           </div>
           <div className="flex items-center gap-2">
             <Link
@@ -97,73 +85,101 @@ export default async function RootPage() {
         </div>
       </nav>
 
-      {/* ───────────── Hero ───────────── */}
-      <section className="relative px-6 md:px-8 pt-24 md:pt-32 pb-24 md:pb-40 max-w-6xl mx-auto text-center">
-        <div className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/5 px-4 py-1.5 text-xs font-medium text-primary backdrop-blur-md animate-fade-in-up">
-          <span className="h-1.5 w-1.5 rounded-full bg-accent animate-soft-pulse" />
-          AI-native לשוק הישראלי · 2026
+      {/* ───────────── HERO ───────────── */}
+      <section className="relative max-w-7xl mx-auto px-6 md:px-10 pt-16 md:pt-20 pb-32 md:pb-40">
+        <div className="grid lg:grid-cols-12 gap-8 items-center">
+          {/* Right side: copy (RTL → right column lg:col-7) */}
+          <div className="lg:col-span-7 text-center lg:text-right space-y-8">
+            <div className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-4 py-1.5 text-xs font-semibold text-primary backdrop-blur-md animate-fade-in-up">
+              <span className="h-1.5 w-1.5 rounded-full bg-accent animate-soft-pulse" />
+              AI-native לשוק הישראלי · 2026
+            </div>
+
+            <h1
+              className="text-5xl md:text-7xl lg:text-[6.5rem] xl:text-[8rem] font-black leading-[0.92] animate-fade-in-up [animation-delay:80ms]"
+              style={{ letterSpacing: '-0.05em' }}
+            >
+              <span className="block">
+                סרטוני <span className="text-gradient">UGC</span>
+              </span>
+              <span className="block mt-1">
+                בעברית.
+              </span>
+              <span className="block mt-1 text-gradient-cool">
+                תכל&apos;ס.
+              </span>
+            </h1>
+
+            <p className="text-lg md:text-xl text-muted-foreground max-w-xl mx-auto lg:mx-0 leading-relaxed animate-fade-in-up [animation-delay:160ms]">
+              URL של מוצר → מודעת וידאו 9:16 בעברית, מוכנה לפייסבוק וטיקטוק.{' '}
+              <span className="text-foreground font-semibold">בפחות מ־5 דקות.</span>
+            </p>
+
+            <div className="flex flex-col sm:flex-row items-center lg:items-start lg:justify-start justify-center gap-3 animate-fade-in-up [animation-delay:240ms]">
+              <Button asChild size="lg" className="shadow-glow h-14 px-8 text-base">
+                <Link href="/register" className="flex items-center gap-2">
+                  <Sparkles className="h-4 w-4" />
+                  התחל חינם · 30 קרדיטים
+                  <ArrowLeft className="h-4 w-4" />
+                </Link>
+              </Button>
+              <Button
+                asChild
+                size="lg"
+                variant="outline"
+                className="h-14 px-6 text-base border-border bg-card/40 backdrop-blur-md"
+              >
+                <Link href="#pipeline" className="flex items-center gap-2">
+                  <Film className="h-4 w-4" />
+                  צפה בדוגמאות
+                </Link>
+              </Button>
+            </div>
+
+            <div className="flex items-center justify-center lg:justify-start gap-5 text-xs text-muted-foreground animate-fade-in-up [animation-delay:320ms]">
+              <span className="flex items-center gap-1.5">
+                <CircleCheckBig className="h-3.5 w-3.5 text-accent" />
+                ללא כרטיס אשראי
+              </span>
+              <span className="flex items-center gap-1.5">
+                <CircleCheckBig className="h-3.5 w-3.5 text-accent" />
+                ביטול בכל רגע
+              </span>
+            </div>
+
+            <div className="pt-4 animate-fade-in-up [animation-delay:480ms]">
+              <LiveActivityTicker />
+            </div>
+          </div>
+
+          {/* Left side: showcase visual (RTL → lg:col-5 left) */}
+          <div className="lg:col-span-5 hidden lg:block">
+            <HeroShowcase />
+          </div>
         </div>
+      </section>
 
-        <h1 className="mt-8 text-5xl md:text-7xl lg:text-[7.5rem] font-black leading-[0.95] animate-fade-in-up [animation-delay:80ms]">
-          <span className="block">סרטוני <span className="text-gradient">UGC</span></span>
-          <span className="block mt-2">בעברית. <span className="text-gradient-cool">תכל&apos;ס.</span></span>
-        </h1>
-
-        <p className="mt-8 text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto leading-relaxed animate-fade-in-up [animation-delay:160ms]">
-          הזינו URL של מוצר. אנחנו כותבים תסריט, בוחרים אווטאר ישראלי, מקליטים voice-over,
-          מנפישים את הסצנות ומרכיבים מודעת וידאו אנכית 9:16 — מוכנה לפייסבוק וטיקטוק
-          בפחות מ־5 דקות.
-        </p>
-
-        <div className="mt-12 flex flex-col sm:flex-row items-center justify-center gap-3 animate-fade-in-up [animation-delay:240ms]">
-          <Button asChild size="lg" className="shadow-glow min-w-[220px] h-12 text-base">
-            <Link href="/register" className="flex items-center gap-2">
-              <Sparkles className="h-4 w-4" />
-              התחל חינם · 30 קרדיטים
-              <ArrowLeft className="h-4 w-4" />
-            </Link>
-          </Button>
-          <Button
-            asChild
-            size="lg"
-            variant="outline"
-            className="min-w-[180px] h-12 text-base border-border bg-card/40 backdrop-blur-md"
-          >
-            <Link href="#pipeline">איך זה עובד</Link>
-          </Button>
-        </div>
-
-        <div className="mt-8 flex items-center justify-center gap-5 text-xs text-muted-foreground animate-fade-in-up [animation-delay:320ms]">
-          <span className="flex items-center gap-1.5">
-            <CircleCheckBig className="h-3.5 w-3.5 text-accent" />
-            ללא כרטיס אשראי
-          </span>
-          <span className="flex items-center gap-1.5">
-            <CircleCheckBig className="h-3.5 w-3.5 text-accent" />
-            ביטול בכל רגע
-          </span>
-          <span className="flex items-center gap-1.5 hidden sm:inline-flex">
-            <CircleCheckBig className="h-3.5 w-3.5 text-accent" />
-            פלט MP4 9:16
-          </span>
-        </div>
-
-        {/* Glow plate behind the hero stats. */}
-        <div className="mt-20 grid grid-cols-2 md:grid-cols-4 gap-4 animate-fade-in-up [animation-delay:400ms]">
+      {/* ───────────── Stats strip ───────────── */}
+      <section className="relative max-w-6xl mx-auto px-6 md:px-10 mb-32">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
           {[
-            { num: '6', label: 'תסריטים במקביל' },
-            { num: '30', label: 'קולות עבריים' },
-            { num: '25', label: 'אווטארים ישראלים' },
-            { num: '<5', label: 'דקות לסרטון' },
-          ].map((s) => (
+            { num: 30, suffix: '', label: 'קולות עבריים', icon: Mic2 },
+            { num: 25, suffix: '', label: 'אווטארים ישראלים', icon: Globe },
+            { num: 6, suffix: '', label: 'תסריטים במקביל', icon: Wand2 },
+            { num: 5, suffix: ' דק׳', label: 'לסרטון מוכן', icon: Zap },
+          ].map((s, i) => (
             <div
               key={s.label}
-              className="rounded-2xl glass p-5 text-center"
+              className="rounded-3xl glass-strong p-6 md:p-8 text-center card-hover animate-fade-in-up"
+              style={{ animationDelay: `${i * 80}ms` }}
             >
-              <div className="text-3xl md:text-4xl font-black text-gradient leading-none">
-                {s.num}
+              <div className="h-10 w-10 mx-auto rounded-2xl bg-gradient-to-br from-primary/30 to-accent/20 flex items-center justify-center mb-4">
+                <s.icon className="h-5 w-5 text-primary" />
               </div>
-              <div className="mt-2 text-[11px] uppercase tracking-widest text-muted-foreground">
+              <div className="text-4xl md:text-5xl font-black text-gradient leading-none tracking-tight">
+                <AnimatedCounter end={s.num} suffix={s.suffix} />
+              </div>
+              <div className="mt-3 text-[11px] uppercase tracking-[0.25em] text-muted-foreground">
                 {s.label}
               </div>
             </div>
@@ -171,36 +187,88 @@ export default async function RootPage() {
         </div>
       </section>
 
-      {/* ───────────── Pipeline strip ───────────── */}
-      <section id="pipeline" className="relative px-6 md:px-8 py-20 md:py-28 max-w-6xl mx-auto">
+      {/* ───────────── Avatar showcase grid ───────────── */}
+      <section id="showcase" className="relative max-w-7xl mx-auto px-6 md:px-10 py-20 md:py-32">
         <div className="text-center mb-16">
-          <div className="text-xs uppercase tracking-[0.25em] text-primary mb-4">
-            הצינור המלא
+          <div className="text-xs uppercase tracking-[0.3em] text-primary mb-4 font-mono">
+            הדמויות · The Cast
+          </div>
+          <h2 className="text-4xl md:text-6xl lg:text-7xl font-black tracking-tight leading-[0.95]">
+            <span className="text-gradient-cool">25 פנים.</span>
+            <br />
+            <span className="text-gradient">ישראלים אמיתיים.</span>
+          </h2>
+          <p className="mt-6 text-lg text-muted-foreground max-w-2xl mx-auto">
+            אווטארים שיוצרו במיוחד עם מאפיינים ישראלים — מבטא, סטייל, רקע. בחר את
+            הדמות שמדברת לקהל שלך, או תן ל־AI לבחור.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 md:gap-4">
+          {AVATAR_PROOF_GRID.map((id, i) => (
+            <div
+              key={id}
+              className="group relative aspect-[4/5] rounded-2xl overflow-hidden glass card-hover animate-fade-in-up cursor-pointer"
+              style={{ animationDelay: `${i * 40}ms` }}
+            >
+              <Image
+                src={`${R2_BASE}/avatars/${id}.png`}
+                alt={id}
+                fill
+                sizes="(max-width: 640px) 33vw, (max-width: 1024px) 25vw, 16vw"
+                className="object-cover transition-transform duration-500 group-hover:scale-110"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/0 to-transparent" />
+              <div className="absolute inset-x-0 bottom-0 p-3">
+                <div className="text-[10px] uppercase tracking-widest text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity">
+                  AI generated
+                </div>
+                <div className="text-sm font-bold capitalize">{id}</div>
+              </div>
+              <div className="absolute top-2 right-2 px-1.5 py-0.5 rounded-md bg-background/80 backdrop-blur-md text-[9px] font-black tracking-widest uppercase border border-border-subtle">
+                {String(i + 1).padStart(2, '0')}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="text-center mt-10">
+          <Button asChild variant="outline" className="border-border bg-card/40">
+            <Link href="/register">+ עוד 13 אווטארים בקטלוג</Link>
+          </Button>
+        </div>
+      </section>
+
+      {/* ───────────── Pipeline ───────────── */}
+      <section id="pipeline" className="relative max-w-7xl mx-auto px-6 md:px-10 py-20 md:py-28">
+        <div className="text-center mb-16">
+          <div className="text-xs uppercase tracking-[0.3em] text-primary mb-4 font-mono">
+            הצינור · The Pipeline
           </div>
           <h2 className="text-4xl md:text-6xl font-black tracking-tight">
             7 שלבים. <span className="text-gradient">לחיצה אחת.</span>
           </h2>
-          <p className="mt-4 text-muted-foreground max-w-2xl mx-auto">
+          <p className="mt-6 text-lg text-muted-foreground max-w-2xl mx-auto">
             מה שלוקח לצוות מלא יום עבודה, אצלנו רץ אוטומטי ברקע. אתה רואה את התוצאה
-            בזמן אמת, צעד אחר צעד.
+            בזמן אמת — שלב אחר שלב.
           </p>
         </div>
 
-        <div className="relative grid grid-cols-1 md:grid-cols-7 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
           {PIPELINE_STEPS.map((step, i) => (
             <div
               key={step.label}
-              className="relative rounded-2xl glass p-4 card-hover animate-fade-in-up"
-              style={{ animationDelay: `${i * 70}ms` }}
+              className="relative rounded-2xl glass p-5 card-hover animate-fade-in-up"
+              style={{ animationDelay: `${i * 60}ms` }}
             >
-              <div className="text-[10px] font-mono text-primary mb-2">
-                0{i + 1}
+              <div className="absolute top-3 right-3 text-[10px] font-mono text-primary opacity-60">
+                {String(i + 1).padStart(2, '0')}
               </div>
-              <div className="flex items-center justify-center h-10 w-10 rounded-xl bg-gradient-to-br from-primary/20 to-accent/15 mb-3">
+              <div className="flex items-center justify-center h-12 w-12 rounded-2xl bg-gradient-to-br from-primary/25 to-accent/15 mb-4">
                 <step.icon className="h-5 w-5 text-primary" />
               </div>
-              <div className="text-sm font-bold mb-1">{step.label}</div>
-              <div className="text-[11px] text-muted-foreground leading-snug">
+              <div className="text-base font-bold mb-1.5">{step.label}</div>
+              <div className="text-xs text-muted-foreground leading-snug">
                 {step.detail}
               </div>
             </div>
@@ -209,13 +277,13 @@ export default async function RootPage() {
       </section>
 
       {/* ───────────── Features ───────────── */}
-      <section id="features" className="relative px-6 md:px-8 py-20 md:py-28 max-w-6xl mx-auto">
+      <section id="features" className="relative max-w-7xl mx-auto px-6 md:px-10 py-20 md:py-28">
         <div className="text-center mb-16">
-          <div className="text-xs uppercase tracking-[0.25em] text-primary mb-4">
-            מה שמייחד אותנו
+          <div className="text-xs uppercase tracking-[0.3em] text-primary mb-4 font-mono">
+            מה שמייחד · Why us
           </div>
-          <h2 className="text-4xl md:text-6xl font-black tracking-tight">
-            לא עוד <span className="text-gradient">stock UGC</span>.
+          <h2 className="text-4xl md:text-6xl lg:text-7xl font-black tracking-tight leading-[0.95]">
+            לא עוד <span className="text-gradient">stock</span>.
             <br />
             תוכן ישראלי <span className="text-gradient-cool">אמיתי</span>.
           </h2>
@@ -225,14 +293,14 @@ export default async function RootPage() {
           {FEATURES.map((f, i) => (
             <Card
               key={f.title}
-              className="glass card-hover animate-fade-in-up bg-card/40"
+              className="glass card-hover tilt-hover animate-fade-in-up bg-card/40 group"
               style={{ animationDelay: `${i * 60}ms` }}
             >
-              <CardContent className="p-7 space-y-4">
-                <div className="h-12 w-12 rounded-2xl bg-gradient-to-br from-primary/25 to-accent/15 flex items-center justify-center">
-                  <f.icon className="h-6 w-6 text-primary" />
+              <CardContent className="p-7 space-y-5 h-full">
+                <div className="h-14 w-14 rounded-2xl bg-gradient-to-br from-primary/30 to-accent/20 flex items-center justify-center group-hover:scale-110 transition-transform">
+                  <f.icon className="h-7 w-7 text-primary" />
                 </div>
-                <div className="text-lg font-bold tracking-tight">{f.title}</div>
+                <div className="text-xl font-black tracking-tight">{f.title}</div>
                 <div className="text-sm text-muted-foreground leading-relaxed">
                   {f.body}
                 </div>
@@ -243,45 +311,46 @@ export default async function RootPage() {
       </section>
 
       {/* ───────────── Pricing ───────────── */}
-      <section id="pricing" className="relative px-6 md:px-8 py-20 md:py-28 max-w-6xl mx-auto">
+      <section id="pricing" className="relative max-w-7xl mx-auto px-6 md:px-10 py-20 md:py-28">
         <div className="text-center mb-16">
-          <div className="text-xs uppercase tracking-[0.25em] text-primary mb-4">
-            תוכניות
+          <div className="text-xs uppercase tracking-[0.3em] text-primary mb-4 font-mono">
+            מחירים · Plans
           </div>
           <h2 className="text-4xl md:text-6xl font-black tracking-tight">
             תשלום פשוט. <span className="text-gradient">ללא סודות.</span>
           </h2>
-          <p className="mt-4 text-muted-foreground max-w-2xl mx-auto">
-            תוכנית חודשית מתחדשת. מתחילים בחינם, משדרגים מתי שצריך, מבטלים בכל רגע.
+          <p className="mt-6 text-lg text-muted-foreground max-w-2xl mx-auto">
+            תוכנית חודשית מתחדשת. מתחילים בחינם. משדרגים מתי שצריך. מבטלים בלחיצה.
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          {(['free_trial', 'creator', 'brand', 'agency'] as const).map((slug) => {
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          {(['free_trial', 'creator', 'brand', 'agency'] as const).map((slug, i) => {
             const cfg = PLAN_CONFIGS[slug];
             const isFree = slug === 'free_trial';
             const isFeatured = slug === 'brand';
             return (
               <Card
                 key={slug}
-                className={
+                className={`relative animate-fade-in-up ${
                   isFeatured
-                    ? 'glass-strong gradient-border card-hover relative'
+                    ? 'glass-liquid gradient-border card-hover lg:scale-[1.04] z-10'
                     : 'glass card-hover bg-card/40'
-                }
+                }`}
+                style={{ animationDelay: `${i * 80}ms` }}
               >
                 {isFeatured && (
-                  <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full bg-gradient-to-br from-primary to-accent text-background text-[10px] font-bold uppercase tracking-widest shadow-glow">
+                  <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full bg-gradient-to-br from-primary to-accent text-background text-[10px] font-black uppercase tracking-widest shadow-glow">
                     הכי פופולרי
                   </div>
                 )}
-                <CardContent className="p-6 space-y-5">
+                <CardContent className="p-7 space-y-5">
                   <div className="space-y-2">
-                    <div className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+                    <div className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
                       {cfg.displayName}
                     </div>
                     <div className="flex items-baseline gap-1.5">
-                      <span className="text-4xl font-black tracking-tight">
+                      <span className="text-5xl font-black tracking-tight font-mono">
                         {isFree ? 'חינם' : `$${cfg.monthlyPriceUsd}`}
                       </span>
                       {!isFree && (
@@ -289,7 +358,7 @@ export default async function RootPage() {
                       )}
                     </div>
                   </div>
-                  <div className="space-y-2.5 pt-3 border-t border-border-subtle">
+                  <div className="space-y-3 pt-4 border-t border-border-subtle">
                     <Bullet text={`${cfg.monthlyCredits} קרדיטים${isFree ? ' חד-פעמיים' : ' / חודש'}`} />
                     <Bullet text="כל 30 הקולות + 25 אווטארים" />
                     <Bullet text="הנפשה + lipsync אוטומטי" />
@@ -304,8 +373,8 @@ export default async function RootPage() {
                     variant={isFeatured ? 'default' : 'outline'}
                     className={
                       isFeatured
-                        ? 'w-full shadow-glow h-11 font-bold'
-                        : 'w-full h-11 border-border bg-card/40'
+                        ? 'w-full shadow-glow h-12 font-bold'
+                        : 'w-full h-12 border-border bg-card/40'
                     }
                   >
                     <Link href="/register">
@@ -318,7 +387,7 @@ export default async function RootPage() {
           })}
         </div>
 
-        <div className="text-center mt-8 text-xs text-muted-foreground">
+        <div className="text-center mt-10 text-xs text-muted-foreground">
           השוואה מלאה ב־
           <Link href="/pricing" className="text-primary hover:underline">
             /pricing
@@ -329,11 +398,9 @@ export default async function RootPage() {
       </section>
 
       {/* ───────────── FAQ ───────────── */}
-      <section id="faq" className="relative px-6 md:px-8 py-20 md:py-28 max-w-3xl mx-auto">
+      <section id="faq" className="relative max-w-3xl mx-auto px-6 md:px-10 py-20 md:py-28">
         <div className="text-center mb-12">
-          <div className="text-xs uppercase tracking-[0.25em] text-primary mb-4">
-            FAQ
-          </div>
+          <div className="text-xs uppercase tracking-[0.3em] text-primary mb-4 font-mono">FAQ</div>
           <h2 className="text-4xl md:text-5xl font-black tracking-tight">
             שאלות נפוצות
           </h2>
@@ -345,27 +412,35 @@ export default async function RootPage() {
         </div>
       </section>
 
-      {/* ───────────── CTA bottom ───────────── */}
-      <section className="relative px-6 md:px-8 py-20 md:py-28 max-w-4xl mx-auto text-center">
-        <div className="rounded-3xl glass-strong p-10 md:p-16 relative overflow-hidden">
+      {/* ───────────── Big bottom CTA ───────────── */}
+      <section className="relative max-w-5xl mx-auto px-6 md:px-10 py-24 md:py-32">
+        <div className="rounded-[2rem] glass-liquid p-12 md:p-20 relative overflow-hidden text-center">
           <div
-            className="absolute inset-0 -z-10 opacity-50"
+            className="absolute inset-0 -z-10 opacity-80"
             style={{
-              background:
-                'radial-gradient(circle at 50% 0%, hsl(258 100% 65% / 0.4), transparent 70%)',
+              background: `
+                radial-gradient(circle at 30% 0%, hsl(258 100% 65% / 0.5), transparent 50%),
+                radial-gradient(circle at 70% 100%, hsl(290 100% 65% / 0.4), transparent 50%),
+                radial-gradient(circle at 50% 50%, hsl(73 95% 60% / 0.2), transparent 60%)
+              `,
             }}
           />
-          <h2 className="text-3xl md:text-5xl font-black tracking-tight">
-            מוכנים לסרטון <span className="text-gradient">הראשון שלכם</span>?
+          <div className="text-xs uppercase tracking-[0.3em] text-primary mb-6 font-mono">
+            Ready when you are
+          </div>
+          <h2 className="text-4xl md:text-7xl font-black tracking-tight leading-[0.95]">
+            הסרטון <span className="text-gradient">הראשון שלך</span>.
+            <br />
+            <span className="text-gradient-cool">תוך 5 דקות.</span>
           </h2>
-          <p className="mt-4 text-muted-foreground max-w-xl mx-auto">
+          <p className="mt-8 text-muted-foreground max-w-xl mx-auto text-lg">
             30 קרדיטים חינם בכניסה, ללא כרטיס אשראי. רוב המשתמשים מסיימים את הסרטון
             הראשון תוך 8 דקות.
           </p>
-          <Button asChild size="lg" className="mt-8 shadow-glow h-12 px-8 text-base">
+          <Button asChild size="lg" className="mt-10 shadow-glow h-14 px-10 text-base font-bold">
             <Link href="/register" className="flex items-center gap-2">
               <Sparkles className="h-4 w-4" />
-              התחל עכשיו
+              התחל עכשיו · חינם
               <ArrowLeft className="h-4 w-4" />
             </Link>
           </Button>
@@ -373,29 +448,96 @@ export default async function RootPage() {
       </section>
 
       {/* ───────────── Footer ───────────── */}
-      <footer className="relative border-t border-border-subtle bg-card/30 backdrop-blur-md">
-        <div className="px-6 md:px-8 py-10 max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-2 text-sm">
-            <span className="font-bold text-gradient">{BRAND.name}</span>
-            <span className="text-muted-foreground">·</span>
-            <span className="text-muted-foreground">{BRAND.tagline}</span>
+      <footer className="relative border-t border-border-subtle bg-card/30 backdrop-blur-md mt-20">
+        <div className="px-6 md:px-10 py-10 max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-3 text-sm">
+            <Logo size="sm" />
+            <span className="text-muted-foreground hidden md:inline">·</span>
+            <span className="text-muted-foreground hidden md:inline">{BRAND.tagline}</span>
           </div>
           <div className="flex items-center gap-6 text-xs text-muted-foreground">
-            <Link href="/login" className="hover:text-foreground transition-colors">
-              התחבר
-            </Link>
-            <Link href="/register" className="hover:text-foreground transition-colors">
-              הרשם
-            </Link>
-            <Link href="/pricing" className="hover:text-foreground transition-colors">
-              מחירים
-            </Link>
-            <Link href="#faq" className="hover:text-foreground transition-colors">
-              שאלות
-            </Link>
+            <Link href="/login" className="hover:text-foreground transition-colors">התחבר</Link>
+            <Link href="/register" className="hover:text-foreground transition-colors">הרשם</Link>
+            <Link href="/pricing" className="hover:text-foreground transition-colors">מחירים</Link>
+            <Link href="#faq" className="hover:text-foreground transition-colors">שאלות</Link>
           </div>
         </div>
       </footer>
+    </div>
+  );
+}
+
+// ============================================================
+// Aurora background — animated SVG with multiple drifting blobs
+// rendered at fixed position behind everything.
+// ============================================================
+function AuroraBackground() {
+  return (
+    <div className="fixed inset-0 -z-10 pointer-events-none overflow-hidden">
+      <div className="absolute inset-0 bg-mesh" />
+      <svg
+        className="absolute inset-0 w-full h-full opacity-60 mix-blend-screen"
+        viewBox="0 0 1200 1200"
+        preserveAspectRatio="none"
+      >
+        <defs>
+          <radialGradient id="aurora-1" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stopColor="hsl(258 100% 65%)" stopOpacity="0.7" />
+            <stop offset="100%" stopColor="hsl(258 100% 65%)" stopOpacity="0" />
+          </radialGradient>
+          <radialGradient id="aurora-2" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stopColor="hsl(290 100% 65%)" stopOpacity="0.55" />
+            <stop offset="100%" stopColor="hsl(290 100% 65%)" stopOpacity="0" />
+          </radialGradient>
+          <radialGradient id="aurora-3" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stopColor="hsl(73 95% 60%)" stopOpacity="0.4" />
+            <stop offset="100%" stopColor="hsl(73 95% 60%)" stopOpacity="0" />
+          </radialGradient>
+        </defs>
+        <circle cx="100" cy="200" r="500" fill="url(#aurora-1)">
+          <animate
+            attributeName="cx"
+            values="100;300;200;100"
+            dur="20s"
+            repeatCount="indefinite"
+          />
+          <animate
+            attributeName="cy"
+            values="200;400;300;200"
+            dur="22s"
+            repeatCount="indefinite"
+          />
+        </circle>
+        <circle cx="1000" cy="100" r="450" fill="url(#aurora-2)">
+          <animate
+            attributeName="cx"
+            values="1000;800;900;1000"
+            dur="24s"
+            repeatCount="indefinite"
+          />
+          <animate
+            attributeName="cy"
+            values="100;300;200;100"
+            dur="26s"
+            repeatCount="indefinite"
+          />
+        </circle>
+        <circle cx="600" cy="900" r="400" fill="url(#aurora-3)">
+          <animate
+            attributeName="cx"
+            values="600;800;500;600"
+            dur="28s"
+            repeatCount="indefinite"
+          />
+          <animate
+            attributeName="cy"
+            values="900;700;800;900"
+            dur="30s"
+            repeatCount="indefinite"
+          />
+        </circle>
+      </svg>
+      <div className="absolute inset-0 bg-noise" />
     </div>
   );
 }
@@ -413,7 +555,7 @@ function NavLink({ href, children }: { href: string; children: React.ReactNode }
 
 function Bullet({ text }: { text: string }) {
   return (
-    <div className="flex items-start gap-2 text-xs">
+    <div className="flex items-start gap-2 text-sm">
       <CircleCheckBig className="h-4 w-4 text-accent flex-shrink-0 mt-0.5" />
       <span className="text-foreground/85">{text}</span>
     </div>
@@ -431,7 +573,7 @@ function FAQItem({
 }) {
   return (
     <details
-      className="group glass rounded-2xl px-6 py-4 cursor-pointer hover:border-primary/30 transition-colors"
+      className="group glass rounded-2xl px-6 py-5 cursor-pointer hover:border-primary/30 transition-colors"
       open={defaultOpen}
     >
       <summary className="flex items-center justify-between gap-4 text-base font-bold list-none">
@@ -458,32 +600,32 @@ const PIPELINE_STEPS = [
 const FEATURES = [
   {
     title: '6 תסריטים במקביל',
-    body: 'gpt-5.4-mini כותב 6 גרסאות בזוויות שיווקיות שונות (כאב + פתרון, סקפטיקל, הוכחה, עוגן מחיר, רגע ישראלי, דיירקט-ריספונס). אתה בוחר או עורך ידנית.',
+    body: 'gpt-5.4-mini כותב 6 גרסאות בזוויות שונות (כאב + פתרון, סקפטיקל, הוכחה, עוגן מחיר, רגע ישראלי, דיירקט). אתה בוחר או עורך.',
     icon: Wand2,
   },
   {
-    title: 'קולות ישראליים אמיתיים',
-    body: 'ElevenLabs eleven_v3 עם word-level timestamps. 30 קולות בעברית — אישה / גבר, צעיר / מבוגר, רגוע / אנרגטי. בחירה במקום אחד.',
+    title: 'קולות ישראלים אמיתיים',
+    body: 'ElevenLabs eleven_v3 עם word-level timestamps. 30 קולות בעברית — אישה / גבר, צעיר / מבוגר, רגוע / אנרגטי.',
     icon: Mic2,
   },
   {
-    title: 'הנפשה + lipsync אוטומטי',
-    body: 'Kling Omni v3 i2v הופך כל תמונה לקליפ של 5 שניות. PixVerse מסנכרן שפתיים אוטומטית כשרואים פנים. בלי lipsync — ffmpeg מערבב את הקול.',
+    title: 'הנפשה + lipsync',
+    body: 'Kling Omni v3 i2v הופך תמונה לקליפ של 5 שניות. PixVerse מסנכרן שפתיים אוטומטית כשרואים פנים.',
     icon: Film,
   },
   {
     title: 'עיצוב ישראלי מזוהה',
-    body: '51 cues חזותיים מותאמי שוק (שקעים עגולים, פלאטות חומות, חניית בלוקים, חצרות אבן ירושלמית) שמופיעים אוטומטית בתמונות.',
+    body: '51 cues חזותיים (שקעים עגולים, פלאטות חומות, חניית בלוקים, אבן ירושלמית) שנכנסים אוטומטית בכל תמונה.',
     icon: Sparkles,
   },
   {
     title: 'הרכבה סופית בקליק',
-    body: 'ffmpeg על worker אוטונומי מרכיב MP4 9:16 עם voice-over, מוזיקת רקע ב־8% volume וכתוביות בעברית עם RTL נכון, חלוקה לבלוקים של 2-5 מילים.',
+    body: 'ffmpeg מרכיב MP4 9:16 עם voice-over, מוזיקת רקע ב־8% volume וכתוביות בעברית עם RTL נכון.',
     icon: Zap,
   },
   {
     title: 'שקיפות עלויות מוחלטת',
-    body: 'כל קריאה ל־AI נרשמת ב־ApiCall עם cost בדולרים. /admin/costs מציג סיכום בזמן אמת מ־OpenAI / Kling / PixVerse / ElevenLabs.',
+    body: 'כל קריאה ל־AI נרשמת עם cost בדולרים. /admin/costs מציג סיכום בזמן אמת מ־OpenAI / Kling / PixVerse / ElevenLabs.',
     icon: ShieldCheck,
   },
 ];
@@ -499,11 +641,11 @@ const FAQ: Array<{ q: string; a: string }> = [
   },
   {
     q: 'מה קורה אם לא אהבתי את התוצאה?',
-    a: 'בכל שלב אפשר לרגנר. רגן ראשון של תמונה או voice-over חינם (1 קרדיט נחסך). אם הסרטון הסופי לא מתאים אפשר לחזור לכל שלב, לערוך פרומפט / תסריט / קול / מוזיקה ולהריץ מחדש. אנחנו לא חוסמים גרסאות.',
+    a: 'בכל שלב אפשר לרגנר. רגן ראשון של תמונה או voice-over חינם (1 קרדיט נחסך). אם הסרטון הסופי לא מתאים אפשר לחזור לכל שלב, לערוך פרומפט / תסריט / קול / מוזיקה ולהריץ מחדש.',
   },
   {
     q: 'האם הקולות והאווטארים באמת ישראלים?',
-    a: 'כן. 30 קולות בעברית מ־ElevenLabs (כולל voice cloning של מובילי תוכן ישראלים) ו־25 אווטארים שיוצרו ב־gpt-image-2 על מאפיינים ישראלים אמיתיים — מבטא, סטייל, צבעי עור, שיער. כל אווטאר עם profile של region (ת״א / ירושלים / חיפה) ו־religious register (חילוני / מסורתי / דתי).',
+    a: 'כן. 30 קולות בעברית מ־ElevenLabs ו־25 אווטארים שיוצרו ב־gpt-image-2 על מאפיינים ישראלים אמיתיים — מבטא, סטייל, צבעי עור, שיער. כל אווטאר עם profile של region (ת״א / ירושלים / חיפה) ו־religious register (חילוני / מסורתי / דתי).',
   },
   {
     q: 'איך אני משלם? יש מנוי או pay-per-use?',
