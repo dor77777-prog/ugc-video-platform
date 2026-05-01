@@ -263,15 +263,19 @@ export function VoicePicker({
 }
 
 function formatSampleError(displayName: string, reason?: string, detail?: string): string {
+  // V26.15 — public-facing error messages no longer name the upstream
+  // voice provider or its dashboard URLs. The actual upstream error
+  // detail still lands in server logs (and the admin /admin/costs
+  // dashboard) for the operator. Users get a clear, brand-agnostic
+  // explanation + a path forward.
   switch (reason) {
     case 'quota_exceeded':
-      return `מפתח ElevenLabs נגמרו לו הקרדיטים. בקר ב-elevenlabs.io/app/settings/api-keys, הגדל את ה-quota על המפתח (או צור חדש), והעדכן ב-.env.`;
+      return `מכסת הקריינות נגמרה זמנית. נסה שוב עוד מספר דקות, או פנה לתמיכה אם זה ממשיך.`;
     case 'paid_plan_required':
-      return `הקול הזה הוא Library voice של ElevenLabs ודורש תוכנית בתשלום (Starter $6/חודש ומעלה). בחר אחד מקולות ה-Default או שדרג ב-elevenlabs.io/pricing.`;
+      return `הקול הזה זמין רק בחבילה גבוהה יותר. בחר קול אחר מהרשימה.`;
     case 'invalid_api_key':
-      return `מפתח ElevenLabs נדחה (401). ודא שה-ELEVENLABS_API_KEY תקף ב-.env.`;
     case 'not_configured':
-      return `מפתח ElevenLabs (ELEVENLABS_API_KEY) לא הוגדר ב-.env. הוסף אותו והפעל את השרת מחדש.`;
+      return `שירות הקריינות לא זמין כרגע. אנחנו עובדים על זה.`;
     default:
       return `הדגימה של ${displayName} לא נטענה. ${detail ? `(${detail.slice(0, 200)})` : 'נסה שוב.'}`;
   }

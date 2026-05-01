@@ -221,9 +221,9 @@ export default async function ScenesPage({
           <div className="font-semibold text-foreground">הצינור המלא</div>
           <ol className="list-decimal list-inside space-y-0.5">
             <li>תמונה לכל סצנה — אנחנו כאן ✓</li>
-            <li>קריינות לכל סצנה (ElevenLabs) — קומיט הבא</li>
-            <li>אנימציה של התמונה לקליפ + סנכרון עם הקריינות (Kling/Runway + מיזוג)</li>
-            <li>הרכבה סופית: כל הקליפים + מוזיקת רקע + כתוביות (Creatomate)</li>
+            <li>קריינות עברית לכל סצנה — קומיט הבא</li>
+            <li>הנפשה של התמונה לקליפ + סנכרון שפתיים עם הקריינות</li>
+            <li>הרכבה סופית: כל הקליפים + מוזיקת רקע + כתוביות</li>
           </ol>
         </CardContent>
       </Card>

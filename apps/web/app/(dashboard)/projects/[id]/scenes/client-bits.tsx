@@ -193,7 +193,7 @@ export function GenerateAllButton({
             done++;
             if (result.safetyRetryApplied) {
               setError(
-                'סצנה זו נוצרה ללא תמונת המוצר (OpenAI דחו את הגרסה הראשונה). הזהות שמורה — תוכל לרגנר ידנית אם רוצה לוודא נאמנות למוצר.',
+                'סצנה זו נוצרה ללא תמונת המוצר (מנוע ההפקה דחה את הגרסה הראשונה). הזהות שמורה — תוכל לרגנר ידנית אם רוצה לוודא נאמנות למוצר.',
               );
             } else {
               setError(null);
@@ -759,7 +759,7 @@ export function SceneCard(props: SceneCardProps) {
                 <ElapsedTimer keyValue={props.sceneId + props.imageGenerationCount} />
               </div>
               <div className="text-[10px] text-muted-foreground/70 max-w-[80%]">
-                gpt-image-2 בדרך כלל 40–70 שניות עם תמונות רפרנס.
+                בדרך כלל 40–70 שניות עם תמונות רפרנס.
               </div>
             </div>
           )}

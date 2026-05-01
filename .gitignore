@@ -42,3 +42,14 @@ coverage/
 # Runtime-generated user uploads
 apps/web/public/uploads/
 .vercel
+
+# V26.15 — internal pipeline / business / architecture docs.
+# These contain implementation details (provider names, model ids,
+# version history, business model math, deep architecture notes)
+# that we don't want exposed in the public repo. They stay LOCAL
+# for context across coding sessions but are not tracked.
+STATUS.md
+BUSINESS_MODEL.md
+DEPLOYMENT.md
+.claude/CLAUDE.md
+docs/v14/

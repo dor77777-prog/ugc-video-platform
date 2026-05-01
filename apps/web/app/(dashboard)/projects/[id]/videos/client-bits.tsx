@@ -795,9 +795,12 @@ function ClipProviderToggle({
   const router = useRouter();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [local, setLocal] = useState<string>(clipProvider === 'grok' ? 'grok' : 'kling');
+  // V26.14 — default flipped Kling → Grok. clipProvider === null means
+  // "use the default" which is now Grok; only an explicit 'kling'
+  // value keeps Kling selected.
+  const [local, setLocal] = useState<string>(clipProvider === 'kling' ? 'kling' : 'grok');
   useEffect(() => {
-    setLocal(clipProvider === 'grok' ? 'grok' : 'kling');
+    setLocal(clipProvider === 'kling' ? 'kling' : 'grok');
   }, [clipProvider]);
 
   // V26.4 — Grok works on lipsync scenes too. The lipsync pipeline is

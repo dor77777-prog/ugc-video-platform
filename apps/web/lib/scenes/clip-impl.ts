@@ -549,20 +549,25 @@ async function generateSceneClipImplInner(
     scene.durationSeconds, // honor the script's planned scene length
     routing.requiresLipSync,
   );
-  // V26 / V26.4 — per-scene provider choice. The user picks Kling vs
-  // Grok in step 5 before regenerating. We persist the choice on
-  // scene.clipProvider (same column we already write the actual
-  // provider to on success — the column doubles as user-intent
-  // pre-flight and post-flight record).
+  // V26 / V26.4 / V26.14 — per-scene provider choice.
   //
-  // V26.4: Grok works on lipsync scenes too. The lipsync pipeline is
-  // provider-agnostic — PixVerse takes a silent video URL regardless
-  // of who produced it (Kling or Grok), and the face-gate inspects
-  // scene.imageUrl (not the video) so it doesn't care either. Earlier
-  // I had artificially restricted Grok to non-lipsync scenes; removed.
+  // V26.14: default flipped Kling → Grok. Operator can override the
+  // global default via DEFAULT_CLIP_PROVIDER env (`grok` | `kling`),
+  // and the user can override per-scene via `Scene.clipProvider`
+  // (the existing toggle in step 5).
+  //
+  // V26.4 carryover: Grok works on lipsync scenes too. The lipsync
+  // pipeline is provider-agnostic — PixVerse takes a silent video URL
+  // regardless of who produced it, and the face-gate inspects
+  // scene.imageUrl (not the video).
+  const DEFAULT_PROVIDER =
+    (process.env.DEFAULT_CLIP_PROVIDER ?? 'grok').toLowerCase() === 'kling'
+      ? 'kling'
+      : 'grok';
   const userPreferredProvider =
     (scene as { clipProvider?: string | null }).clipProvider ?? null;
-  const useGrok = userPreferredProvider === 'grok';
+  const effectiveProvider = userPreferredProvider ?? DEFAULT_PROVIDER;
+  const useGrok = effectiveProvider === 'grok';
   const providerName = useGrok ? 'xai' : 'kling';
   const providerLog = useGrok ? logStage('grok-imagine', sceneId) : klingLog;
   const grokResolution = (process.env.XAI_VIDEO_RESOLUTION ?? '720p').toLowerCase();

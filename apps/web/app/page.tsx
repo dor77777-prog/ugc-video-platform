@@ -591,45 +591,51 @@ function FAQItem({
   );
 }
 
+// V26.15 — public-page IP scrub. The strip + features + FAQ used to
+// name every provider in the stack (Kling, PixVerse, ElevenLabs, gpt-
+// image-2, etc.). Replaced with marketing-focused copy that describes
+// the OUTCOME for the user — not the engine. Internal pipeline detail
+// stays in private MD files (STATUS.md / CLAUDE.md / BUSINESS_MODEL.md
+// are gitignored as of V26.15).
 const PIPELINE_STEPS = [
-  { label: 'Scrape', detail: 'cheerio + JSON-LD + OG', icon: Layers },
-  { label: 'Intelligence', detail: 'gpt-5.4-mini dossier', icon: Wand2 },
-  { label: 'Avatar', detail: '25 ישראלים', icon: Sparkles },
-  { label: 'Scripts', detail: '6 במקביל', icon: Wand2 },
-  { label: 'Voice', detail: 'ElevenLabs eleven_v3', icon: Mic2 },
-  { label: 'Animate', detail: 'Kling + PixVerse', icon: Film },
-  { label: 'Render', detail: 'ffmpeg → MP4', icon: Zap },
+  { label: 'הזן URL', detail: 'דף מוצר → מוכן', icon: Layers },
+  { label: 'מודיעין מוצר', detail: 'נישה + קהל יעד', icon: Wand2 },
+  { label: 'אווטאר', detail: '25 דמויות', icon: Sparkles },
+  { label: 'תסריטים', detail: '6 גרסאות', icon: Wand2 },
+  { label: 'קריינות', detail: 'עברית טבעית', icon: Mic2 },
+  { label: 'הנפשה', detail: 'תמונה → וידאו', icon: Film },
+  { label: 'הרכבה', detail: 'MP4 לשיתוף', icon: Zap },
 ];
 
 const FEATURES = [
   {
     title: '6 תסריטים במקביל',
-    body: 'gpt-5.4-mini כותב 6 גרסאות בזוויות שונות (כאב + פתרון, סקפטיקל, הוכחה, עוגן מחיר, רגע ישראלי, דיירקט). אתה בוחר או עורך.',
+    body: '6 גרסאות תסריט בזוויות שיווקיות שונות — כאב + פתרון, סקפטיקל, הוכחה, עוגן מחיר, רגע ישראלי, דיירקט. אתה בוחר או עורך.',
     icon: Wand2,
   },
   {
     title: 'קולות ישראלים אמיתיים',
-    body: 'ElevenLabs eleven_v3 עם word-level timestamps. 30 קולות בעברית — אישה / גבר, צעיר / מבוגר, רגוע / אנרגטי.',
+    body: '30 קולות עברית טבעיים — אישה / גבר, צעיר / מבוגר, רגוע / אנרגטי. סנכרון word-level עם הוידאו.',
     icon: Mic2,
   },
   {
-    title: 'הנפשה + lipsync',
-    body: 'Kling Omni v3 i2v הופך תמונה לקליפ של 5 שניות. PixVerse מסנכרן שפתיים אוטומטית כשרואים פנים.',
+    title: 'הנפשה + סנכרון שפתיים',
+    body: 'תמונה סטטית הופכת לקליפ דובר. סנכרון שפתיים אוטומטי כשרואים פנים — ללא צורך בצילום.',
     icon: Film,
   },
   {
     title: 'עיצוב ישראלי מזוהה',
-    body: '51 cues חזותיים (שקעים עגולים, פלאטות חומות, חניית בלוקים, אבן ירושלמית) שנכנסים אוטומטית בכל תמונה.',
+    body: 'עשרות פרטים חזותיים שמייחדים את הוויב הישראלי נכנסים אוטומטית — מהפרטים הקטנים ועד שפת הגוף. נראה כאן, לא בפלורידה.',
     icon: Sparkles,
   },
   {
     title: 'הרכבה סופית בקליק',
-    body: 'ffmpeg מרכיב MP4 9:16 עם voice-over, מוזיקת רקע ב־8% volume וכתוביות בעברית עם RTL נכון.',
+    body: 'MP4 9:16 מוכן לפרסום, עם voice-over, מוזיקת רקע מאוזנת וכתוביות עברית RTL מסונכרנות פרים-פרים.',
     icon: Zap,
   },
   {
     title: 'שקיפות עלויות מוחלטת',
-    body: 'כל קריאה ל־AI נרשמת עם cost בדולרים. /admin/costs מציג סיכום בזמן אמת מ־OpenAI / Kling / PixVerse / ElevenLabs.',
+    body: 'כל פעולה ב-AI נרשמת עם עלות מדויקת בדולרים. דשבורד אדמין בזמן אמת — תמיד תדע על מה אתה משלם.',
     icon: ShieldCheck,
   },
 ];
@@ -637,7 +643,7 @@ const FEATURES = [
 const FAQ: Array<{ q: string; a: string }> = [
   {
     q: 'כמה זמן לוקח לקבל סרטון מוכן?',
-    a: 'הצינור המלא לוקח 4-7 דקות מרגע הזנת ה־URL: סקרייפינג + תסריט (60s) → תמונות 6 סצנות (60s במקביל) → voice-over (10s במקביל) → הנפשה ו־lipsync (3-5 דק׳) → הרכבה סופית (30s).',
+    a: 'הצינור המלא לוקח 4-7 דקות מרגע הזנת ה־URL: ניתוח המוצר ובחירת זוויות שיווקיות → תסריטים → תמונות סצנה → קריינות עברית → הנפשה וסנכרון שפתיים → הרכבה סופית. רוב התהליך רץ במקביל.',
   },
   {
     q: 'אילו פלטפורמות אפשר להעלות אליהן את הסרטון?',
@@ -645,11 +651,11 @@ const FAQ: Array<{ q: string; a: string }> = [
   },
   {
     q: 'מה קורה אם לא אהבתי את התוצאה?',
-    a: 'בכל שלב אפשר לרגנר. רגן ראשון של תמונה או voice-over חינם (1 קרדיט נחסך). אם הסרטון הסופי לא מתאים אפשר לחזור לכל שלב, לערוך פרומפט / תסריט / קול / מוזיקה ולהריץ מחדש.',
+    a: 'בכל שלב אפשר לרגנר. רגן ראשון של תמונה או קריינות חינם (1 קרדיט נחסך). אם הסרטון הסופי לא מתאים אפשר לחזור לכל שלב, לערוך פרומפט / תסריט / קול / מוזיקה ולהריץ מחדש.',
   },
   {
     q: 'האם הקולות והאווטארים באמת ישראלים?',
-    a: 'כן. 30 קולות בעברית מ־ElevenLabs ו־25 אווטארים שיוצרו ב־gpt-image-2 על מאפיינים ישראלים אמיתיים — מבטא, סטייל, צבעי עור, שיער. כל אווטאר עם profile של region (ת״א / ירושלים / חיפה) ו־religious register (חילוני / מסורתי / דתי).',
+    a: 'כן. 30 קולות עברית טבעיים ו־25 אווטארים שיוצרו במיוחד עם מאפיינים ישראלים אמיתיים — מבטא, סטייל, צבעי עור, שיער. כל אווטאר עם פרופיל region (ת״א / ירושלים / חיפה) ו־religious register (חילוני / מסורתי / דתי).',
   },
   {
     q: 'איך אני משלם? יש מנוי או pay-per-use?',

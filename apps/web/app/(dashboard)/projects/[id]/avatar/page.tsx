@@ -58,7 +58,7 @@ export default async function AvatarPage({
             ← חזרה לפרטי המוצר
           </Link>
           <div className="text-[10px] font-mono">
-            25 אווטארים בקטלוג · gpt-image-2 generated
+            25 אווטארים בקטלוג · נוצרו עבורנו
           </div>
         </div>
       </div>
