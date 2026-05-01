@@ -44,22 +44,29 @@ const THINKING_LEVEL_MAP: Record<
   high: ThinkingLevel.HIGH,
 };
 
-// V26.3 — default to Flash, not Pro. Google's docs explicitly position
-// gemini-3-flash-preview as "Pro-level intelligence at the speed and
-// pricing of Flash" — 4× cheaper input ($0.50/M vs $2/M) and 4× cheaper
-// output ($3/M vs $12/M). Critically, Flash also supports
-// `thinkingLevel: 'minimal'` (Pro does not), so on the script-gen path
-// we use minimal thinking → near-zero thoughts tokens → another big
-// cost drop. A V26.2 6-batch on Pro at low thinking cost ~$0.70;
-// the same batch on Flash at minimal thinking costs ~$0.05-0.10.
+// V26.7 — back to Pro. The V26.3 → V26.6 path (Flash + minimal → Flash
+// + low) was a cost-optimization experiment. Live use surfaced two
+// observations:
+//   1. Flash + minimal produced weak strategic enum choices in the
+//      script schema (cameraFocus / sceneGenerationType / etc.)
+//      → fixed by V26.6 bumping to `low`.
+//   2. Flash even at `low` produces shallower English visual specs
+//      in `visualPromptEnglish`, which our deterministic image-brief
+//      builder consumes verbatim → image prompts felt observably
+//      weaker than the pre-V25 OpenAI gpt-5.4-mini baseline.
+//
+// Pro at thinking:low is the right balance. Cost moves from ~\$0.10
+// (Flash:low) to ~\$0.30/batch (Pro:low) — still far below the
+// \$0.70 thinking:high baseline that triggered the original cost
+// concern. For Hebrew creative scriptwriting + visual specification
+// the quality bump is the load-bearing reason this stage exists.
 //
 // Override via GEMINI_SCRIPT_MODEL env:
-//   - `gemini-3-flash-preview`        — DEFAULT, 4× cheaper than Pro
-//   - `gemini-3.1-flash-lite-preview` — 8× cheaper, may sacrifice
-//                                       Hebrew creative quality
-//   - `gemini-3-pro-preview`          — when reasoning depth matters
-//   - `gemini-3.1-pro-preview`        — current canonical Pro alias
-const DEFAULT_MODEL = 'gemini-3-flash-preview';
+//   - `gemini-3-pro-preview`          — DEFAULT, best creative quality
+//   - `gemini-3.1-pro-preview`        — canonical Pro alias
+//   - `gemini-3-flash-preview`        — 4× cheaper, weaker visual prose
+//   - `gemini-3.1-flash-lite-preview` — 8× cheaper, sacrifices quality
+const DEFAULT_MODEL = 'gemini-3-pro-preview';
 
 export class GeminiConfigError extends Error {
   constructor(message: string) {

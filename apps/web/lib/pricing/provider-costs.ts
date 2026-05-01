@@ -47,20 +47,20 @@ export const CREDIT_LIST_VALUE_USD = num('CREDIT_LIST_VALUE_USD', 0.10);
 //   PixVerse media upload: no separate observed billing today; logged
 //   so we can revisit if they start charging for it.
 export const PROVIDER_COST_ESTIMATES_USD = {
-  // V26.6 — script batch defaults to Gemini 3 Flash with thinkingLevel
-  // `low` (was `minimal` in V26.3). Bumped because `minimal` was
-  // producing weaker strategic metadata (cameraFocus / setting cue /
-  // primarySubject) which degraded downstream image briefs. Estimated
-  // cost on `low`: 6 calls × (~5k input × $0.50/M + ~3-4k output incl
-  // ~300 thoughts × $3/M) ≈ $0.10-0.12/batch. Baseline pinned at
-  // $0.12 to absorb variance from Hebrew tokenization. If the operator
-  // switches GEMINI_SCRIPT_MODEL back to a Pro tier this constant
-  // under-attributes — actual_usage path (token-based) is accurate
-  // regardless. The legacy COST_OPENAI_SCRIPT_BATCH_USD env is read
-  // as a final fallback for back-compat.
+  // V26.7 — script batch defaults to Gemini 3 Pro with thinkingLevel
+  // `low`. Estimated cost: 6 calls × (~5k input × $2/M + ~3-4k output
+  // incl thoughts × $12/M) ≈ $0.25-0.35/batch. Baseline pinned at
+  // $0.30. We ran V26.3-V26.6 on Flash for cost reasons; live use
+  // showed Flash produces shallower English visual specs in
+  // `visualPromptEnglish`, which propagates to weaker downstream
+  // image prompts. Pro brings the visual-prose quality back at ~3×
+  // the cost — still half of the original V26.2 thinking:high
+  // baseline. The actual_usage path (token-based) is accurate
+  // regardless of this constant; the legacy COST_OPENAI_SCRIPT_BATCH_USD
+  // env is read as a final fallback for back-compat.
   gemini_script_batch: num(
     'COST_GEMINI_SCRIPT_BATCH_USD',
-    num('COST_OPENAI_SCRIPT_BATCH_USD', 0.12),
+    num('COST_OPENAI_SCRIPT_BATCH_USD', 0.3),
   ),
   // Kept for back-compat references; alias for gemini_script_batch
   // post-V25.

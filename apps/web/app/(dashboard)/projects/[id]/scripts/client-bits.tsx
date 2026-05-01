@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState, useEffect, useState, useTransition } from 'react';
+import { useActionState, useEffect, useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -41,20 +41,48 @@ export function GenerateButton({
   );
   const router = useRouter();
 
-  // While the action is in flight, the server is firing 6 OpenAI calls
-  // in parallel and the onScriptReady callback is writing each script
-  // to the DB the moment it returns. We poll via router.refresh() every
-  // 2.5s so the server-rendered scripts grid picks up the new rows
-  // without the user having to manually reload — cards appear one by
-  // one as their framework finishes.
+  // V26.7 — count-driven streaming. The action runs 6 Gemini calls in
+  // parallel and onScriptReady persists each as it lands. The OLD
+  // approach (`setInterval(router.refresh, 2500)`) blindly re-rendered
+  // the WHOLE Server Component every 2.5s — fetching project + scripts
+  // + scenes + intelligence from Supabase Mumbai every tick, even when
+  // nothing changed. The user could see a 5-10s gap between "DB has
+  // the row" and "card shows up".
+  //
+  // New approach: poll the lightweight /api/projects/[id]/scripts/list
+  // endpoint every 1s (just a count query, ~50ms), and ONLY call
+  // router.refresh() when the count actually grew. The heavy re-render
+  // now fires the moment a new script lands, not on a fixed cadence.
+  // We also keep polling for ~6s after `pending` flips to false to
+  // catch the last persist that might race the Server Action return.
+  const lastSeenCountRef = useRef(0);
   useEffect(() => {
-    if (!pending) return;
-    const id = setInterval(() => {
+    if (typeof window === 'undefined') return;
+    let aborted = false;
+    let stopAfterMs: number | null = null;
+    const stop = () => { aborted = true; clearInterval(id); };
+    const tick = async () => {
+      if (aborted) return;
       if (!isPageVisible()) return;
-      router.refresh();
-    }, 2500);
-    return () => clearInterval(id);
-  }, [pending, router]);
+      // After pending=false, keep polling for ~6s to catch the tail.
+      if (!pending && stopAfterMs == null) stopAfterMs = Date.now() + 6_000;
+      if (stopAfterMs != null && Date.now() > stopAfterMs) { stop(); return; }
+      try {
+        const res = await fetch(`/api/projects/${projectId}/scripts/list`, { cache: 'no-store' });
+        if (!res.ok) return;
+        const json = (await res.json()) as { scripts: Array<unknown>; generating: boolean };
+        const count = json.scripts.length;
+        if (count > lastSeenCountRef.current) {
+          lastSeenCountRef.current = count;
+          router.refresh();
+        }
+        if (!json.generating && count >= 6) stop();
+      } catch { /* keep trying */ }
+    };
+    const id = setInterval(tick, 1000);
+    void tick();
+    return () => { aborted = true; clearInterval(id); };
+  }, [pending, router, projectId]);
 
   // Walk through SCRIPT_PHASES on a 1s tick while the action is in flight
   // so the user gets meaningful per-phase progress instead of one long spinner.

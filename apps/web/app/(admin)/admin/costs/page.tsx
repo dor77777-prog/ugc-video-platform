@@ -720,7 +720,7 @@ export default async function AdminUsagePage() {
             </TableHeader>
             <TableBody>
               {[
-                { op: 'gemini_script_batch', provider: 'gemini', cost: PROVIDER_COST_ESTIMATES_USD.gemini_script_batch, note: 'V25/V26.6 — gemini-3-flash-preview, thinkingLevel low (איכות מטדטה אסטרטגית טובה יותר)' },
+                { op: 'gemini_script_batch', provider: 'gemini', cost: PROVIDER_COST_ESTIMATES_USD.gemini_script_batch, note: 'V25/V26.7 — gemini-3-pro-preview, thinkingLevel low (איכות פרוזה ויזואלית להפקת תמונות)' },
                 { op: 'openai_scene_image', provider: 'openai', cost: PROVIDER_COST_ESTIMATES_USD.openai_scene_image, note: 'gpt-image-2 medium 1024x1792' },
                 { op: 'openai_motion_analysis_scene', provider: 'openai', cost: PROVIDER_COST_ESTIMATES_USD.openai_motion_analysis_scene, note: 'gpt-4o-mini vision לכל סצנה' },
                 { op: 'elevenlabs_voice_scene', provider: 'elevenlabs', cost: PROVIDER_COST_ESTIMATES_USD.elevenlabs_voice_scene, note: 'Multilingual v2 ~200 chars' },
@@ -801,7 +801,7 @@ export default async function AdminUsagePage() {
                   credits: number;
                   note: string;
                 }> = [
-                  { op: 'script_batch', provider: 'gemini', costUsd: PROVIDER_COST_ESTIMATES_USD.gemini_script_batch, credits: OPERATION_CREDIT_PRICING.script_batch, note: 'V25/V26.6 — Gemini 3 Flash + thinkingLevel low (~$0.10/batch); V26.3 minimal degraded scene metadata' },
+                  { op: 'script_batch', provider: 'gemini', costUsd: PROVIDER_COST_ESTIMATES_USD.gemini_script_batch, credits: OPERATION_CREDIT_PRICING.script_batch, note: 'V25/V26.7 — Gemini 3 Pro + thinkingLevel low (~$0.30/batch); Flash הוריד איכות פרוזה ויזואלית' },
                   { op: 'scene_image_generate', provider: 'openai', costUsd: PROVIDER_COST_ESTIMATES_USD.openai_scene_image, credits: OPERATION_CREDIT_PRICING.scene_image_generate, note: 'יצירה ראשונה' },
                   { op: 'scene_image_regenerate', provider: 'openai', costUsd: PROVIDER_COST_ESTIMATES_USD.openai_scene_image, credits: OPERATION_CREDIT_PRICING.scene_image_regenerate, note: 'first regen חינם (FIRST_REGEN_FREE.image)' },
                   { op: 'voice_generate', provider: 'elevenlabs', costUsd: PROVIDER_COST_ESTIMATES_USD.elevenlabs_voice_scene, credits: OPERATION_CREDIT_PRICING.voice_generate, note: 'Hebrew TTS' },
@@ -881,7 +881,7 @@ export default async function AdminUsagePage() {
           </Table>
           <div className="text-[11px] text-muted-foreground">
             פיצול עלות ל-15s: {' '}
-            ${VIDEO_COST_ESTIMATES.fifteenSec.scriptBatchUsd.toFixed(2)} script (Gemini 3 Flash) + {' '}
+            ${VIDEO_COST_ESTIMATES.fifteenSec.scriptBatchUsd.toFixed(2)} script (Gemini 3 Pro) + {' '}
             ${VIDEO_COST_ESTIMATES.fifteenSec.imagesUsd.toFixed(2)} images (gpt-image-2) + {' '}
             ${VIDEO_COST_ESTIMATES.fifteenSec.voicesUsd.toFixed(2)} voices (ElevenLabs) + {' '}
             ${VIDEO_COST_ESTIMATES.fifteenSec.motionAnalysisUsd.toFixed(3)} motion (gpt-4o-mini) + {' '}
