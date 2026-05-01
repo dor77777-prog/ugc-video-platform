@@ -17,6 +17,8 @@ import {
   Library,
   Plus,
   TrendingUp,
+  Play,
+  Zap,
 } from 'lucide-react';
 import { getOrCreateAppUser } from '@/lib/auth/sync-user';
 import { prisma } from '@/lib/db';
@@ -26,6 +28,8 @@ import { Badge } from '@/components/ui/badge';
 import { getCurrentStepNumber, getResumeUrl } from '@/lib/wizard/current-step';
 import { WIZARD_STEPS } from '@/components/wizard/stepper';
 import { StudioCanvasIllustration } from '@/components/brand/illustrations';
+import { DashboardAurora } from '@/components/layout/dashboard-aurora';
+import { AnimatedCounter, LiveActivityTicker } from '@/app/landing-hero';
 import { DeleteProjectButton } from './delete-button';
 
 export default async function DashboardHome() {
@@ -41,30 +45,36 @@ export default async function DashboardHome() {
   const isReturningUser = completedRendersCount > 0;
 
   return (
-    <div className="relative bg-mesh-soft bg-noise min-h-screen">
-      <div className="relative px-6 md:px-10 py-8 md:py-10 space-y-10 max-w-7xl mx-auto">
-        {/* ───────────── Header ───────────── */}
-        <div className="space-y-2 animate-fade-in-up">
-          <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.25em] text-primary">
-            <Sparkles className="h-3.5 w-3.5" />
-            <span>לוח בקרה</span>
+    <div className="relative min-h-screen">
+      <DashboardAurora />
+      <div className="relative px-6 md:px-10 py-8 md:py-10 space-y-12 max-w-7xl mx-auto">
+        {/* ───────────── Header — landing-grade typography ───────────── */}
+        <div className="space-y-3 animate-fade-in-up">
+          <div className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-[11px] font-semibold text-primary backdrop-blur-md">
+            <span className="h-1.5 w-1.5 rounded-full bg-accent animate-soft-pulse" />
+            לוח בקרה · Studio
           </div>
-          <h1 className="text-3xl md:text-5xl font-black tracking-tight">
+          <h1 className="text-4xl md:text-6xl lg:text-7xl font-black tracking-tight leading-[0.95]">
             {isReturningUser ? 'שלום שוב, ' : 'ברוכים הבאים, '}
             <span className="text-gradient">{dbUser.email.split('@')[0]}</span>
           </h1>
         </div>
 
+        {/* ───────────── Live activity ticker (returning users only) ───────────── */}
+        {isReturningUser && (
+          <div className="animate-fade-in-up [animation-delay:80ms]">
+            <LiveActivityTicker />
+          </div>
+        )}
+
         {/* ───────────── Bento — hero CTA + stats ───────────── */}
-        <div className="bento animate-fade-in-up [animation-delay:80ms]">
-          {/* Hero CTA — different copy for new vs returning users */}
+        <div className="bento animate-fade-in-up [animation-delay:160ms]">
           {!isReturningUser ? (
             <FirstVideoHero />
           ) : (
             <ReturningUserHero completedCount={completedRendersCount} />
           )}
 
-          {/* Stats — three tiles stacked on the right */}
           <Suspense fallback={<StatTile label="פרויקטים" value={null} icon={FolderKanban} />}>
             <ProjectCountTile userId={dbUser.id} />
           </Suspense>
@@ -79,10 +89,116 @@ export default async function DashboardHome() {
           />
         </div>
 
+        {/* ───────────── Completed videos showcase (returning users) ───────────── */}
+        {isReturningUser && (
+          <Suspense fallback={null}>
+            <CompletedVideosShowcase userId={dbUser.id} />
+          </Suspense>
+        )}
+
         {/* ───────────── Recent projects ───────────── */}
         <Suspense fallback={<RecentProjectsSkeleton />}>
           <RecentProjectsSection userId={dbUser.id} />
         </Suspense>
+      </div>
+    </div>
+  );
+}
+
+// V22 — completed-renders showcase grid. Renders the user's 6 most-
+// recent completed RenderJobs as 9:16 thumbnail cards using the FIRST
+// scene image of each project as the visual (since we don't generate
+// dedicated MP4 thumbnails). Hover scale + numbered badge + Play
+// overlay to signal "click to play".
+async function CompletedVideosShowcase({ userId }: { userId: string }) {
+  const completed = await prisma.renderJob.findMany({
+    where: { userId, status: 'completed' },
+    select: {
+      id: true,
+      finalVideoUrl: true,
+      completedAt: true,
+      project: {
+        select: {
+          id: true,
+          productName: true,
+          scripts: {
+            select: {
+              scenes: {
+                where: { sceneOrder: 0 },
+                select: { imageUrl: true },
+                take: 1,
+              },
+            },
+            take: 1,
+          },
+        },
+      },
+    },
+    orderBy: { completedAt: 'desc' },
+    take: 6,
+  });
+
+  if (completed.length === 0) return null;
+
+  return (
+    <div className="space-y-4 animate-fade-in-up">
+      <div className="flex items-end justify-between">
+        <h3 className="flex items-center gap-2 text-[11px] font-bold text-muted-foreground uppercase tracking-[0.25em]">
+          <Film className="h-4 w-4 text-accent" />
+          הסרטונים שיצרת
+        </h3>
+        <Link
+          href="/library"
+          className="text-xs text-primary hover:underline flex items-center gap-1"
+        >
+          ספריית מלאה
+          <ArrowLeft className="h-3 w-3" />
+        </Link>
+      </div>
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 md:gap-4">
+        {completed.map((job, i) => {
+          const thumbnail = job.project.scripts[0]?.scenes[0]?.imageUrl ?? null;
+          return (
+            <Link
+              key={job.id}
+              href={`/library#job-${job.id}`}
+              className="group relative aspect-[9/16] rounded-2xl overflow-hidden glass card-hover animate-fade-in-up cursor-pointer"
+              style={{ animationDelay: `${i * 50}ms` }}
+            >
+              {thumbnail ? (
+                /* eslint-disable-next-line @next/next/no-img-element */
+                <img
+                  src={thumbnail}
+                  alt={job.project.productName ?? 'סרטון'}
+                  className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+                />
+              ) : (
+                <div className="absolute inset-0 bg-gradient-to-br from-primary/20 to-accent/15" />
+              )}
+              <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/20 to-transparent" />
+              <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className="h-12 w-12 rounded-full bg-primary/90 backdrop-blur-md flex items-center justify-center shadow-glow">
+                  <Play className="h-5 w-5 text-background ms-0.5" fill="currentColor" />
+                </div>
+              </div>
+              <div className="absolute inset-x-0 bottom-0 p-3">
+                <div className="text-xs font-bold truncate">
+                  {job.project.productName ?? '—'}
+                </div>
+                <div className="text-[10px] text-muted-foreground font-mono mt-0.5">
+                  {job.completedAt
+                    ? new Intl.DateTimeFormat('he-IL', { dateStyle: 'short' }).format(
+                        job.completedAt,
+                      )
+                    : ''}
+                </div>
+              </div>
+              <div className="absolute top-2 right-2 px-1.5 py-0.5 rounded-md bg-background/80 backdrop-blur-md text-[9px] font-black tracking-widest uppercase border border-border-subtle">
+                {String(i + 1).padStart(2, '0')}
+              </div>
+            </Link>
+          );
+        })}
       </div>
     </div>
   );
@@ -223,21 +339,21 @@ function StatTile({
         <div
           className={
             accent
-              ? 'h-9 w-9 rounded-xl bg-accent/25 text-accent-foreground flex items-center justify-center'
-              : 'h-9 w-9 rounded-xl bg-primary/15 text-primary flex items-center justify-center'
+              ? 'h-10 w-10 rounded-xl bg-accent/25 text-accent-foreground flex items-center justify-center'
+              : 'h-10 w-10 rounded-xl bg-gradient-to-br from-primary/30 to-accent/15 text-primary flex items-center justify-center'
           }
         >
-          <Icon className="h-4.5 w-4.5" />
+          <Icon className="h-5 w-5" />
         </div>
         <div>
-          <div className="text-3xl font-black tracking-tight font-mono leading-none">
+          <div className="text-4xl md:text-5xl font-black tracking-tight font-mono leading-none">
             {value === null ? (
-              <span className="inline-block h-7 w-12 bg-muted/40 rounded animate-pulse" />
+              <span className="inline-block h-9 w-14 bg-muted/40 rounded animate-pulse" />
             ) : (
-              value
+              <AnimatedCounter end={value} />
             )}
           </div>
-          <div className="text-[11px] uppercase tracking-[0.2em] text-muted-foreground mt-1.5">
+          <div className="text-[11px] uppercase tracking-[0.25em] text-muted-foreground mt-2">
             {label}
           </div>
         </div>
