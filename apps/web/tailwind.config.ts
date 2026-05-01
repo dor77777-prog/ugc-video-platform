@@ -11,8 +11,26 @@ const config: Config = {
   theme: {
     extend: {
       fontFamily: {
-        sans: ['var(--font-heebo)', 'system-ui', 'sans-serif'],
-        display: ['var(--font-heebo)', 'system-ui', 'sans-serif'],
+        // V19.1 — Heebo first (Hebrew coverage), then IBM Plex Sans
+        // (Latin / numbers, cloud-platform feel), then system fallback.
+        sans: [
+          'var(--font-heebo)',
+          'var(--font-ibm-plex)',
+          'system-ui',
+          'sans-serif',
+        ],
+        display: [
+          'var(--font-heebo)',
+          'var(--font-ibm-plex)',
+          'system-ui',
+          'sans-serif',
+        ],
+        mono: [
+          'var(--font-jetbrains)',
+          'ui-monospace',
+          'SFMono-Regular',
+          'monospace',
+        ],
       },
       colors: {
         border: 'hsl(var(--border))',
