@@ -29,6 +29,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { BRAND } from '@/lib/brand';
 import { Logo } from '@/components/brand/logo';
+import { ThemeToggle } from '@/components/theme/theme-toggle';
 import { PLAN_CONFIGS } from '@/lib/plans';
 import { HeroShowcase, AnimatedCounter, LiveActivityTicker } from './landing-hero';
 
@@ -76,9 +77,10 @@ export default async function RootPage() {
             <NavLink href="#pricing">מחירים</NavLink>
           </div>
           <div className="flex items-center gap-2">
+            <ThemeToggle />
             <Link
               href="/login"
-              className="text-sm text-muted-foreground hover:text-foreground transition-colors px-3 py-2"
+              className="text-sm text-fg-tertiary hover:text-fg transition-colors px-3 py-2 motion-press"
             >
               התחבר
             </Link>
