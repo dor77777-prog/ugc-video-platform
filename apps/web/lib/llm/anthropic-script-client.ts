@@ -34,10 +34,29 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { withRetry } from '@/lib/utils/retry';
 
-// claude-sonnet-4-6 is the launch model the V14 path was built around.
-// Tunable via ANTHROPIC_SCRIPT_MODEL env (e.g. flip to claude-opus-4-7
-// for max quality; or back to claude-haiku-4-5 if cost spikes).
-const DEFAULT_MODEL = 'claude-sonnet-4-6';
+// V27.10.2 — default flipped Sonnet 4.6 → Haiku 4.5.
+//
+// Live measurement (V27.9 deployed): Sonnet 4.6 was taking 2m+ per
+// framework call against the 700+-line system prompt. Six in parallel
+// = ~2m wall-clock minimum, with the long-tail call sometimes pushing
+// past 3m. Unacceptable UX even with the streaming "scripts fill in"
+// pattern.
+//
+// Why Haiku 4.5 now:
+//   - 3-5x faster decode than Sonnet 4.6 on the same prompt size
+//   - Hebrew quality on Haiku 4.5 is strong — the V14 author called
+//     Haiku out as the cost-spike fallback, implying it was already
+//     evaluated as production-viable
+//   - V27.9 added 7 explicit Hebrew QA gates + the narrative through-
+//     line + frame_strategy field — these prompt-engineering rails
+//     enforce quality regardless of model size. Sonnet's headroom on
+//     "subtle calque catching" is no longer the differentiator it was
+//     in the unstructured V13 era.
+//
+// To restore Sonnet 4.6 (quality over speed): set
+//   ANTHROPIC_SCRIPT_MODEL=claude-sonnet-4-6
+// in Vercel env vars. To go even bigger: claude-opus-4-7.
+const DEFAULT_MODEL = 'claude-haiku-4-5';
 
 // Effort default. Sonnet 4.6 defaults to "high" which silently turns
 // on adaptive thinking and adds 10-30s thinking-phase latency before
