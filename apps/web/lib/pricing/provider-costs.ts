@@ -47,17 +47,20 @@ export const CREDIT_LIST_VALUE_USD = num('CREDIT_LIST_VALUE_USD', 0.10);
 //   PixVerse media upload: no separate observed billing today; logged
 //   so we can revisit if they start charging for it.
 export const PROVIDER_COST_ESTIMATES_USD = {
-  // V26.3 — script batch defaults to Gemini 3 Flash with thinkingLevel
-  // minimal. Estimated cost: 6 calls × (~5k input × $0.50/M + ~3k
-  // output × $3/M) ≈ $0.07/batch. Bumped baseline to $0.10 to absorb
-  // variance from Hebrew tokenization. If the operator switches the
-  // env var GEMINI_SCRIPT_MODEL back to a Pro tier, this constant
-  // under-attributes — but the actual_usage path (token-based) gives
-  // accurate per-call cost regardless. The legacy
-  // COST_OPENAI_SCRIPT_BATCH_USD env var is read for back-compat.
+  // V26.6 — script batch defaults to Gemini 3 Flash with thinkingLevel
+  // `low` (was `minimal` in V26.3). Bumped because `minimal` was
+  // producing weaker strategic metadata (cameraFocus / setting cue /
+  // primarySubject) which degraded downstream image briefs. Estimated
+  // cost on `low`: 6 calls × (~5k input × $0.50/M + ~3-4k output incl
+  // ~300 thoughts × $3/M) ≈ $0.10-0.12/batch. Baseline pinned at
+  // $0.12 to absorb variance from Hebrew tokenization. If the operator
+  // switches GEMINI_SCRIPT_MODEL back to a Pro tier this constant
+  // under-attributes — actual_usage path (token-based) is accurate
+  // regardless. The legacy COST_OPENAI_SCRIPT_BATCH_USD env is read
+  // as a final fallback for back-compat.
   gemini_script_batch: num(
     'COST_GEMINI_SCRIPT_BATCH_USD',
-    num('COST_OPENAI_SCRIPT_BATCH_USD', 0.1),
+    num('COST_OPENAI_SCRIPT_BATCH_USD', 0.12),
   ),
   // Kept for back-compat references; alias for gemini_script_batch
   // post-V25.

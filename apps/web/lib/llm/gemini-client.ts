@@ -161,14 +161,20 @@ export async function geminiStructuredCall<T>({
 }: GeminiStructuredCallOptions): Promise<GeminiStructuredCallResult<T>> {
   const sanitized = stripIncompatibleKeywords(responseSchema);
   const isGemini3 = modelId.startsWith('gemini-3');
-  // V26.3 — pick the cheapest thinking level the model supports.
-  // 3.1 Pro doesn't accept 'minimal' (returns 400); everything else
-  // does. For Hebrew creative scriptwriting we don't need deep
-  // reasoning — `minimal` cuts thoughts tokens to near-zero and is
-  // the primary cost-savings lever after switching to Flash.
-  const isPro = /^gemini-3.*-pro/.test(modelId);
+  // V26.6 — default thinking level is now `low` for ALL Gemini 3
+  // models. V26.3 had Flash on `minimal` which cut thoughts tokens
+  // to near-zero (great for cost) but observably degraded the quality
+  // of strategic enum choices in the structured-output schema —
+  // cameraFocus / sceneGenerationType / israeli_setting_cue / etc.
+  // would lean toward generic defaults. The downstream image-brief
+  // builder is deterministic and reads those fields, so weaker
+  // metadata directly produced weaker scene images. Bumping to `low`
+  // adds ~200-400 thoughts tokens per call (~12× cost vs minimal,
+  // but still ~10× cheaper than Pro:high). Override per-call via the
+  // `thinkingLevel` option when a caller actually doesn't need
+  // strategic reasoning.
   const effectiveThinkingLevel =
-    thinkingLevel ?? (isGemini3 ? (isPro ? 'low' : 'minimal') : undefined);
+    thinkingLevel ?? (isGemini3 ? 'low' : undefined);
 
   const response = await client().models.generateContent({
     model: modelId,

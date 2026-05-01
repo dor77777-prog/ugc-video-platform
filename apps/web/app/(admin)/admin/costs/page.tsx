@@ -720,7 +720,7 @@ export default async function AdminUsagePage() {
             </TableHeader>
             <TableBody>
               {[
-                { op: 'gemini_script_batch', provider: 'gemini', cost: PROVIDER_COST_ESTIMATES_USD.gemini_script_batch, note: 'V25/V26.3 — gemini-3-flash-preview, thinkingLevel minimal' },
+                { op: 'gemini_script_batch', provider: 'gemini', cost: PROVIDER_COST_ESTIMATES_USD.gemini_script_batch, note: 'V25/V26.6 — gemini-3-flash-preview, thinkingLevel low (איכות מטדטה אסטרטגית טובה יותר)' },
                 { op: 'openai_scene_image', provider: 'openai', cost: PROVIDER_COST_ESTIMATES_USD.openai_scene_image, note: 'gpt-image-2 medium 1024x1792' },
                 { op: 'openai_motion_analysis_scene', provider: 'openai', cost: PROVIDER_COST_ESTIMATES_USD.openai_motion_analysis_scene, note: 'gpt-4o-mini vision לכל סצנה' },
                 { op: 'elevenlabs_voice_scene', provider: 'elevenlabs', cost: PROVIDER_COST_ESTIMATES_USD.elevenlabs_voice_scene, note: 'Multilingual v2 ~200 chars' },
@@ -801,7 +801,7 @@ export default async function AdminUsagePage() {
                   credits: number;
                   note: string;
                 }> = [
-                  { op: 'script_batch', provider: 'gemini', costUsd: PROVIDER_COST_ESTIMATES_USD.gemini_script_batch, credits: OPERATION_CREDIT_PRICING.script_batch, note: 'V25/V26.3 — Gemini 3 Flash + thinkingLevel minimal (~$0.10/batch)' },
+                  { op: 'script_batch', provider: 'gemini', costUsd: PROVIDER_COST_ESTIMATES_USD.gemini_script_batch, credits: OPERATION_CREDIT_PRICING.script_batch, note: 'V25/V26.6 — Gemini 3 Flash + thinkingLevel low (~$0.10/batch); V26.3 minimal degraded scene metadata' },
                   { op: 'scene_image_generate', provider: 'openai', costUsd: PROVIDER_COST_ESTIMATES_USD.openai_scene_image, credits: OPERATION_CREDIT_PRICING.scene_image_generate, note: 'יצירה ראשונה' },
                   { op: 'scene_image_regenerate', provider: 'openai', costUsd: PROVIDER_COST_ESTIMATES_USD.openai_scene_image, credits: OPERATION_CREDIT_PRICING.scene_image_regenerate, note: 'first regen חינם (FIRST_REGEN_FREE.image)' },
                   { op: 'voice_generate', provider: 'elevenlabs', costUsd: PROVIDER_COST_ESTIMATES_USD.elevenlabs_voice_scene, credits: OPERATION_CREDIT_PRICING.voice_generate, note: 'Hebrew TTS' },
