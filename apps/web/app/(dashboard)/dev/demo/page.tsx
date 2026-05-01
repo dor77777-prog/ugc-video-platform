@@ -93,7 +93,7 @@ export default function DevDemo() {
   return (
     <div className="p-6 md:p-10 max-w-3xl space-y-6">
       <div className="space-y-1">
-        <div className="text-xs uppercase tracking-widest text-muted-foreground">Dev · Mock pipeline</div>
+        <div className="kicker-muted font-mono text-[10px] uppercase">Dev · Mock pipeline</div>
         <h1 className="text-3xl font-bold tracking-tight">דמו מנוע הרינדור</h1>
         <p className="text-sm text-muted-foreground max-w-xl">
           זהו מסך Dev שמדמה את כל הצינור (TTS → אווטאר → B-Roll → קומפוזיציה) עם ספקי mock.

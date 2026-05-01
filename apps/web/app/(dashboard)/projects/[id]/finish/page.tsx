@@ -12,7 +12,7 @@ export default async function FinishPlaceholder({
   return (
     <div className="p-6 md:p-10 max-w-5xl space-y-8">
       <div className="space-y-1">
-        <div className="text-xs uppercase tracking-widest text-muted-foreground">סיום</div>
+        <div className="kicker-muted font-mono text-[10px] uppercase">סיום</div>
         <h1 className="text-3xl font-bold tracking-tight">הרכבה סופית</h1>
       </div>
       <Stepper current={8} done={[1, 2, 3, 4, 5, 6, 7]} projectId={id} />

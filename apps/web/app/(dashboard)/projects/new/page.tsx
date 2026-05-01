@@ -138,7 +138,7 @@ export default function NewProjectWizard() {
     <div className="p-6 md:p-10 max-w-5xl space-y-8">
       {/* Header */}
       <div className="space-y-1">
-        <div className="text-xs uppercase tracking-widest text-muted-foreground">צור סרטון מוצר</div>
+        <div className="kicker-muted font-mono text-[10px] uppercase">צור סרטון מוצר</div>
         <h1 className="text-3xl font-bold tracking-tight">בניית מודעת UGC חדשה</h1>
       </div>
 

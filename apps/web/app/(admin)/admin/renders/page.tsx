@@ -68,7 +68,7 @@ export default async function AdminRendersPage({
   return (
     <div className="p-6 md:p-10 max-w-7xl space-y-6">
       <div className="space-y-1">
-        <div className="text-xs uppercase tracking-widest text-muted-foreground">Admin · Renders</div>
+        <div className="kicker-muted font-mono text-[10px] uppercase">Admin · Renders</div>
         <h1 className="text-3xl font-bold tracking-tight">ג׳ובי רינדור</h1>
         <p className="text-sm text-muted-foreground">{jobs.length} ג׳ובים אחרונים</p>
       </div>

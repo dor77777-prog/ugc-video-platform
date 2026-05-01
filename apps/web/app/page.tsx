@@ -224,7 +224,7 @@ export default async function RootPage() {
               />
               <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/0 to-transparent" />
               <div className="absolute inset-x-0 bottom-0 p-3">
-                <div className="text-[10px] uppercase tracking-widest text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className="kicker-muted font-mono text-[10px] uppercase opacity-0 group-hover:opacity-100 transition-opacity">
                   AI generated
                 </div>
                 <div className="text-sm font-bold capitalize">{id}</div>

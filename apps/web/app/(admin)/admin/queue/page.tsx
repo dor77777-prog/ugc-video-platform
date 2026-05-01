@@ -17,7 +17,7 @@ export default async function AdminQueuePage() {
   return (
     <div className="p-6 md:p-10 max-w-7xl space-y-6">
       <div className="space-y-1">
-        <div className="text-xs uppercase tracking-widest text-muted-foreground">Admin · BullMQ Queue</div>
+        <div className="kicker-muted font-mono text-[10px] uppercase">Admin · BullMQ Queue</div>
         <h1 className="text-3xl font-bold tracking-tight">תור הרינדור</h1>
         <p className="text-sm text-muted-foreground">חי מ־Redis. רענן את הדף כדי לקבל ערכים עדכניים.</p>
       </div>

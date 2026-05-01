@@ -163,7 +163,7 @@ export function CommandPalette() {
                   <Command.Group
                     key={group}
                     heading={group}
-                    className="text-[11px] uppercase tracking-widest text-muted-foreground px-2 pt-3 pb-1"
+                    className="kicker-muted font-mono text-[11px] uppercase px-2 pt-3 pb-1"
                   >
                     {ITEMS.filter((i) => i.group === group).map((item) => {
                       const Icon = item.icon;

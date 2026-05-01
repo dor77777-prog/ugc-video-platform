@@ -28,7 +28,7 @@ export default async function AdminProjectsPage() {
   return (
     <div className="p-6 md:p-10 max-w-7xl space-y-6">
       <div className="space-y-1">
-        <div className="text-xs uppercase tracking-widest text-muted-foreground">Admin · Projects</div>
+        <div className="kicker-muted font-mono text-[10px] uppercase">Admin · Projects</div>
         <h1 className="text-3xl font-bold tracking-tight">פרויקטים</h1>
         <p className="text-sm text-muted-foreground">{projects.length} פרויקטים אחרונים</p>
       </div>

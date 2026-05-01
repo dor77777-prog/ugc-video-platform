@@ -111,7 +111,7 @@ export function HeroShowcase() {
             {/* Bottom info strip with name + tag */}
             <div className="absolute inset-x-0 bottom-0 px-3 py-2 backdrop-blur-md bg-gradient-to-t from-black/80 via-black/40 to-transparent">
               <div className="text-[11px] font-bold text-foreground">{card.name}</div>
-              <div className="text-[9px] uppercase tracking-widest text-muted-foreground">
+              <div className="kicker-muted font-mono text-[9px] uppercase">
                 {card.region}
               </div>
             </div>
