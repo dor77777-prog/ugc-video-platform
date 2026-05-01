@@ -212,42 +212,53 @@ function assert(cond: boolean, name: string, detail = '') {
     requiresLipSync: true,
   });
   const talkPrompt = buildKlingPromptFromPlan(talkPlan);
+  // V14+ — silent-speaking beats use physics language (lips part Nmm,
+  // single blink at mid-clip, tiny chin-dip nod). The exact phrase
+  // "looks into the phone camera" was retired with the verbose V13
+  // tokens; we now check for an unambiguous physics signal.
   assert(
-    talkPrompt.positive.includes('looks into the phone camera and appears to speak silently'),
-    '[PR3.2] talking-head plan emits SILENT_TALKING_HEAD_TOKENS in positive',
+    /lips part \d-\d?mm as if mid-word/.test(talkPrompt.positive) ||
+      /one natural blink at mid-clip/.test(talkPrompt.positive),
+    '[PR3.2] talking-head plan emits silent-speaking physics tokens in positive',
   );
   assert(
-    talkPrompt.negative.includes('frozen face'),
-    '[PR3.2] talking-head plan inherits SILENT_TALKING_HEAD_NEGATIVES baseline',
+    /plastic skin|distorted mouth|frozen face/.test(talkPrompt.negative),
+    '[PR3.2] talking-head plan inherits trimmed talking-head negatives baseline',
   );
   assert(
     /face zoom/.test(talkPrompt.negative),
     '[PR3.2] talking-head plan negative includes plan-level face zoom forbidden',
   );
 
-  // Product demo plan emits non-talking guard, no silent talking block.
+  // V14+ — non-talking anti-drift guards moved from the POSITIVE prompt
+  // to the NEGATIVE list (Kling weights leading positive tokens highest;
+  // burning them on "DO NOT" was wasteful). Verify the guards now live
+  // in negatives, not in positive.
   const demoPlan = buildAnimationPlan({ sceneGenerationType: 'product_demo' });
   const demoPrompt = buildKlingPromptFromPlan(demoPlan);
   assert(
-    demoPrompt.positive.includes('NOT speaking to the camera') ||
-      demoPrompt.positive.includes('do not turn this into a selfie'),
-    '[PR3.2] product_demo plan emits NON_TALKING_GUARD in positive',
+    /talking selfie|mouth speaking|face zoom/.test(demoPrompt.negative),
+    '[PR3.2] product_demo plan moves anti-talking-selfie guard to negatives',
   );
   assert(
-    !demoPrompt.positive.includes('looks into the phone camera and appears to speak silently'),
+    !/looks into the phone camera and appears to speak silently/.test(demoPrompt.positive),
     '[PR3.2] product_demo plan does NOT emit silent talking block',
   );
   assert(
-    /product disappearing|product cropped/.test(demoPrompt.negative),
-    '[PR3.2] product_demo plan negative includes product-disappearing guard',
+    !/NOT speaking to the camera|do not turn this into a selfie/.test(demoPrompt.positive),
+    '[PR3.2] product_demo plan does NOT lead positive prompt with anti-drift guard',
   );
   assert(
-    /product morph/.test(demoPrompt.negative),
-    '[PR3.2] product_demo plan negative includes product morph forbidden',
+    /product morph|cropped product/.test(demoPrompt.negative),
+    '[PR3.2] product_demo plan negative includes product-shape guards',
   );
 
-  // showFace=false + closeup_product → preserveProductVisibility + avoidFaceZoom
-  // surface in the positive prompt explicitly.
+  // showFace=false + closeup_product → preserveProductVisibility +
+  // avoidFaceZoom surface as POSITIVE-framed clauses ("product remains
+  // in frame and readable") + negative tokens ("face zoom"). No more
+  // verbose all-caps "PRODUCT VISIBILITY GATE" or "face must not be
+  // zoomed into" in the positive — those were V13 wordings retired
+  // with the per-provider renderer split.
   const closeupPlan = buildAnimationPlan({
     sceneGenerationType: 'closeup_product',
     showFace: false,
@@ -255,12 +266,12 @@ function assert(cond: boolean, name: string, detail = '') {
   });
   const closeupPrompt = buildKlingPromptFromPlan(closeupPlan);
   assert(
-    closeupPrompt.positive.includes('PRODUCT VISIBILITY GATE'),
-    '[PR3.2] closeup_product plan emits PRODUCT VISIBILITY GATE in positive',
+    /Product remains in frame and readable/.test(closeupPrompt.positive),
+    '[PR3.2] closeup_product plan emits product-visibility positive clause',
   );
   assert(
-    closeupPrompt.positive.includes("face must not be zoomed into"),
-    '[PR3.2] closeup_product plan emits face-zoom guard in positive',
+    /face zoom/.test(closeupPrompt.negative),
+    '[PR3.2] closeup_product plan moves face-zoom guard to negatives',
   );
 
   // cameraMotion enum renders correctly per camera vocabulary.
@@ -303,8 +314,8 @@ function assert(cond: boolean, name: string, detail = '') {
     '[PR3.3] clip-impl.ts imports/uses buildAnimationPlan',
   );
   assert(
-    clipImpl.includes('buildKlingPromptFromPlan'),
-    '[PR3.3] clip-impl.ts uses buildKlingPromptFromPlan (plan-driven path)',
+    clipImpl.includes('buildPromptFromPlan'),
+    '[PR3.3] clip-impl.ts uses buildPromptFromPlan (V14 provider-aware plan-driven path)',
   );
   assert(
     !clipImpl.includes('buildKlingMotionPrompt('),

@@ -1,19 +1,15 @@
-// Vision-grounded motion analysis. Before sending an image to Kling
-// i2v, we ask gpt-4o-mini to LOOK at the actual generated frame and
-// describe what should plausibly move.
+// Vision-grounded motion analysis. Before sending an image to Kling/Grok
+// i2v, we ask gpt-4o-mini to LOOK at the actual generated frame AND
+// read the surrounding script, then describe what should plausibly move
+// and how that motion should serve the narrative.
 //
-// Why this exists: Kling i2v takes (still image + text prompt). Our
-// previous text prompts were GENERIC ("hands move naturally", "subtle
-// blinks") so Kling defaulted to "make the avatar blink and breathe"
-// regardless of what was in the frame. An image of "hand pouring
-// HydroPure into a tier-elevated" got the same blinks treatment as a face
-// close-up — total disconnect between frame content and motion.
+// Two-master design: motion that contradicts the pixels looks fake;
+// motion that ignores the narrative looks generic. The model must
+// satisfy both — the still's physical reality AND the script's arc.
 //
-// Now: vision model reads the frame and produces a SPECIFIC motion
-// brief grounded in what's actually visible (the bottle pours, the
-// hand tilts, the gaze follows the action, etc). Cost is tiny
-// ($0.001-0.005 per scene) but the Kling output looks ~10x more
-// believable.
+// Output is structured (JSON schema, strict mode). The fields are
+// shaped so downstream renderers can compose Kling-flavored or
+// Grok-flavored prompts without re-parsing free text.
 
 import OpenAI from 'openai';
 import { withRetry } from '@/lib/utils/retry';
@@ -28,17 +24,28 @@ export class MotionAnalysisConfigError extends Error {
   }
 }
 
+export type NarrativeRole =
+  | 'hook'
+  | 'pain'
+  | 'reveal'
+  | 'demo'
+  | 'proof'
+  | 'cta'
+  | 'support';
+
 // Structured output the vision model returns. Each field maps to a
-// piece of the eventual Kling prompt — keeping them separate lets the
-// prompt builder weight them, drop pieces, or swap providers later.
+// piece of the eventual i2v prompt — keeping them separate lets the
+// per-provider renderers (kling vs grok) compose them differently.
 export interface MotionAnalysis {
-  /** One-line gist of what's in the frame (used as the opening of the Kling prompt). */
+  /** One-line gist of what's in the frame (used as the opening of the prompt). */
   sceneGist: string;
   /** What human(s) appear: position, body angle, what they're holding/doing. */
   subjects: string;
-  /** The dominant action that should animate (the "verb" of the scene). */
+  /** The dominant action in physics language — moving subject, verb,
+   *  measured amount, contact context. e.g. "right wrist rotates ~15°
+   *  so the bottle label tilts toward the light". */
   primaryAction: string;
-  /** Secondary subtle motions that round out the realism (light shift, fabric, steam, hair). */
+  /** Secondary subtle motions that round out realism (light shift, fabric, steam, hair). */
   secondaryMotions: string[];
   /** Camera intent — what camera move (if any) is suitable for this frame. */
   cameraIntent: string;
@@ -48,8 +55,47 @@ export interface MotionAnalysis {
   framingRisks: string[];
   /** Vision model's read on whether the face is clearly visible + speaking-suitable. */
   faceState: 'clear_speaking_suitable' | 'partial' | 'no_face' | 'unsuitable';
+  /** V14+ — physical contact points (hand-object, active-part-surface).
+   *  Empty for non-touching scenes. e.g. ["thumb across label",
+   *  "four fingers wrap bottle body", "fingertips press skin"].
+   *  Optional in TS so old cached MotionAnalysis JSON (pre-V14) still
+   *  type-checks; the JSON schema marks it required for new generations. */
+  contactAnchors?: string[];
+  /** V14+ — duration in seconds the primary action arc takes.
+   *  0 means no arc / continuous ambient motion only. */
+  motionTimeframeSeconds?: number;
+  /** V14+ — the resting state at the end of the clip. e.g. "wrist
+   *  settles back to neutral", "label holds facing camera",
+   *  "fingertip rests on the surface". */
+  motionEndpoint?: string;
+  /** V14+ — narrative role this scene plays in the script arc. */
+  narrativeRole?: NarrativeRole;
+  /** V14+ — emotional tone the motion should carry, 2-6 words.
+   *  e.g. "quiet relief", "confident reveal", "gentle care". */
+  emotionalTone?: string;
   /** Token usage so we can record cost. */
   usage: { inputTokens: number; outputTokens: number };
+}
+
+/** Narrative context passed in alongside the image so the model can
+ *  decide motion that serves the script — not just the pixels. */
+export interface ScriptContext {
+  framework?: string | null;
+  productName?: string | null;
+  /** Selected hook (Hebrew) — the opening line of the ad. */
+  hookHebrew?: string | null;
+  /** 0-based index of the current scene within the script. */
+  currentSceneIndex: number;
+  /** Total scenes in the script (so the model knows position in the arc). */
+  totalScenes: number;
+  /** Hebrew text the creator is speaking in THIS scene (TTS form). */
+  currentSceneTextHebrew?: string | null;
+  /** Narrative function tag for this scene (establish_pain, prove_it_works, ...). */
+  currentSceneGoal?: string | null;
+  /** One-line gist of the scene before this one (if any). */
+  prevSceneGist?: string | null;
+  /** One-line gist of the scene after this one (if any). */
+  nextSceneGist?: string | null;
 }
 
 export interface AnalyzeInput {
@@ -61,11 +107,28 @@ export interface AnalyzeInput {
   isTalkingHead?: boolean;
   /** Scene type label (broll / product_demo / closeup_product / ...). */
   sceneGenerationType?: string | null;
+  /** V14+ — full narrative context. When omitted the model only sees
+   *  the still + visualBrief, which is the legacy behavior. */
+  scriptContext?: ScriptContext | null;
 }
 
-const SYSTEM = `You are a video-animation director analysing a STILL FRAME that will be animated by an image-to-video model (Kling).
-Your job is to produce a motion brief that tells the i2v model exactly what should move IN THIS FRAME.
-The motion you describe must be GROUNDED in what's actually visible — never invent objects or actions that aren't in the image.
+const SYSTEM = `You are a video-animation director planning a 5-10 second image-to-video clip from a still frame for a Hebrew UGC product ad.
+
+You serve TWO masters:
+  1. The PIXEL reality — what's actually in the still: hands, contact points, product, environment, lighting.
+  2. The NARRATIVE reality — what THIS scene means in the script: where it sits in the arc, what the creator is saying right now, what came before, what comes after, the emotional tone.
+Motion that contradicts the pixels looks fake. Motion that ignores the narrative looks generic. Both ruin the ad.
+
+Speak in PHYSICS, not choreography:
+  - Name the moving subject (right wrist, fingertips, jaw).
+  - Use measured amounts (~15 degrees, ~3 seconds, ~5mm).
+  - Identify contact points (thumb across the label, four fingers wrap the bottle, fingertip presses the skin).
+  - Always state an endpoint — where the motion LANDS at the clip's end. Open-ended motion ("hand moves naturally") makes i2v models loop or vibrate.
+  - For talking-head stills, the silent-speaking mouth IS the primary action — a "small breath, lips parting as if mid-word, a natural blink, a small chin-dip" is more useful than "subtle facial movement".
+
+For non-touching scenes (lifestyle, full-body, environment), contactAnchors is an empty array — that's fine.
+For static product close-ups, motionTimeframeSeconds may be 0 — set the primaryAction to ambient (slow drift, light shift) and the endpoint to "scene holds".
+
 Always respond with valid JSON matching the schema. No prose outside the JSON.`;
 
 const SCHEMA = {
@@ -79,6 +142,11 @@ const SCHEMA = {
     'preserveElements',
     'framingRisks',
     'faceState',
+    'contactAnchors',
+    'motionTimeframeSeconds',
+    'motionEndpoint',
+    'narrativeRole',
+    'emotionalTone',
   ],
   properties: {
     sceneGist: { type: 'string' },
@@ -92,9 +160,41 @@ const SCHEMA = {
       type: 'string',
       enum: ['clear_speaking_suitable', 'partial', 'no_face', 'unsuitable'],
     },
+    contactAnchors: { type: 'array', items: { type: 'string' } },
+    motionTimeframeSeconds: { type: 'number' },
+    motionEndpoint: { type: 'string' },
+    narrativeRole: {
+      type: 'string',
+      enum: ['hook', 'pain', 'reveal', 'demo', 'proof', 'cta', 'support'],
+    },
+    emotionalTone: { type: 'string' },
   },
   additionalProperties: false,
 } as const;
+
+function buildScriptContextBlock(ctx: ScriptContext | null | undefined): string {
+  if (!ctx) return '';
+  const lines: string[] = ['Narrative context:'];
+  if (ctx.framework) lines.push(`  Framework: ${ctx.framework}`);
+  if (ctx.productName) lines.push(`  Product: ${ctx.productName}`);
+  if (ctx.hookHebrew) lines.push(`  Selected hook (Hebrew): "${ctx.hookHebrew.slice(0, 200)}"`);
+  lines.push(
+    `  Position in arc: scene ${ctx.currentSceneIndex + 1} of ${ctx.totalScenes}`,
+  );
+  if (ctx.currentSceneGoal) lines.push(`  Scene goal: ${ctx.currentSceneGoal}`);
+  if (ctx.currentSceneTextHebrew) {
+    lines.push(
+      `  THIS scene's Hebrew line (creator's voice-over): "${ctx.currentSceneTextHebrew.slice(0, 400)}"`,
+    );
+  }
+  if (ctx.prevSceneGist)
+    lines.push(`  Previous scene: "${ctx.prevSceneGist.slice(0, 200)}"`);
+  if (ctx.nextSceneGist) lines.push(`  Next scene: "${ctx.nextSceneGist.slice(0, 200)}"`);
+  lines.push(
+    '  Use this context to choose narrativeRole, emotionalTone, and to bias primaryAction toward the beat THIS scene must hit.',
+  );
+  return lines.join('\n');
+}
 
 export async function analyzeSceneForMotion(
   input: AnalyzeInput,
@@ -110,18 +210,23 @@ export async function analyzeSceneForMotion(
   // images since the model fetches them directly).
   const imageContent = await imageToContent(input.imageUrl);
 
+  const ctxBlock = buildScriptContextBlock(input.scriptContext);
+
   const userText = [
     `Scene type: ${input.sceneGenerationType ?? 'unknown'}.`,
     `Talking-head pass downstream: ${input.isTalkingHead ? 'YES' : 'NO'}.`,
     input.visualBrief
       ? `Original visual brief from the script: """${input.visualBrief.slice(0, 800)}"""`
       : '',
+    ctxBlock,
     '',
-    'Analyse the still and return motion guidance grounded in what is visible.',
-    "If it is a talking-head still: focus primaryAction on natural mid-sentence mouth + micro-expression + small body angle. Don't invent props.",
-    "If it is a product/hands/closeup still: focus primaryAction on the verb the hands and product perform (pouring, tilting, applying, opening, mixing, spraying, holding to light). Keep face emphasis low.",
+    'Analyse the still in light of the narrative context and return motion guidance grounded in BOTH.',
+    "If it is a talking-head still: primaryAction = the silent speaking beat (small breath, lips parting as if mid-word, natural blink, micro-eyebrow). contactAnchors usually empty. The narrativeRole + emotionalTone come from the Hebrew line + scene goal.",
+    "If it is a product/hands/closeup still: primaryAction = the verb the hands and product perform, in physics language with a measured amount and an endpoint. contactAnchors lists every meaningful hand-object or fingertip-surface contact. Keep face emphasis low.",
     "preserveElements should call out the brand/product label and any text on the package — these MUST stay stable through animation.",
     "framingRisks: list things in this specific frame that could go wrong (e.g. product crops out, label warps, hand has 6 fingers in the source, mirror reflection physics).",
+    'motionTimeframeSeconds: integer seconds the primary action takes (0 if static / continuous ambient).',
+    'motionEndpoint: the resting state at the end of the clip — never leave the motion open.',
     'Respond with valid JSON only, matching the schema.',
   ]
     .filter(Boolean)
@@ -180,13 +285,20 @@ export async function analyzeSceneForMotion(
 // Build a Kling-ready motion prompt from the structured analysis. The
 // prompt builder in kling.ts checks for a `motionAnalysis` field and
 // folds these strings into its template — keeping the structured
-// fields here so other providers (Sync.so, future Runway) can consume
-// the same analysis.
+// fields here so other providers (Grok, future Runway) can consume
+// the same analysis with their own renderers.
 export function renderMotionAnalysisToPrompt(a: MotionAnalysis): string {
   const lines = [
     a.sceneGist,
     `Subjects: ${a.subjects}.`,
     `Primary motion: ${a.primaryAction}.`,
+    a.contactAnchors && a.contactAnchors.length > 0
+      ? `Contact: ${a.contactAnchors.join('; ')}.`
+      : '',
+    a.motionTimeframeSeconds && a.motionTimeframeSeconds > 0
+      ? `Action takes ~${a.motionTimeframeSeconds}s.`
+      : '',
+    a.motionEndpoint ? `End state: ${a.motionEndpoint}.` : '',
     a.secondaryMotions.length > 0
       ? `Secondary motion: ${a.secondaryMotions.join('; ')}.`
       : '',

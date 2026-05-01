@@ -47,6 +47,15 @@ export interface ImageToVideoInput {
   aspectRatio: AspectRatio;
   /** Caller-provided correlation id (for logs / mock cache key). */
   sceneId: string;
+  /**
+   * V14+ — Kling-only prompt-adherence knob (`cfg_scale`, float 0-1,
+   * default 0.5). Higher = stricter adherence to the prompt; recommended
+   * 0.7 for product/hands scenes where label integrity matters, 0.5 for
+   * talking-head plates where we want the model to breathe. The Kling
+   * adapter folds it into the request body when present; the Grok
+   * adapter ignores it (xAI's video API has no equivalent field).
+   */
+  cfgScale?: number;
 }
 
 export interface LipSyncInput {

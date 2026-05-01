@@ -22,7 +22,7 @@ import { aspectRatioFromProductData } from '@ugc-video/shared';
 import { prisma } from '@/lib/db';
 import {
   klingProvider,
-  buildKlingPromptFromPlan,
+  buildPromptFromPlan,
 } from '@/lib/animation/kling';
 import { grokImagineProvider } from '@/lib/animation/grok-imagine';
 import { buildAnimationPlan } from '@/lib/animation/animation-plan-builder';
@@ -56,6 +56,7 @@ import { toPublicUrl, PublicUrlError } from '@/lib/animation/public-url';
 import {
   analyzeSceneForMotion,
   type MotionAnalysis,
+  type ScriptContext,
 } from '@/lib/animation/motion-analysis';
 import { muxVoiceOntoVideo, readUrlAsBuffer, MuxError } from '@/lib/scenes/mux-audio';
 import { getStorage } from '@/lib/storage';
@@ -252,6 +253,67 @@ async function loadSceneForClip(sceneId: string) {
   });
 }
 
+// V14+ — Construct the narrative context the motion-analysis vision
+// model uses to decide motion in service of the script (not just the
+// pixels). Reads the V5 rawJson on Script for the framework + selected
+// hook + adjacent scene gists; reads the project.productData for the
+// product name; reads the current Scene's columns for index, goal, TTS
+// text. All fields are optional — if rawJson is missing fields, the
+// vision model still gets the pixels + visualBrief and runs.
+function buildScriptContextForMotion(scene: {
+  sceneOrder: number;
+  textHebrew: string;
+  textHebrewTts: string | null;
+  sceneGoal: string | null;
+  script: {
+    rawJson: unknown;
+    project: { productData: unknown };
+  };
+}): ScriptContext {
+  const raw = scene.script.rawJson as
+    | {
+        framework?: string;
+        creative_strategy?: { selected_hook?: string };
+        selected_hook?: string;
+        scenes?: Array<{
+          scene_order?: number;
+          spoken_text_hebrew?: string;
+          visual_prompt_english?: string;
+        }>;
+      }
+    | null;
+  const productData = scene.script.project.productData as
+    | { productName?: string }
+    | null;
+
+  const hookHebrew =
+    raw?.creative_strategy?.selected_hook ?? raw?.selected_hook ?? null;
+  const allScenes = Array.isArray(raw?.scenes) ? raw!.scenes! : [];
+  const totalScenes = allScenes.length || 1;
+  const i = scene.sceneOrder;
+
+  // Adjacent gists — prefer Hebrew spoken text (it's what the creator
+  // says, the most narratively-loaded signal). Fall back to the visual
+  // brief in English if spoken text is missing.
+  const gistOf = (s: { spoken_text_hebrew?: string; visual_prompt_english?: string }) =>
+    (s.spoken_text_hebrew ?? s.visual_prompt_english ?? '').trim() || null;
+  const prevGist = i > 0 && allScenes[i - 1] ? gistOf(allScenes[i - 1]!) : null;
+  const nextGist =
+    i + 1 < allScenes.length && allScenes[i + 1] ? gistOf(allScenes[i + 1]!) : null;
+
+  return {
+    framework: raw?.framework ?? null,
+    productName: productData?.productName ?? null,
+    hookHebrew,
+    currentSceneIndex: i,
+    totalScenes,
+    currentSceneTextHebrew: scene.textHebrewTts ?? scene.textHebrew ?? null,
+    currentSceneGoal: scene.sceneGoal ?? null,
+    prevSceneGist: prevGist,
+    nextSceneGist: nextGist,
+  };
+}
+
 async function generateSceneClipImplInner(
   sceneId: string,
   userId: string,
@@ -415,6 +477,7 @@ async function generateSceneClipImplInner(
         visualBrief: scene.visualPromptEnglish,
         isTalkingHead: routing.requiresLipSync,
         sceneGenerationType: routing.sceneGenerationType,
+        scriptContext: buildScriptContextForMotion(scene),
       });
       const durationMs = Date.now() - motionAnalysisStartedAt;
       const motionAttribution = attributeOpenAiTextCost({
@@ -507,7 +570,34 @@ async function generateSceneClipImplInner(
       sceneGenerationType: routing.sceneGenerationType,
     }),
   });
-  const motionPrompt = buildKlingPromptFromPlan(animationPlan, {
+  // V26 / V26.4 / V26.14 — per-scene provider choice.
+  //
+  // V26.14: default flipped Kling → Grok. Operator can override the
+  // global default via DEFAULT_CLIP_PROVIDER env (`grok` | `kling`),
+  // and the user can override per-scene via `Scene.clipProvider`
+  // (the existing toggle in step 5).
+  //
+  // V26.4 carryover: Grok works on lipsync scenes too. The lipsync
+  // pipeline is provider-agnostic — PixVerse takes a silent video URL
+  // regardless of who produced it, and the face-gate inspects
+  // scene.imageUrl (not the video).
+  //
+  // V14+ — provider chosen BEFORE the prompt is rendered so the
+  // renderer can emit Kling-flavored short-clause tokens for Kling
+  // and cinematic prose for Grok.
+  const DEFAULT_PROVIDER =
+    (process.env.DEFAULT_CLIP_PROVIDER ?? 'grok').toLowerCase() === 'kling'
+      ? 'kling'
+      : 'grok';
+  const userPreferredProvider =
+    (scene as { clipProvider?: string | null }).clipProvider ?? null;
+  const effectiveProvider = userPreferredProvider ?? DEFAULT_PROVIDER;
+  const useGrok = effectiveProvider === 'grok';
+  const providerName = useGrok ? 'xai' : 'kling';
+  const providerLog = useGrok ? logStage('grok-imagine', sceneId) : klingLog;
+
+  const motionPrompt = buildPromptFromPlan(animationPlan, {
+    provider: useGrok ? 'grok' : 'kling',
     cameraDirection: scene.cameraDirection,
   });
 
@@ -533,11 +623,15 @@ async function generateSceneClipImplInner(
     lipsync: routing.requiresLipSync,
     productRef: !!productRefUrl,
     motionAnalysis: !!motionAnalysis,
+    provider: providerName,
     plan: {
       animationGoal: animationPlan.animationGoal,
       motionSubject: animationPlan.motionSubject,
       cameraMotion: animationPlan.cameraMotion,
       forbiddenMotionCount: animationPlan.forbiddenMotion.length,
+      cfgScale: motionPrompt.cfgScale ?? null,
+      narrativeRole: animationPlan.narrativeRole ?? null,
+      emotionalTone: animationPlan.emotionalTone ?? null,
     },
   });
 
@@ -550,27 +644,6 @@ async function generateSceneClipImplInner(
     scene.durationSeconds, // honor the script's planned scene length
     routing.requiresLipSync,
   );
-  // V26 / V26.4 / V26.14 — per-scene provider choice.
-  //
-  // V26.14: default flipped Kling → Grok. Operator can override the
-  // global default via DEFAULT_CLIP_PROVIDER env (`grok` | `kling`),
-  // and the user can override per-scene via `Scene.clipProvider`
-  // (the existing toggle in step 5).
-  //
-  // V26.4 carryover: Grok works on lipsync scenes too. The lipsync
-  // pipeline is provider-agnostic — PixVerse takes a silent video URL
-  // regardless of who produced it, and the face-gate inspects
-  // scene.imageUrl (not the video).
-  const DEFAULT_PROVIDER =
-    (process.env.DEFAULT_CLIP_PROVIDER ?? 'grok').toLowerCase() === 'kling'
-      ? 'kling'
-      : 'grok';
-  const userPreferredProvider =
-    (scene as { clipProvider?: string | null }).clipProvider ?? null;
-  const effectiveProvider = userPreferredProvider ?? DEFAULT_PROVIDER;
-  const useGrok = effectiveProvider === 'grok';
-  const providerName = useGrok ? 'xai' : 'kling';
-  const providerLog = useGrok ? logStage('grok-imagine', sceneId) : klingLog;
   const grokResolution = (process.env.XAI_VIDEO_RESOLUTION ?? '720p').toLowerCase();
   const grokModel = process.env.XAI_VIDEO_MODEL ?? 'grok-imagine-video';
   const i2vModel = useGrok
@@ -645,6 +718,7 @@ async function generateSceneClipImplInner(
         durationSeconds: clipDuration,
         aspectRatio: projectAspectRatio,
         sceneId,
+        cfgScale: motionPrompt.cfgScale,
       });
     }
   } catch (err) {

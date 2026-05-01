@@ -237,6 +237,13 @@ class KlingProvider implements VideoGenerationProvider {
       if (input.negativePrompt && input.negativePrompt.trim().length > 0) {
         body.negative_prompt = input.negativePrompt;
       }
+      // V14+ — cfg_scale knob for prompt adherence. Higher = stricter.
+      // Recommended 0.7 for product/hands (label integrity), 0.5 for
+      // talking-head plates. The renderers in buildPromptFromPlan emit
+      // the right value per scene; we just forward it.
+      if (typeof input.cfgScale === 'number' && Number.isFinite(input.cfgScale)) {
+        body.cfg_scale = clampCfgScale(input.cfgScale);
+      }
     } else {
       // Legacy image2video: single-image only, fold negatives into prompt.
       const promptWithNeg =
@@ -251,6 +258,10 @@ class KlingProvider implements VideoGenerationProvider {
         aspect_ratio: input.aspectRatio,
         duration: String(input.durationSeconds),
       };
+      // Legacy endpoint also accepts cfg_scale — same semantics.
+      if (typeof input.cfgScale === 'number' && Number.isFinite(input.cfgScale)) {
+        body.cfg_scale = clampCfgScale(input.cfgScale);
+      }
     }
 
     // Structured trace for /admin/costs debugging — what we asked Kling
@@ -378,6 +389,15 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// V14+ — clamp cfg_scale to Kling's documented range. The PiAPI / Kling
+// docs put cfg_scale at 0-1 with 0.5 default; we clamp to [0.1, 1.0] to
+// catch caller bugs (e.g. accidentally passing 7 instead of 0.7).
+function clampCfgScale(value: number): number {
+  if (value < 0.1) return 0.1;
+  if (value > 1.0) return 1.0;
+  return value;
+}
+
 /* ---------- Backwards-compat re-exports + motion-prompt builder ---------- */
 
 // Old API kept so legacy callers compile during the transition. New code
@@ -391,221 +411,190 @@ export async function generateBroll(input: BrollInput): Promise<FinalVideoResult
 // AspectRatio re-export for callers that don't want to import from types.ts.
 export type KlingAspectRatio = AspectRatio;
 
-// Build a Kling-flavored motion prompt from the script's per-scene fields.
-// Kling responds best to its own Camera Movement vocabulary (Horizontal /
-// Pan / Zoom / Tilt / Master Shot variants). Keep camera + subject motion
-// CONSERVATIVE for talking-head clips — the lipsync stage does the lip
-// work, and aggressive camera motion ruins the result.
+// V14+ — provider-aware prompt builders.
 //
-// CRITICAL — pre-lipsync rule for talking-head scenes:
-// "Silent talking plate" strategy. The base video must already look
-// like a frame from a real UGC selfie video where the creator is
-// speaking calmly — NOT a studio portrait that we then try to "fix"
-// with lipsync (which produces uncanny patch-on-frozen-face artifacts).
+// The AnimationPlan is the contract; the prompt is just the rendered
+// form of the contract. We render DIFFERENTLY for Kling vs Grok because
+// the two models have different prompt-craft expectations:
 //
-// Structure mirrors the production-quality prompt from the Apr 2026
-// spec: small breath → subtle mouth motion → natural blink → eyebrow
-// engagement → one small hand gesture → tiny nod, all under handheld
-// phone framing.
-const SILENT_TALKING_HEAD_TOKENS = [
-  'Realistic vertical UGC selfie video',
-  'the Israeli creator looks into the phone camera and appears to speak silently in a calm natural way',
-  'starts with a small breath',
-  'mouth moves subtly as if forming words (visible mouth, mid-sentence expression, mouth slightly open)',
-  'blinks naturally',
-  'slightly raises eyebrows for micro-emphasis',
-  'one small hand gesture near the chest',
-  'finishes with a tiny nod',
-  'camera mostly stable with very slight handheld movement',
-  'clear front-facing face',
-  'authentic apartment lighting',
-  'natural micro-expressions',
-  'no dramatic acting',
-  'no exaggerated mouth movement',
-].join(', ');
-
-// Negative prompt — forbidden artifacts that ruin lipsync downstream.
-// On Omni-Video this is sent as `negative_prompt`; on legacy i2v it's
-// folded into the main prompt with a "NEGATIVE:" tag.
-const SILENT_TALKING_HEAD_NEGATIVES = [
-  'frozen face',
-  'dead eyes',
-  'robotic movement',
-  'stiff portrait',
-  'plastic skin',
-  'beauty filter',
-  'exaggerated mouth',
-  'cartoon lips',
-  'distorted mouth',
-  'warped teeth',
-  'face melting',
-  'unstable jaw',
-  'excessive head movement',
-  'dramatic camera movement',
-  'side profile',
-  'mouth covered',
-  'blurry face',
-  'uncanny smile',
-].join(', ');
-
-// For PRODUCT / HANDS / LIFESTYLE scenes — the most common drift mode
-// is "Kling forgets the product and zooms into the avatar's face for a
-// silent talking shot". These negatives explicitly forbid that
-// behavior; they get sent as Omni's native `negative_prompt`, which
-// Kling weights more heavily than inline "NEGATIVE:" text.
-const NON_TALKING_NEGATIVES = [
-  'face zoom',
-  'talking selfie',
-  'cropped product',
-  'product disappearing',
-  'product out of frame',
-  'mouth speaking',
-  'lips moving',
-  'mouth opening',
-  'exaggerated facial movement',
-  'face-dominant framing',
-  'ignoring product',
-  'unstable composition',
-  'avatar staring at camera',
-  'dramatic head turn',
-  'crop-in to face',
-  'losing scene context',
-].join(', ');
-
-// Anti-drift block prepended to the positive prompt for non-talking
-// scenes. Omni respects positive prompt structure strongly — repeating
-// the "do not turn this into talking selfie" intent in plain English
-// here, in addition to the negative_prompt list, gives us belt + braces.
-const NON_TALKING_GUARD = [
-  'The creator is NOT speaking to the camera',
-  'mouth stays relaxed and closed throughout the clip',
-  'do not turn this into a selfie talking shot',
-  'do not zoom into the face',
-  'preserve the prepared composition exactly as shown in the reference image',
-  'the product must remain clearly visible from start to finish',
-  'the focus is the product and the action — not facial performance',
-].join(', ');
-
-// Motion vocabulary per scene type. The default (talking-head) used to
-// be applied to everything which made product/hands/lifestyle scenes
-// feel wrong (Kling animated the subject's face instead of the action).
-// Now we pick a motionToken that matches what's IN the frame.
-function pickMotionToken(
-  sceneGenerationType: string | undefined,
-  performanceNote: string | null | undefined,
-): string {
-  switch (sceneGenerationType) {
-    case 'product_demo':
-      return 'Hands move naturally with intent, the product is held steady and rotates slightly so the label catches the light, smooth purposeful motion, no head/face emphasis';
-    case 'hands_only':
-      return 'Hands perform the action smoothly and confidently, gentle wrist movement, fingers grip the object as a real person would, no jerky motion, subtle environmental motion (steam/liquid/cloth) where appropriate';
-    case 'closeup_product':
-      return 'Very slow drift, surface highlights shift across packaging, subtle lighting change reveals texture, no human movement';
-    case 'before_after':
-      return 'Slow reveal of the change, subtle wipe or push-in between states, no dramatic transition';
-    case 'lifestyle':
-    case 'broll':
-      return 'Natural environmental motion, ambient feel, gentle handheld breathing, soft light shifts, minimal subject movement';
-    case 'talking_head':
-    case 'selfie_talking':
-    case 'mirror_selfie_talking':
-    default: {
-      // Talking-head defaults — but allow performance-note overrides
-      // (whisper/punchy/tired/confident) to flavor the delivery.
-      const note = (performanceNote ?? '').toLowerCase();
-      if (/לוחש|רך|אישי/.test(note))
-        return 'Almost still, slow blinks, very gentle breath';
-      if (/פאנץ|חד|אנרגי|נמרץ/.test(note))
-        return 'Slight forward lean, alert eyes, occasional small gesture';
-      if (/עייף|חוש|הודה/.test(note))
-        return 'Slow blinks, gentle head tilt, soft sigh';
-      if (/בטח|חזק|מומל/.test(note))
-        return 'Steady gaze, occasional confident nod, small hand gesture';
-      return 'Natural breath, occasional blink, subtle head turns';
-    }
-  }
-}
+//   Kling Omni v3:
+//     • Comma-separated short clauses, camera-first, ~30-50 word positive.
+//     • Native `negative_prompt` field with strong per-token weighting.
+//     • Cap negatives at ~10 items (loses weight past ~12).
+//     • Anti-drift "DO NOT" guards belong in the negative list, NOT the
+//       positive — leading positive tokens are weighted hardest.
+//
+//   Grok Imagine (xAI grok-imagine-video):
+//     • Single prompt string; no native negative field (provider folds
+//       any negative as "AVOID: …" tail text).
+//     • Cinematic / paragraph style outperforms tight comma-tokens.
+//     • Positive framing wins ("the face is never the subject" > "do not
+//       zoom to the face").
+//
+// Both renderers consume the same AnimationPlan + the same V14+ physics
+// fields (contactAnchors, motionTimeframeSeconds, motionEndpoint,
+// emotionalTone) so improvements to motion-analysis upstream propagate
+// to both providers automatically.
 
 export interface KlingMotionPrompt {
-  /** Goes into the Omni `prompt` field. */
+  /** Goes into the Omni `prompt` field (Kling) or the `prompt` body
+   *  field (Grok). */
   positive: string;
-  /** Goes into the Omni `negative_prompt` field (or appended to prompt
-   * with a NEGATIVE: tag on the legacy endpoint). */
+  /** Goes into the Omni `negative_prompt` field (Kling) or appended as
+   *  "AVOID: …" by the Grok adapter. */
   negative: string;
+  /** Kling-only adherence knob (0.1–1.0, default 0.5). The Grok adapter
+   *  ignores this. The Kling adapter folds it into the request body. */
+  cfgScale?: number;
 }
 
-// V13 PR3.2 — camera vocabulary table. The AnimationPlan stores the
-// camera move as an enum; this table renders it into Kling-flavored
-// prompt text. Mirroring buildKlingMotionPrompt's existing wording
-// keeps Omni's per-token weighting consistent.
-const PLAN_CAMERA_TOKEN: Record<
+// V13 PR3.2 — Kling-flavored camera vocabulary. The plan stores the
+// camera move as an enum; this table renders it into Kling's preferred
+// short-clause style.
+const KLING_CAMERA_TOKEN: Record<
   import('./animation-plan-builder').AnimationCameraMotion,
   string
 > = {
-  static: 'Static camera, eye-level, gentle handheld feel',
-  subtle_handheld: 'Static frame with very slight handheld breathing',
-  slow_push_in: 'Slow Zoom In',
-  slow_pull_back: 'Slow Zoom Out',
+  static: 'Static camera, eye-level',
+  subtle_handheld: 'Static frame with very slight handheld breathing, eye-level',
+  slow_push_in: 'Slow Zoom In, locked-off framing',
+  slow_pull_back: 'Slow Zoom Out, locked-off framing',
 };
 
-// V13 PR3.2 — primary plan-driven prompt builder. Reads an AnimationPlan
-// and emits the same { positive, negative } shape Omni expects. The plan
-// is the contract — this function just renders it. When a caller has the
-// plan, they should use this instead of buildKlingMotionPrompt; the
-// legacy field-driven builder stays in place for back-compat.
+// V14+ — Grok prefers cinematic prose. Same enum, fuller sentences.
+const GROK_CAMERA_SENTENCE: Record<
+  import('./animation-plan-builder').AnimationCameraMotion,
+  string
+> = {
+  static: 'A locked-off shot at eye level with the soft breath of a held phone.',
+  subtle_handheld:
+    'A handheld shot at eye level, the camera breathing gently with the operator.',
+  slow_push_in:
+    'The camera slowly pushes in over the duration of the clip, holding the subject centered.',
+  slow_pull_back:
+    'The camera slowly pulls back over the duration of the clip, opening up the frame.',
+};
+
+// V14+ — silent-talking-plate beats expressed in physics language. Each
+// clause names the moving subject + a measured amount, so Kling/Grok
+// both have something to simulate. Compare to the V13 prose version
+// which leaned on vague verbs ("subtle facial movement").
+const SILENT_TALKING_HEAD_TOKENS = [
+  'creator looks at the lens, eyes hold soft focus',
+  'small inhale, chest rises 1-2cm and shoulders settle on exhale',
+  'lips part 2-3mm as if mid-word, jaw drops slightly, then closes',
+  'one natural blink at mid-clip',
+  'eyebrows raise 1-2mm for micro-emphasis',
+  'one small chest-level hand gesture, returns to rest',
+  'tiny chin-dip nod at the end, head returns to level',
+].join(', ');
+
+// V14+ — TRIMMED negatives. Per Kling community guides + research (May
+// 2026), 6-10 targeted tokens outperform a 15+ token spray — the model
+// loses per-token weight past ~12 items. Each entry is a distinct
+// failure CLASS (not a synonym of another).
+const TALKING_NEGATIVES_CORE = [
+  'plastic skin',
+  'beauty filter skin',
+  'distorted mouth',
+  'frozen face',
+  'dead eyes',
+  'side profile',
+  'mouth covered',
+  'blurry face',
+].join(', ');
+
+const NON_TALKING_NEGATIVES_CORE = [
+  'face zoom',
+  'talking selfie',
+  'mouth speaking',
+  'lips moving',
+  'label warp',
+  'product morph',
+  'cropped product',
+  'camera shake',
+].join(', ');
+
+// V14+ — primary entry point. Renders an AnimationPlan into a prompt
+// pair tuned for the target provider. Callers should use this; the
+// older buildKlingPromptFromPlan / buildKlingMotionPrompt are kept as
+// thin aliases for back-compat.
+export function buildPromptFromPlan(
+  plan: import('./animation-plan-builder').AnimationPlan,
+  opts: {
+    /** Which i2v provider this prompt will be sent to. */
+    provider: 'kling' | 'grok';
+    /** Free-text camera direction from the script LLM — folded in as a
+     *  hint, but the plan's cameraMotion enum still leads. */
+    cameraDirection?: string | null;
+  },
+): KlingMotionPrompt {
+  if (opts.provider === 'grok') {
+    return renderForGrok(plan, opts);
+  }
+  return renderForKling(plan, opts);
+}
+
+// Back-compat alias — clip-impl currently imports this name. New code
+// should use buildPromptFromPlan({ provider: 'kling', ... }).
 export function buildKlingPromptFromPlan(
   plan: import('./animation-plan-builder').AnimationPlan,
   opts: {
-    /** Free-text camera direction the script LLM wrote — folded in as
-     *  a hint when present, but the plan's cameraMotion enum wins. */
     cameraDirection?: string | null;
   } = {},
 ): KlingMotionPrompt {
-  const cameraToken = PLAN_CAMERA_TOKEN[plan.cameraMotion];
+  return buildPromptFromPlan(plan, { provider: 'kling', ...opts });
+}
+
+/* ---------- Kling renderer ---------- */
+
+function renderForKling(
+  plan: import('./animation-plan-builder').AnimationPlan,
+  opts: { cameraDirection?: string | null },
+): KlingMotionPrompt {
+  const cameraToken = KLING_CAMERA_TOKEN[plan.cameraMotion];
   const cameraHint =
     opts.cameraDirection && opts.cameraDirection.trim().length
       ? `${cameraToken}. ${opts.cameraDirection.trim()}`
       : cameraToken;
 
-  // Order: anti-drift guard (non-talking only) → camera → motion goal →
-  // human motion → object motion → preserve / avoid clauses → talking
-  // performance block (when speaking is expected).
+  // Order matters — Kling weights leading positive tokens highest.
+  // Camera → primary action → physics anchors → ambient → preserve.
+  // Anti-drift "DO NOT" lives in the negative_prompt, not here.
   const parts: string[] = [];
 
-  if (!plan.speakingExpected) {
-    parts.push(NON_TALKING_GUARD);
-  }
   parts.push(cameraHint);
-  parts.push(`Animation goal: ${plan.animationGoal}`);
-  parts.push(`Human motion: ${plan.humanMotion}`);
-  parts.push(`Object motion: ${plan.objectMotion}`);
 
-  // Composition preservation — always on for plans (they're built with
-  // preserveComposition=true), but stating it explicitly in the prompt
-  // is what gets Omni to actually obey.
-  parts.push(
-    'Preserve everything visible in the input image (product, hands, environment) — do NOT crop in to the face or remove props',
-  );
-
-  if (plan.preserveProductVisibility) {
-    parts.push(
-      'PRODUCT VISIBILITY GATE: the product must remain in the frame from start to finish — never crop it out, never let it leave the frame',
-    );
-  }
-  if (plan.avoidFaceZoom) {
-    parts.push("The creator's face must not be zoomed into; do not crop in to it");
-  }
   if (plan.speakingExpected) {
     parts.push(SILENT_TALKING_HEAD_TOKENS);
+  } else {
+    parts.push(plan.humanMotion);
+    if (plan.objectMotion && plan.objectMotion !== plan.humanMotion) {
+      parts.push(plan.objectMotion);
+    }
   }
 
-  // Negative prompt: plan's forbiddenMotion list (already deduped),
-  // joined with the appropriate scene-class baseline negatives so we
-  // keep belt + braces — Omni weights both lists, and the baseline
-  // catches mistakes the plan didn't enumerate.
+  if (plan.contactAnchors && plan.contactAnchors.length > 0) {
+    parts.push(`Contact: ${plan.contactAnchors.join('; ')}`);
+  }
+  if (typeof plan.motionTimeframeSeconds === 'number' && plan.motionTimeframeSeconds > 0) {
+    parts.push(`Action over ~${plan.motionTimeframeSeconds}s`);
+  }
+  if (plan.motionEndpoint) {
+    parts.push(`End state: ${plan.motionEndpoint}`);
+  }
+  if (plan.preserveProductVisibility) {
+    parts.push('Product remains in frame and readable from start to finish');
+  }
+  if (plan.emotionalTone) {
+    parts.push(`Tone: ${plan.emotionalTone}`);
+  }
+
+  // Negative prompt — plan's forbiddenMotion (targeted) + a tight
+  // baseline list. Cap at 10 to keep per-token weight high.
   const baselineNegatives = plan.speakingExpected
-    ? SILENT_TALKING_HEAD_NEGATIVES
-    : NON_TALKING_NEGATIVES;
+    ? TALKING_NEGATIVES_CORE
+    : NON_TALKING_NEGATIVES_CORE;
   const negativeBuf = new Set<string>();
   for (const item of plan.forbiddenMotion) {
     if (item.trim().length) negativeBuf.add(item.trim());
@@ -613,118 +602,180 @@ export function buildKlingPromptFromPlan(
   for (const item of baselineNegatives.split(',').map((s) => s.trim())) {
     if (item.length) negativeBuf.add(item);
   }
+  const negative = Array.from(negativeBuf).slice(0, 10).join(', ');
 
   return {
     positive: parts.filter((p) => p && p.trim().length).join('. ') + '.',
-    negative: Array.from(negativeBuf).join(', '),
+    negative,
+    cfgScale: pickCfgScale(plan),
   };
 }
 
+/* ---------- Grok renderer ---------- */
+
+function renderForGrok(
+  plan: import('./animation-plan-builder').AnimationPlan,
+  opts: { cameraDirection?: string | null },
+): KlingMotionPrompt {
+  const sentences: string[] = [];
+
+  // 1. Camera as a full sentence.
+  let cameraSentence = GROK_CAMERA_SENTENCE[plan.cameraMotion];
+  if (opts.cameraDirection && opts.cameraDirection.trim().length) {
+    cameraSentence = `${cameraSentence} ${capitalize(opts.cameraDirection.trim())}.`;
+  }
+  sentences.push(cameraSentence);
+
+  // 2. Primary action.
+  if (plan.speakingExpected) {
+    sentences.push(
+      'The creator looks into the lens and appears to speak silently — a small inhale, the lips part as if mid-word, the jaw drops a few millimeters and closes, a single natural blink at mid-clip, the eyebrows lift slightly for emphasis, and one small chest-level hand gesture comes and goes; the clip ends on a tiny chin-dip nod.',
+    );
+  } else {
+    sentences.push(toGrokSentence(plan.humanMotion));
+    if (plan.objectMotion && plan.objectMotion !== plan.humanMotion) {
+      sentences.push(toGrokSentence(plan.objectMotion));
+    }
+  }
+
+  // 3. Physics anchors woven in as natural prose.
+  if (plan.contactAnchors && plan.contactAnchors.length > 0) {
+    sentences.push(
+      `The hands hold their grounded contact: ${plan.contactAnchors.join(', ')}.`,
+    );
+  }
+  if (typeof plan.motionTimeframeSeconds === 'number' && plan.motionTimeframeSeconds > 0) {
+    sentences.push(`The action takes about ${plan.motionTimeframeSeconds} seconds.`);
+  }
+  if (plan.motionEndpoint) {
+    sentences.push(`At the end, ${lowerFirst(plan.motionEndpoint)}.`);
+  }
+
+  // 4. Preserve / avoid expressed POSITIVELY (Grok responds better to
+  // positive framing than to "DO NOT").
+  if (plan.preserveProductVisibility) {
+    sentences.push(
+      'The product remains in frame the entire time and stays sharp and readable.',
+    );
+  }
+  if (plan.avoidFaceZoom) {
+    sentences.push(
+      'The composition stays exactly as in the source still; the face is never the subject.',
+    );
+  }
+  if (plan.emotionalTone) {
+    sentences.push(`The feel is ${plan.emotionalTone}.`);
+  }
+
+  // Grok still gets a negative list — the provider folds it as
+  // "AVOID: …". Keep it short (8 items max) since it lives inside the
+  // single prompt string and burns context.
+  const baselineNegatives = plan.speakingExpected
+    ? TALKING_NEGATIVES_CORE
+    : NON_TALKING_NEGATIVES_CORE;
+  const negativeBuf = new Set<string>();
+  for (const item of plan.forbiddenMotion) {
+    if (item.trim().length) negativeBuf.add(item.trim());
+  }
+  for (const item of baselineNegatives.split(',').map((s) => s.trim())) {
+    if (item.length) negativeBuf.add(item);
+  }
+  const negative = Array.from(negativeBuf).slice(0, 8).join(', ');
+
+  return {
+    positive: sentences.filter((s) => s && s.trim().length).join(' '),
+    negative,
+    // Grok ignores cfgScale — leave undefined so the adapter sees no field.
+  };
+}
+
+/* ---------- Helpers ---------- */
+
+// Pick cfg_scale per plan type. Higher values lock the model harder to
+// the prompt; recommended:
+//   0.7 — product / hands / closeup / cta scenes (label integrity)
+//   0.5 — talking-head plates (let it breathe for natural micro-motion)
+function pickCfgScale(plan: import('./animation-plan-builder').AnimationPlan): number {
+  if (plan.speakingExpected) return 0.5;
+  if (plan.motionSubject === 'product' || plan.motionSubject === 'hands') return 0.7;
+  if (plan.preserveProductVisibility || plan.avoidFaceZoom) return 0.65;
+  return 0.5;
+}
+
+function toGrokSentence(rawMotion: string): string {
+  const trimmed = rawMotion.trim();
+  if (!trimmed) return '';
+  const cap = capitalize(trimmed);
+  return /[.!?]$/.test(cap) ? cap : `${cap}.`;
+}
+
+function capitalize(s: string): string {
+  if (!s) return s;
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+function lowerFirst(s: string): string {
+  if (!s) return s;
+  return s.charAt(0).toLowerCase() + s.slice(1);
+}
+
+// V13 — kept exported but now thin: the V4 / motionAnalysis-aware
+// builder used to live here. New callers should use buildPromptFromPlan
+// with a fully-built AnimationPlan, which already contains every
+// signal this function tried to fold in.
 export function buildKlingMotionPrompt(input: {
   cameraDirection?: string | null;
   performanceNote?: string | null;
   sceneType?: string | null;
-  /** When true, append the silent-talking-head performance block. */
   requiresLipSync?: boolean;
-  /** Routing-derived scene type (talking_head / product_demo / hands_only / ...). */
   sceneGenerationType?: string;
-  /**
-   * Vision-grounded analysis of the actual scene image. When present,
-   * its primaryAction + preserveElements override the generic motion
-   * vocabulary so Kling animates what's REALLY in the frame.
-   */
   motionAnalysis?: import('./motion-analysis').MotionAnalysis | null;
-  /**
-   * V4 product-first metadata, populated by the script LLM via
-   * structured output. When present, takes priority over heuristics
-   * derived from sceneGenerationType — the LLM committed to a frame
-   * intent and we should honor it. cameraFocus drives camera vocab,
-   * mustShowProduct + productVisibilityPriority strengthen the
-   * product-presence guard, showFace=false suppresses face-zoom.
-   */
   primarySubject?: string | null;
   mustShowProduct?: boolean | null;
   productVisibilityPriority?: string | null;
   cameraFocus?: string | null;
   showFace?: boolean | null;
 }): KlingMotionPrompt {
-  const cd = (input.cameraDirection ?? '').toLowerCase();
-
-  let cameraToken = 'Static camera, eye-level, gentle handheld feel';
-  if (/mirror selfie/.test(cd)) cameraToken = 'Static frame, mirror selfie composition holds steady';
-  else if (/selfie/.test(cd)) cameraToken = 'Static frame, slight handheld breathing';
-  else if (/over[- ]?the[- ]?shoulder|over.?shoulder/.test(cd))
-    cameraToken = 'Subtle over-the-shoulder push-in, very slow';
-  else if (/zoom in/.test(cd)) cameraToken = 'Slow Zoom In';
-  else if (/zoom out|pull back/.test(cd)) cameraToken = 'Slow Zoom Out';
-  else if (/pan/.test(cd)) cameraToken = 'Subtle Horizontal Pan';
-  else if (/tilt/.test(cd)) cameraToken = 'Subtle Tilt';
-  else if (/close[- ]?up/.test(cd)) cameraToken = 'Tight close-up, very slow push-in';
-
-  const motionToken = pickMotionToken(input.sceneGenerationType, input.performanceNote);
-
-  const parts: string[] = [
-    cameraToken,
-    motionToken,
-    'High realism, natural skin micro-detail, no exaggerated movement, preserve everything visible in the input image (product, hands, environment) — do NOT crop in to the face or remove props',
-  ];
-
-  // Vision-grounded analysis takes precedence — it knows what's actually
-  // in the frame. We OVERRIDE the generic motionToken with the analysis-
-  // derived primaryAction + secondary motions, and append the analysis-
-  // derived preserve/avoid hints.
-  if (input.motionAnalysis) {
-    const a = input.motionAnalysis;
-    parts[1] = `${a.primaryAction}${a.secondaryMotions.length > 0 ? ` (also: ${a.secondaryMotions.join(', ')})` : ''}`;
-    if (a.cameraIntent && a.cameraIntent.length > 5) {
-      parts[0] = `${cameraToken}. ${a.cameraIntent}`;
-    }
-    if (a.preserveElements.length > 0) {
-      parts.push(`MUST preserve through animation: ${a.preserveElements.join('; ')}`);
-    }
-    if (a.framingRisks.length > 0) {
-      parts.push(`AVOID: ${a.framingRisks.join('; ')}`);
-    }
-  }
-
-  // V4 metadata-driven adjustments. These only fire when the LLM
-  // explicitly committed to a value (the structured-output schema
-  // makes them required for new generations). Older scenes without
-  // metadata fall back to the heuristic path below.
-  if (input.cameraFocus === 'product') {
-    parts[0] = 'Product-led framing — camera holds steady on the product, no panning to the face';
-  } else if (input.cameraFocus === 'action') {
-    parts[0] = 'Action-led framing — camera follows the hands and the product, eye-level with the work surface';
-  }
-  if (input.mustShowProduct) {
-    parts.push(
-      'PRODUCT VISIBILITY GATE: the product must remain in the frame from start to finish — never crop it out, never let it leave the frame',
-    );
-  }
-  if (input.productVisibilityPriority === 'high') {
-    parts.push(
-      'The product fills 30-60% of the frame area and is sharp + readable throughout the clip',
-    );
-  }
-  if (input.showFace === false) {
-    parts.push("The creator's face is OUT OF FRAME — do not pan to it, do not crop in to it");
-  }
-
-  // Talking vs non-talking: each gets its own positive guard block AND
-  // its own negative list. Non-talking is the more common drift mode
-  // (Kling collapses product scenes into face-talking selfies), so we
-  // front-load the anti-drift guard before the camera/motion tokens.
-  if (input.requiresLipSync) {
-    parts.push(SILENT_TALKING_HEAD_TOKENS);
-    return {
-      positive: parts.join('. ') + '.',
-      negative: SILENT_TALKING_HEAD_NEGATIVES,
-    };
-  }
-  // Non-talking: prepend the anti-face-zoom guard so it leads the prompt.
-  parts.unshift(NON_TALKING_GUARD);
-  return {
-    positive: parts.join('. ') + '.',
-    negative: NON_TALKING_NEGATIVES,
+  // Synthesize a minimal AnimationPlan from the legacy inputs and
+  // delegate. Anything older that calls this still works.
+  const speakingExpected =
+    !!input.requiresLipSync ||
+    input.sceneGenerationType === 'talking_head' ||
+    input.sceneGenerationType === 'selfie_talking' ||
+    input.sceneGenerationType === 'mirror_selfie_talking';
+  const motionSubject: import('./animation-plan-builder').AnimationMotionSubject =
+    input.primarySubject === 'product' || input.primarySubject === 'product_with_avatar'
+      ? 'product'
+      : input.primarySubject === 'product_in_use' || input.primarySubject === 'hands'
+        ? 'hands'
+        : speakingExpected
+          ? 'person'
+          : 'environment';
+  const cameraMotion: import('./animation-plan-builder').AnimationCameraMotion =
+    input.cameraFocus === 'product' ? 'static' : 'subtle_handheld';
+  const plan: import('./animation-plan-builder').AnimationPlan = {
+    animationGoal: speakingExpected
+      ? 'silent talking plate'
+      : 'show the product or action in motion',
+    motionSubject,
+    cameraMotion,
+    humanMotion: speakingExpected
+      ? 'silent speaking beat'
+      : 'hands move with intent, smooth grip',
+    objectMotion: 'product remains stable, no morphing, no warping',
+    forbiddenMotion: [],
+    preserveComposition: true,
+    preserveProductVisibility: !!input.mustShowProduct,
+    avoidFaceZoom: input.showFace === false,
+    speakingExpected,
+    contactAnchors: undefined,
+    motionTimeframeSeconds: undefined,
+    motionEndpoint: undefined,
+    narrativeRole: undefined,
+    emotionalTone: undefined,
   };
+  return buildPromptFromPlan(plan, {
+    provider: 'kling',
+    cameraDirection: input.cameraDirection,
+  });
 }

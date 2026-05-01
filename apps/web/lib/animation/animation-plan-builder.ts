@@ -15,7 +15,7 @@
 // clip-impl building it and kling.ts reading it. A later debug-panel PR
 // may persist it to Scene.animationPlanJson; the type is shaped for that.
 
-import type { MotionAnalysis } from './motion-analysis';
+import type { MotionAnalysis, NarrativeRole } from './motion-analysis';
 
 export type AnimationMotionSubject =
   | 'hands'
@@ -53,6 +53,20 @@ export interface AnimationPlan {
   avoidFaceZoom: boolean;
   /** When true, the still is a silent talking plate — speak silently. */
   speakingExpected: boolean;
+  /** V14+ — physical contact points lifted from MotionAnalysis. The
+   *  per-provider renderers fold these into the prompt so the model
+   *  understands WHERE the hands are anchored. Empty for non-touching scenes. */
+  contactAnchors?: string[];
+  /** V14+ — duration in seconds the primary action arc takes.
+   *  0 = no arc (static or continuous ambient only). */
+  motionTimeframeSeconds?: number;
+  /** V14+ — explicit end-state for the primary motion. Without this,
+   *  i2v models loop or vibrate at the tail. */
+  motionEndpoint?: string;
+  /** V14+ — narrative function this scene plays in the script arc. */
+  narrativeRole?: NarrativeRole;
+  /** V14+ — emotional tone the motion should carry, 2-6 words. */
+  emotionalTone?: string;
 }
 
 export interface BuildAnimationPlanInput {
@@ -301,6 +315,26 @@ export function buildAnimationPlan(input: BuildAnimationPlanInput): AnimationPla
     return 'natural ambient motion that preserves composition';
   })();
 
+  // V14+ — carry physics + narrative fields straight off the
+  // MotionAnalysis when present. The renderers downstream fold them
+  // into the per-provider prompt; if the analysis is absent (legacy
+  // cache or vision call failed), these stay undefined and the
+  // renderers fall back to the existing humanMotion / objectMotion text.
+  const contactAnchors = input.motionAnalysis?.contactAnchors?.length
+    ? [...input.motionAnalysis.contactAnchors]
+    : undefined;
+  const motionTimeframeSeconds =
+    typeof input.motionAnalysis?.motionTimeframeSeconds === 'number'
+      ? input.motionAnalysis.motionTimeframeSeconds
+      : undefined;
+  const motionEndpoint = input.motionAnalysis?.motionEndpoint?.trim()
+    ? input.motionAnalysis.motionEndpoint.trim()
+    : undefined;
+  const narrativeRole = input.motionAnalysis?.narrativeRole;
+  const emotionalTone = input.motionAnalysis?.emotionalTone?.trim()
+    ? input.motionAnalysis.emotionalTone.trim()
+    : undefined;
+
   return {
     animationGoal,
     motionSubject,
@@ -313,5 +347,10 @@ export function buildAnimationPlan(input: BuildAnimationPlanInput): AnimationPla
     preserveProductVisibility,
     avoidFaceZoom,
     speakingExpected,
+    contactAnchors,
+    motionTimeframeSeconds,
+    motionEndpoint,
+    narrativeRole,
+    emotionalTone,
   };
 }

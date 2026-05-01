@@ -268,12 +268,16 @@ async function main() {
       /motionLog\.info\(['"]cache hit/.test(clipImpl),
       '[PR4.3] clip-impl.ts logs motion-analysis cache hit',
     );
+    // V26+ — Grok provider added; the per-provider logger variable was
+    // renamed from `klingLog` to `providerLog` (it picks the right
+    // logger based on useGrok). The Kling-error log on line 5 of this
+    // block still uses `klingLog` for the mux-stage failure path.
     assert(
-      /klingLog\.info\(['"]calling i2v['"]/.test(clipImpl),
-      '[PR4.3] clip-impl.ts logs "calling i2v" before Kling call',
+      /providerLog\.info\(['"]calling i2v['"]/.test(clipImpl),
+      '[PR4.3] clip-impl.ts logs "calling i2v" before i2v call',
     );
     assert(
-      /klingLog\.info\(['"]i2v returned['"]/.test(clipImpl),
+      /providerLog\.info\(['"]i2v returned['"]/.test(clipImpl),
       '[PR4.3] clip-impl.ts logs "i2v returned" with model + duration',
     );
     assert(
