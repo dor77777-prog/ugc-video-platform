@@ -70,6 +70,12 @@ export const PROVIDER_COST_ESTIMATES_USD = {
   // (creative_strategy + 12-axis quality_score + scenes array) which
   // may run 2-3× the smoke test's token budget.
   openai_script_batch: num('COST_OPENAI_SCRIPT_BATCH_USD', 0.03),
+  // V14 — Claude Sonnet 4.6 baseline. Per batch (6 parallel calls):
+  // ~5K cached system input × $0.30/M (cache read) + ~2K user input ×
+  // $3/M + ~2K output × $15/M = ~$0.05/call → ~$0.30/batch. First
+  // batch in a 5-min window writes the cache (~$0.04 extra). Tunable
+  // via env once we observe live numbers.
+  anthropic_script_batch: num('COST_ANTHROPIC_SCRIPT_BATCH_USD', 0.3),
   openai_scene_image: num('COST_OPENAI_SCENE_IMAGE_USD', 0.06),
   openai_motion_analysis_scene: num('COST_OPENAI_MOTION_ANALYSIS_SCENE_USD', 0.005),
 

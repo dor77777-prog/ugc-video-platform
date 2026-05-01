@@ -104,6 +104,33 @@ const GEMINI_TEXT_PRICING: Record<string, GeminiTextRate> = {
   'gemini-flash-latest': { input: 0.075, output: 0.3 },
 };
 
+// V14 — Anthropic Claude pricing per 1M tokens. Numbers from
+// platform.claude.com/docs/pricing (May 2026). Sonnet 4.6 is the
+// active script-gen model; Opus / Haiku rows are kept so a stale
+// ANTHROPIC_SCRIPT_MODEL env var still attributes correctly in the
+// admin /admin/costs view.
+const ANTHROPIC_TEXT_PRICING: Record<string, { input: number; output: number }> = {
+  'claude-opus-4-7': { input: 5, output: 25 },
+  'claude-opus-4-6': { input: 5, output: 25 },
+  'claude-opus-4-5': { input: 5, output: 25 },
+  'claude-sonnet-4-6': { input: 3, output: 15 },
+  'claude-sonnet-4-5': { input: 3, output: 15 },
+  'claude-haiku-4-5': { input: 1, output: 5 },
+};
+
+export function priceAnthropicText(
+  model: string,
+  inputTokens: number,
+  outputTokens: number,
+): number {
+  // Strip date suffixes (`claude-haiku-4-5-20251001` → `claude-haiku-4-5`)
+  // so a pinned full-id env var still resolves. Fall back to Sonnet 4.6
+  // pricing for unknown models — conservative for the dashboard.
+  const base = stripVersionSuffix(model);
+  const p = ANTHROPIC_TEXT_PRICING[base] ?? ANTHROPIC_TEXT_PRICING['claude-sonnet-4-6']!;
+  return (inputTokens * p.input + outputTokens * p.output) / 1_000_000;
+}
+
 export function priceGeminiText(
   model: string,
   inputTokens: number,

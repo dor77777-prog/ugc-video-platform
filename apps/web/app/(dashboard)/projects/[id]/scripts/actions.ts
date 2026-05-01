@@ -10,16 +10,22 @@ import { generateScripts, LlmConfigError, type GeneratedScript } from '@/lib/llm
 import { recordApiCallStart, recordApiCallComplete } from '@/lib/usage/log';
 import { priceOpenAiText } from '@/lib/usage/pricing';
 import {
+  attributeAnthropicTextCost,
   attributeGeminiTextCost,
   attributeOpenAiTextCost,
 } from '@/lib/usage/cost-attribution';
 import { OPENAI_DEFAULT_SCRIPT_MODEL } from '@/lib/llm/openai-script-client';
+import { ANTHROPIC_DEFAULT_SCRIPT_MODEL } from '@/lib/llm/anthropic-script-client';
 
-// V26.8 — script-gen provider switch. Default OpenAI; flip with
-// LLM_SCRIPT_PROVIDER=gemini for experiments.
-function resolveScriptProvider(): 'openai' | 'gemini' {
+// V14 — script-gen provider switch. Default Anthropic (Claude Sonnet
+// 4.6); flip with LLM_SCRIPT_PROVIDER=openai|gemini. MUST stay in sync
+// with resolveScriptProvider() in lib/llm/scripts.ts — otherwise the
+// admin /admin/costs UI shows the wrong supplier name on the row.
+function resolveScriptProvider(): 'anthropic' | 'openai' | 'gemini' {
   const raw = process.env.LLM_SCRIPT_PROVIDER?.trim().toLowerCase();
-  return raw === 'gemini' ? 'gemini' : 'openai';
+  if (raw === 'openai') return 'openai';
+  if (raw === 'gemini') return 'gemini';
+  return 'anthropic';
 }
 import { GEMINI_DEFAULT_MODEL } from '@/lib/llm/gemini-client';
 import { checkRateLimit, RateLimitedError } from '@/lib/usage/rate-limit';
@@ -158,9 +164,11 @@ export async function generateScriptsAction(
     provider,
     operation: 'script_gen',
     model:
-      provider === 'gemini'
-        ? process.env.GEMINI_SCRIPT_MODEL || GEMINI_DEFAULT_MODEL
-        : process.env.OPENAI_SCRIPT_MODEL || OPENAI_DEFAULT_SCRIPT_MODEL,
+      provider === 'anthropic'
+        ? process.env.ANTHROPIC_SCRIPT_MODEL || ANTHROPIC_DEFAULT_SCRIPT_MODEL
+        : provider === 'gemini'
+          ? process.env.GEMINI_SCRIPT_MODEL || GEMINI_DEFAULT_MODEL
+          : process.env.OPENAI_SCRIPT_MODEL || OPENAI_DEFAULT_SCRIPT_MODEL,
     userId: dbUser.id,
     projectId,
   });
@@ -321,17 +329,23 @@ export async function generateScriptsAction(
   // shape so the rest of the recordApiCallComplete payload is
   // provider-agnostic.
   const scriptAttribution =
-    provider === 'gemini'
-      ? attributeGeminiTextCost({
+    provider === 'anthropic'
+      ? attributeAnthropicTextCost({
           model: usage.model,
           inputTokens: usage.inputTokens,
           outputTokens: usage.outputTokens,
         })
-      : attributeOpenAiTextCost({
-          model: usage.model,
-          inputTokens: usage.inputTokens,
-          outputTokens: usage.outputTokens,
-        });
+      : provider === 'gemini'
+        ? attributeGeminiTextCost({
+            model: usage.model,
+            inputTokens: usage.inputTokens,
+            outputTokens: usage.outputTokens,
+          })
+        : attributeOpenAiTextCost({
+            model: usage.model,
+            inputTokens: usage.inputTokens,
+            outputTokens: usage.outputTokens,
+          });
   await recordApiCallComplete(scriptCallId, {
     success: true,
     model: usage.model,

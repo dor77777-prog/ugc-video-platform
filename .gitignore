@@ -14,6 +14,12 @@ out/
 .env.preview
 .env.development.local
 
+# Local secrets backup folders/zips — never tracked, never deployed.
+ugc-video-platform-secrets/
+ugc-video-platform-secrets.zip
+*-secrets/
+*-secrets.zip
+
 # Prisma generated
 .prisma/
 

@@ -26,6 +26,7 @@ import {
   priceKling,
   klingPricingKeyForModel,
   priceGeminiText,
+  priceAnthropicText,
   priceGrokVideo,
 } from '@/lib/usage/pricing';
 
@@ -70,6 +71,40 @@ export function attributeOpenAiTextCost(args: {
     estimatedCostUsd,
     source: 'estimate',
     metadata: { model, note: 'no usage reported by provider' },
+  };
+}
+
+// ── Anthropic text (V14 — script generation, Claude Sonnet 4.6) ───────
+// Mirrors attributeOpenAiTextCost / attributeGeminiTextCost. Used by
+// the script generation path post-V14
+// (apps/web/app/(dashboard)/projects/[id]/scripts/actions.ts).
+export function attributeAnthropicTextCost(args: {
+  model: string;
+  inputTokens?: number | null;
+  outputTokens?: number | null;
+}): AttributedCost {
+  const { model } = args;
+  const inputTokens = args.inputTokens ?? null;
+  const outputTokens = args.outputTokens ?? null;
+  const estimatedCostUsd =
+    inputTokens != null && outputTokens != null
+      ? priceAnthropicText(model, inputTokens, outputTokens)
+      : PROVIDER_COST_ESTIMATES_USD.anthropic_script_batch;
+  if (inputTokens != null && outputTokens != null) {
+    const actual = priceAnthropicText(model, inputTokens, outputTokens);
+    return {
+      costUsd: actual,
+      estimatedCostUsd,
+      actualCostUsd: actual,
+      source: 'actual_usage',
+      metadata: { inputTokens, outputTokens, model, provider: 'anthropic' },
+    };
+  }
+  return {
+    costUsd: estimatedCostUsd,
+    estimatedCostUsd,
+    source: 'estimate',
+    metadata: { model, provider: 'anthropic', note: 'no usage reported by provider' },
   };
 }
 

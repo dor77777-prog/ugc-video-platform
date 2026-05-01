@@ -1,7 +1,10 @@
-// Script generation can take up to 90s (Product Intelligence + 6 parallel
-// OpenAI calls). Without this the default 60s Vercel timeout kills the
-// Server Action and leaves the client button stuck in pending forever.
-export const maxDuration = 120;
+// Script generation can take up to ~3min on Sonnet 4.6 (V14):
+// Product Intelligence + 6 parallel Anthropic calls, each generating
+// ~3K tokens of structured JSON. With thinking disabled and effort:low
+// we typically land in 60-120s, but the first batch in a cache window
+// pays the prompt-cache write premium. 300s is the Hobby plan ceiling
+// — this gives headroom without forcing a plan upgrade.
+export const maxDuration = 300;
 
 import Link from 'next/link';
 import { notFound } from 'next/navigation';

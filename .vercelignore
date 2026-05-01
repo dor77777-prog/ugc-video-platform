@@ -1,0 +1,22 @@
+# Local secrets backup folders/zips — must NEVER reach a Vercel deploy.
+# Real secrets live in Vercel Environment Variables, not in shipped files.
+ugc-video-platform-secrets/
+ugc-video-platform-secrets.zip
+*-secrets/
+*-secrets.zip
+
+# Defense-in-depth: belt and suspenders. .gitignore already excludes
+# these but Vercel without a Git connection doesn't always honor every
+# .gitignore rule the way you'd expect — repeat them here.
+.env
+.env.local
+.env.*.local
+.env.production
+.env.production.tmp
+.env.preview
+.env.development.local
+
+# Local dev artifacts that shouldn't ship.
+.claude/settings.local.json
+.claude/settings.json.local-backup
+ugc-video-platform-secrets-*.zip
