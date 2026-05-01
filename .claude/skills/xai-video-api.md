@@ -34,16 +34,23 @@ Content-Type: application/json
 {
   "model": "grok-imagine-video",
   "prompt": "Hebrew/English motion description",
-  "image": "https://pub-eb116....r2.dev/scenes/.../image.png",  // OR base64 data URI
+  "image": { "url": "https://pub-eb116....r2.dev/scenes/.../image.png" },  // STRUCT, NOT a bare string!
   "duration": 5,                    // 1-15 seconds (generation); 2-10 (extensions)
   "aspect_ratio": "9:16",          // 1:1 | 16:9 | 9:16 | 4:3 | 3:4 | 3:2 | 2:3
   "resolution": "720p"             // "480p" (default, faster) | "720p" (HD)
 }
 ```
 
-Image input accepts:
-- **Public HTTPS URL** (R2 CDN URLs work — that's what we use).
-- **Base64 data URI** (`data:image/jpeg;base64,...`) for uploading from a buffer.
+**`image` IS A STRUCT, NOT A BARE STRING.** Sending a bare URL string
+returns 422: "Failed to deserialize the JSON body into the target type:
+image: invalid type: string ..., expected struct ImageUrl". The docs
+describe the field as "A public URL pointing to an image", but the wire
+format is `{ url: "<value>" }` — same shape OpenAI vision uses for
+`image_url`, and same shape xAI's `reference_images` field uses
+(`[{ url }]`). Both URL and base64 go in the same `url` key:
+
+- **Public HTTPS URL** — `{ "url": "https://...png" }` (R2 CDN works).
+- **Base64 data URI** — `{ "url": "data:image/jpeg;base64,..." }`.
 
 ## Submit response (async)
 
