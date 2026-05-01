@@ -324,20 +324,56 @@ export default function NewProjectWizard() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-2">
               <Label className="text-sm font-semibold">יחס מסך</Label>
-              <div className="flex gap-2" dir="ltr">
-                {(['9:16', '1:1', '16:9'] as const).map((ar) => (
+              {/* V26.16 — visual SVG of each aspect with platform
+                  guidance. Picking 1:1 or 16:9 now actually changes
+                  the output MP4 dimensions end-to-end (image gen,
+                  i2v provider, ffmpeg normalize, ASS captions). */}
+              <div className="grid grid-cols-3 gap-2" dir="ltr">
+                {([
+                  {
+                    id: '9:16' as const,
+                    label: '9:16',
+                    sub: 'TikTok · Reels',
+                    box: { w: 18, h: 32 },
+                  },
+                  {
+                    id: '1:1' as const,
+                    label: '1:1',
+                    sub: 'Instagram · LinkedIn',
+                    box: { w: 26, h: 26 },
+                  },
+                  {
+                    id: '16:9' as const,
+                    label: '16:9',
+                    sub: 'YouTube · Twitter',
+                    box: { w: 36, h: 20 },
+                  },
+                ]).map((opt) => (
                   <button
-                    key={ar}
+                    key={opt.id}
                     type="button"
-                    onClick={() => setAspectRatio(ar)}
+                    onClick={() => setAspectRatio(opt.id)}
                     className={cn(
-                      'flex-1 h-11 rounded-md border-2 text-sm font-mono font-semibold transition-colors',
-                      aspectRatio === ar
+                      'flex flex-col items-center justify-center gap-1.5 py-3 rounded-md border-2 transition-colors text-xs',
+                      aspectRatio === opt.id
                         ? 'border-primary bg-primary/10 text-primary'
                         : 'border-border hover:bg-muted',
                     )}
                   >
-                    {ar}
+                    <div
+                      className={cn(
+                        'rounded-sm border-2',
+                        aspectRatio === opt.id
+                          ? 'border-primary bg-primary/30'
+                          : 'border-current opacity-60',
+                      )}
+                      style={{ width: opt.box.w, height: opt.box.h }}
+                      aria-hidden
+                    />
+                    <span className="font-mono font-semibold">{opt.label}</span>
+                    <span className="text-[10px] text-muted-foreground leading-tight">
+                      {opt.sub}
+                    </span>
                   </button>
                 ))}
               </div>

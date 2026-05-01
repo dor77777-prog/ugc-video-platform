@@ -18,6 +18,7 @@
 // requiresLipSync / faceVisibility) when set, otherwise derived on the
 // fly from cameraDirection / sceneGoal via deriveSceneRouting().
 
+import { aspectRatioFromProductData } from '@ugc-video/shared';
 import { prisma } from '@/lib/db';
 import {
   klingProvider,
@@ -576,13 +577,22 @@ async function generateSceneClipImplInner(
     ? grokModel
     : process.env.KLING_IMAGE_TO_VIDEO_MODEL ?? 'kling-v3-omni';
 
+  // V26.16 — read the project's aspect ratio off productData so each
+  // i2v call uses the user-selected output shape (Kling and Grok both
+  // accept 9:16 / 1:1 / 16:9 natively). Pre-V26.16 this was hardcoded
+  // to '9:16' which silently overrode any 1:1 / 16:9 selection in the
+  // wizard.
+  const projectAspectRatio = aspectRatioFromProductData(
+    scene.script.project.productData,
+  );
+
   let i2vResult;
   const i2vStartedAt = Date.now();
   providerLog.info('calling i2v', {
     provider: providerName,
     model: i2vModel,
     durationSeconds: clipDuration,
-    aspectRatio: '9:16',
+    aspectRatio: projectAspectRatio,
     referenceCount: productRefUrl && !useGrok ? 1 : 0,
     promptChars: motionPrompt.positive.length,
     negativeChars: motionPrompt.negative.length,
@@ -623,7 +633,7 @@ async function generateSceneClipImplInner(
         prompt: motionPrompt.positive,
         negativePrompt: motionPrompt.negative,
         durationSeconds: clipDuration,
-        aspectRatio: '9:16',
+        aspectRatio: projectAspectRatio,
         sceneId,
       });
     } else {
@@ -633,7 +643,7 @@ async function generateSceneClipImplInner(
         negativePrompt: motionPrompt.negative,
         referenceImageUrls: productRefUrl ? [productRefUrl] : undefined,
         durationSeconds: clipDuration,
-        aspectRatio: '9:16',
+        aspectRatio: projectAspectRatio,
         sceneId,
       });
     }

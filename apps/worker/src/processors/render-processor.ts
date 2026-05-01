@@ -19,6 +19,8 @@ import {
   type WordTiming,
   findCaptionPreset,
   DEFAULT_CAPTION_PRESET_ID,
+  aspectRatioFromProductData,
+  ASPECT_RATIO_DIMENSIONS,
 } from '@ugc-video/shared';
 
 // V3 render processor: composition-only.
@@ -429,8 +431,9 @@ export async function processRenderJob(job: Job<RenderJobPayload>) {
         );
         const marginBoostPx = lipSyncSceneExists || productLowExists ? 40 : 0;
         captionsAssContent = buildAssFromChunks(globalChunks, {
-          videoWidth: 1080,
-          videoHeight: 1920,
+          // V26.16 — match the actual output canvas the user picked.
+          videoWidth: ASPECT_RATIO_DIMENSIONS[aspectRatioFromProductData(productData)].width,
+          videoHeight: ASPECT_RATIO_DIMENSIONS[aspectRatioFromProductData(productData)].height,
           marginBoostPx,
           mode: captionsMode,
           presetId: captionsPresetId,
@@ -454,12 +457,21 @@ export async function processRenderJob(job: Job<RenderJobPayload>) {
 
     const enableCaptions = !!captionsAssContent;
 
+    // V26.16 — thread the project's user-selected aspect ratio
+    // through the composer instead of hardcoding 9:16. The composer
+    // uses these dimensions for both the normalize scale filter
+    // (stage 3a) and the ASS playRes (caption coordinate system).
+    const projectAspectRatio = aspectRatioFromProductData(productData);
+    const projectDims = ASPECT_RATIO_DIMENSIONS[projectAspectRatio];
+
     const composition = await ffmpegCompositionProvider.compose({
       avatarVideoUrl: '', // unused in the new flow
       voiceUrls: scenes.map((s) => s.voiceUrl ?? ''),
       brollUrls: scenes.map((s) => s.clipUrl ?? ''),
       captions: scenes.map((s) => s.onScreenCaptionHebrew || s.textHebrew),
-      aspectRatio: '9:16',
+      aspectRatio: projectAspectRatio,
+      outputWidth: projectDims.width,
+      outputHeight: projectDims.height,
       musicUrl,
       musicVolume,
       musicStartOffsetSec,

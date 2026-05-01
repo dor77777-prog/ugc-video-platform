@@ -103,6 +103,12 @@ export interface FfmpegCompositionInput extends CompositionInput {
   /** V26.13 — UGC lead-in: caption appears N ms before the word is
    *  spoken. Default 100ms. */
   captionsLeadMs?: number;
+  /** V26.16 — output dimensions (pixels). Stage 3a normalize scales
+   *  every input clip to this size + pads with black if the source
+   *  aspect doesn't match. ASS playRes uses these too so caption
+   *  coordinates are correct. Defaults to 1080×1920 (legacy 9:16). */
+  outputWidth?: number;
+  outputHeight?: number;
 }
 
 export const ffmpegCompositionProvider: CompositionProvider & {
@@ -210,6 +216,17 @@ export const ffmpegCompositionProvider: CompositionProvider & {
       //     Codec lock-in: libx264 main / level 3.1 / yuv420p, aac
       //     44.1kHz stereo 192k, fps=30 cfr. Mismatches across inputs
       //     (Kling lipsync vs ffmpeg-mux b-roll) get fully resolved here.
+      // V26.16 — output dimensions per the user's aspect ratio.
+      // Default 1080×1920 (9:16). The scale-pad chain forces every
+      // input clip to the SAME pixel dimensions so the concat-demuxer
+      // in stage 3b stream-copies cleanly (mismatched dimensions are
+      // a known cause of concat-demuxer corruption).
+      const outW = input.outputWidth ?? 1080;
+      const outH = input.outputHeight ?? 1920;
+      const scalePad =
+        `scale=w=${outW}:h=${outH}:force_original_aspect_ratio=decrease,` +
+        `pad=${outW}:${outH}:(ow-iw)/2:(oh-ih)/2:color=black,` +
+        `setsar=1,fps=30,format=yuv420p`;
       const normalizedPaths: string[] = [];
       for (let i = 0; i < N; i++) {
         const norm = path.join(tmpRoot, `norm-${String(i).padStart(2, '0')}.mp4`);
@@ -217,7 +234,7 @@ export const ffmpegCompositionProvider: CompositionProvider & {
           [
             '-y',
             '-i', localPaths[i]!,
-            '-vf', 'fps=30,setsar=1,format=yuv420p',
+            '-vf', scalePad,
             '-af', 'aresample=44100,aformat=channel_layouts=stereo',
             '-r', '30',
             '-vsync', 'cfr',
@@ -325,8 +342,10 @@ export const ffmpegCompositionProvider: CompositionProvider & {
           cumulativeMs = sceneEndMs;
         }
         const rebuiltAss = buildAssFromChunks(globalChunks, {
-          videoWidth: 1080,
-          videoHeight: 1920,
+          // V26.16 — match the actual output canvas so caption
+          // coordinates land correctly on 1:1 / 16:9 outputs too.
+          videoWidth: outW,
+          videoHeight: outH,
           marginBoostPx,
           mode: captionsMode,
           presetId,
