@@ -50,6 +50,13 @@ export interface ProductInput {
   durationSeconds: number;
   price?: string | null;
   currency?: string | null;
+  /**
+   * V26.18 — selected feature focus from the new wizard step. When
+   * present, the script LLM treats these as the ONLY angles the ad
+   * should hit. Eliminates the "industrial enumerative" feel that
+   * came from the LLM trying to cover everything in the description.
+   */
+  selectedFeatures?: Array<{ id: string; title: string; hook: string; source: 'llm' | 'custom' }> | null;
   /** V11 Product Intelligence bundle. When present, the script engine
    *  uses dossier + visual analysis + audience inference as the
    *  authoritative source of truth for hooks, scene order, mustShow,
@@ -550,6 +557,23 @@ function buildSingleFrameworkPrompt(
             ? '⚠ **המגדר של הקריין: זכר**. כל הטקסט המדובר (spoken_text_hebrew) וכל הכתוביות (on_screen_caption_hebrew) חייבים להיות בלשון **זכר** — פעלים בעבר/הווה/עתיד, שמות תואר, וכינויי גוף. אסור על "הזמנתי / טעיתי / חשבתי" בלשון נקבה. דוגמאות: "אני בטוח" (לא "בטוחה"), "ראיתי" — בלשון זכר, "הזמנתי / ניסיתי / גיליתי" — בלשון זכר.'
             : '⚠ **המגדר של הקריינית: נקבה**. כל הטקסט המדובר (spoken_text_hebrew) וכל הכתוביות (on_screen_caption_hebrew) חייבים להיות בלשון **נקבה** — פעלים בעבר/הווה/עתיד, שמות תואר, וכינויי גוף. דוגמאות: "ראיתי" (נקבה), "אני בטוחה" (לא "בטוח"), "הזמנתי, ניסיתי, גיליתי" (כולם בלשון נקבה).',
           '⚠ אל תכתוב את תיאור הדמות בתוך visual_prompt_english — תמונת הרפרנס תטופל ע"י ה-image model. ב-visual_prompt_english תכתוב רק setting / action / camera framing / lighting / outfit (אם רלוונטי).',
+          '',
+        ].join('\n')
+      : null,
+    // V26.18 — FEATURE FOCUS block. The user picked these in the new
+    // wizard step (between Avatar and Script). The LLM is instructed
+    // to anchor the ad on them — NOT to enumerate everything from
+    // the description. This is the load-bearing fix for "scripts
+    // feel industrial / non-human / very AI-y".
+    p.selectedFeatures && p.selectedFeatures.length > 0
+      ? [
+          '',
+          '🎯 **תכונות מוצר שעליהן הסרטון חייב להתמקד (FEATURE FOCUS):**',
+          ...p.selectedFeatures.map(
+            (f, i) => `${i + 1}. ${f.title}${f.hook ? ` — ${f.hook}` : ''}`,
+          ),
+          '',
+          'אל תכלול תכונות אחרות מהמוצר. הסרטון בנוי סביב התכונות שלמעלה בלבד. כל hook, כל סצנה, וה-CTA — חייבים לחזור לתכונות האלו, ספציפית. אל תפזר את התשומת לב על "המוצר באופן כללי".',
           '',
         ].join('\n')
       : null,

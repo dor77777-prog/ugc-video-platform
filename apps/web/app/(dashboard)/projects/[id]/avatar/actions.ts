@@ -31,5 +31,5 @@ export async function selectAvatarAction(formData: FormData) {
 export async function continueFromAvatarAction(formData: FormData) {
   const projectId = String(formData.get('projectId') ?? '');
   if (!projectId) return;
-  redirect(`/projects/${projectId}/scripts`);
+  redirect(`/projects/${projectId}/features`);
 }

@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { ProjectStatus, ScriptAngle, SceneType } from '@prisma/client';
+import { selectedFeaturesFromProductData } from '@ugc-video/shared';
 import { prisma } from '@/lib/db';
 import { getOrCreateAppUser } from '@/lib/auth/sync-user';
 import { generateScripts, LlmConfigError, type GeneratedScript } from '@/lib/llm/scripts';
@@ -267,6 +268,8 @@ export async function generateScriptsAction(
         categoryId: resolvedCategoryId,
         categoryLabel: resolvedCategory?.labelEnglish ?? null,
         categoryGuidance: categoryGuidance(resolvedCategoryId),
+        // V26.18 — feature focus from the new wizard step.
+        selectedFeatures: selectedFeaturesFromProductData(data),
       },
       {
         // Stream scripts to the DB as soon as each per-framework call

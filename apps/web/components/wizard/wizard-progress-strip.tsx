@@ -15,6 +15,7 @@ import {
   ImageIcon,
   Film,
   CheckCircle2,
+  Target,
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -26,22 +27,27 @@ interface Step {
   href?: string;
 }
 
+// V26.18 — added "תכונות מנצחות" between Avatar and Script. The user
+// picks 1+ product features the ad should focus on; scripts then get
+// generated around those instead of trying to cover everything.
 const STEPS: Step[] = [
   { num: 1, label: 'URL מוצר', icon: Globe },
   { num: 2, label: 'אווטאר', icon: Users },
-  { num: 3, label: 'תסריט', icon: Wand2 },
-  { num: 4, label: 'סצנות', icon: ImageIcon },
-  { num: 5, label: 'קליפים', icon: Film },
-  { num: 6, label: 'מוכן', icon: CheckCircle2 },
+  { num: 3, label: 'תכונות מנצחות', icon: Target },
+  { num: 4, label: 'תסריט', icon: Wand2 },
+  { num: 5, label: 'סצנות', icon: ImageIcon },
+  { num: 6, label: 'קליפים', icon: Film },
+  { num: 7, label: 'מוכן', icon: CheckCircle2 },
 ];
 
 const STEP_ROUTES: Record<number, string> = {
   1: '/edit',
   2: '/avatar',
-  3: '/scripts',
-  4: '/scenes',
-  5: '/videos',
+  3: '/features',
+  4: '/scripts',
+  5: '/scenes',
   6: '/videos',
+  7: '/videos',
 };
 
 export function WizardProgressStrip({
