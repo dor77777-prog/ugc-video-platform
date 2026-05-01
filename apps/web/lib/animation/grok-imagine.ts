@@ -164,10 +164,17 @@ class GrokImagineProvider implements VideoGenerationProvider {
     // image-to-video (the docs are explicit: image + reference_images
     // is a 400). For now this provider is image-to-video only; if we
     // need reference-to-video we'll add a second submit method.
+    //
+    // V26.5 — `image` is a struct ({ url }) on the wire, not a bare
+    // string. The docs read like a plain URL works ("A public URL
+    // pointing to an image"), but the API rejects bare strings with
+    // 422 "Failed to deserialize ... expected struct ImageUrl". The
+    // struct wrapping is the same pattern OpenAI vision uses for
+    // image_url; data URIs go in the same `url` field.
     const body: Record<string, unknown> = {
       model,
       prompt: input.prompt,
-      image,
+      image: { url: image },
       duration: clampDuration(input.durationSeconds),
       aspect_ratio: aspectRatioToXai(input.aspectRatio),
       resolution: getResolution(),
