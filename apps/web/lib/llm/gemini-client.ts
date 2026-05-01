@@ -44,15 +44,22 @@ const THINKING_LEVEL_MAP: Record<
   high: ThinkingLevel.HIGH,
 };
 
-// V26.1 — Gemini 3 family models all end with `-preview`. The
-// `gemini-3-pro` short alias does NOT resolve. `gemini-3-pro-preview`
-// IS valid (Google routes it to gemini-3.1-pro-preview server-side per
-// our /v1beta/models probe). Override via GEMINI_SCRIPT_MODEL env:
-//   - `gemini-3.1-pro-preview`        — current canonical Pro
-//   - `gemini-3-flash-preview`        — Pro-grade intelligence at 4×
-//                                       cheaper Flash pricing ($0.50/$3)
-//   - `gemini-3.1-flash-lite-preview` — workhorse for cost-efficiency
-const DEFAULT_MODEL = 'gemini-3-pro-preview';
+// V26.3 — default to Flash, not Pro. Google's docs explicitly position
+// gemini-3-flash-preview as "Pro-level intelligence at the speed and
+// pricing of Flash" — 4× cheaper input ($0.50/M vs $2/M) and 4× cheaper
+// output ($3/M vs $12/M). Critically, Flash also supports
+// `thinkingLevel: 'minimal'` (Pro does not), so on the script-gen path
+// we use minimal thinking → near-zero thoughts tokens → another big
+// cost drop. A V26.2 6-batch on Pro at low thinking cost ~$0.70;
+// the same batch on Flash at minimal thinking costs ~$0.05-0.10.
+//
+// Override via GEMINI_SCRIPT_MODEL env:
+//   - `gemini-3-flash-preview`        — DEFAULT, 4× cheaper than Pro
+//   - `gemini-3.1-flash-lite-preview` — 8× cheaper, may sacrifice
+//                                       Hebrew creative quality
+//   - `gemini-3-pro-preview`          — when reasoning depth matters
+//   - `gemini-3.1-pro-preview`        — current canonical Pro alias
+const DEFAULT_MODEL = 'gemini-3-flash-preview';
 
 export class GeminiConfigError extends Error {
   constructor(message: string) {
@@ -154,8 +161,14 @@ export async function geminiStructuredCall<T>({
 }: GeminiStructuredCallOptions): Promise<GeminiStructuredCallResult<T>> {
   const sanitized = stripIncompatibleKeywords(responseSchema);
   const isGemini3 = modelId.startsWith('gemini-3');
+  // V26.3 — pick the cheapest thinking level the model supports.
+  // 3.1 Pro doesn't accept 'minimal' (returns 400); everything else
+  // does. For Hebrew creative scriptwriting we don't need deep
+  // reasoning — `minimal` cuts thoughts tokens to near-zero and is
+  // the primary cost-savings lever after switching to Flash.
+  const isPro = /^gemini-3.*-pro/.test(modelId);
   const effectiveThinkingLevel =
-    thinkingLevel ?? (isGemini3 ? 'low' : undefined);
+    thinkingLevel ?? (isGemini3 ? (isPro ? 'low' : 'minimal') : undefined);
 
   const response = await client().models.generateContent({
     model: modelId,

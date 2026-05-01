@@ -577,7 +577,7 @@ export default async function AdminUsagePage() {
               <div className="flex items-baseline justify-between">
                 <h3 className="font-semibold">Google Gemini</h3>
                 <span className="text-[10px] text-muted-foreground">
-                  scripts (gemini-3-pro-preview)
+                  scripts (gemini-3-flash-preview)
                 </span>
               </div>
               <ProviderFallbackCard
