@@ -35,25 +35,70 @@ export function priceOpenAiText(model: string, inputTokens: number, outputTokens
   return (inputTokens * p.input + outputTokens * p.output) / 1_000_000;
 }
 
-// V25 / V26.1 — Gemini text pricing per 1M tokens. Numbers from the
-// Gemini 3 docs (May 2026); all Gemini 3 models are currently in
-// preview, so model IDs end with `-preview`. Pro tiers are $2 in /
-// $12 out (<200K tokens); Flash is $0.50 / $3; Flash-Lite is
-// $0.25 / $1.50.
-const GEMINI_TEXT_PRICING: Record<string, { input: number; output: number }> = {
+// V25 / V26.2 — Gemini text pricing per 1M tokens. Numbers from
+// `gemini-api-docs.md` Pricing section (May 2026). Pro tiers have a
+// >200K-token cliff — input doubles to $4 and output jumps to $18 —
+// so we model them as two-band entries; Flash / Flash-Lite are flat.
+//
+// All Gemini 3 models are currently in preview → model IDs end with
+// `-preview`. The legacy short names (`gemini-3-pro`) are kept as
+// aliases so a stale env var or typo still produces a sensible price
+// line in the admin dashboard; the API itself 404s those.
+//
+// `priceGeminiText()` switches to the high-band rate when total input
+// or output tokens exceed `tier2InputThreshold`. We use the input
+// count as the threshold check (Google's published rate sheet keys
+// the cliff to the input window — once you go above 200K input you
+// pay the higher output rate too).
+
+interface GeminiTextRate {
+  input: number;
+  output: number;
+  /** When set, pricing switches to tier2 once input tokens >= threshold. */
+  tier2InputThreshold?: number;
+  tier2Input?: number;
+  tier2Output?: number;
+}
+
+const GEMINI_TEXT_PRICING: Record<string, GeminiTextRate> = {
   // Gemini 3 series (preview).
-  'gemini-3-pro-preview': { input: 2.0, output: 12.0 },
-  'gemini-3.1-pro-preview': { input: 2.0, output: 12.0 },
+  'gemini-3-pro-preview': {
+    input: 2.0,
+    output: 12.0,
+    tier2InputThreshold: 200_000,
+    tier2Input: 4.0,
+    tier2Output: 18.0,
+  },
+  'gemini-3.1-pro-preview': {
+    input: 2.0,
+    output: 12.0,
+    tier2InputThreshold: 200_000,
+    tier2Input: 4.0,
+    tier2Output: 18.0,
+  },
   'gemini-3-flash-preview': { input: 0.5, output: 3.0 },
   'gemini-3.1-flash-lite-preview': { input: 0.25, output: 1.5 },
-  // Aliases for the legacy short names (so a typo or stale env var
-  // still gets a sensible price line; the API itself will 404 on
-  // these, but if it ever resolved we'd want the right number).
-  'gemini-3-pro': { input: 2.0, output: 12.0 },
+  // Legacy short names — kept as aliases (API itself 404s these but
+  // the admin row stays correct if a stale env var leaks through).
+  'gemini-3-pro': {
+    input: 2.0,
+    output: 12.0,
+    tier2InputThreshold: 200_000,
+    tier2Input: 4.0,
+    tier2Output: 18.0,
+  },
   // Pre-V26 generations.
-  'gemini-2.5-pro': { input: 1.25, output: 10.0 },
-  'gemini-2.5-flash': { input: 0.075, output: 0.3 },
+  'gemini-2.5-pro': {
+    input: 1.25,
+    output: 10.0,
+    tier2InputThreshold: 200_000,
+    tier2Input: 2.5,
+    tier2Output: 15.0,
+  },
+  'gemini-2.5-flash': { input: 0.3, output: 2.5 },
+  'gemini-2.5-flash-lite': { input: 0.1, output: 0.4 },
   'gemini-2.0-flash': { input: 0.1, output: 0.4 },
+  'gemini-2.0-flash-lite': { input: 0.075, output: 0.3 },
   'gemini-1.5-pro': { input: 1.25, output: 5.0 },
   'gemini-1.5-flash': { input: 0.075, output: 0.3 },
   'gemini-flash-latest': { input: 0.075, output: 0.3 },
@@ -64,12 +109,19 @@ export function priceGeminiText(
   inputTokens: number,
   outputTokens: number,
 ): number {
-  // Gemini model ids don't carry version suffixes the way OpenAI's do
-  // (e.g. -2024-08), so a direct lookup works. Fall back to
-  // gemini-3-pro-preview pricing if the model id isn't recognized —
-  // conservative for the admin cost dashboard.
+  // Gemini model ids don't carry version suffixes the way OpenAI's do,
+  // so a direct lookup works. Fall back to gemini-3-pro-preview pricing
+  // if the model id isn't recognized — conservative for the admin
+  // dashboard (over-attributes rather than under-attributes).
   const p = GEMINI_TEXT_PRICING[model] ?? GEMINI_TEXT_PRICING['gemini-3-pro-preview']!;
-  return (inputTokens * p.input + outputTokens * p.output) / 1_000_000;
+  const useTier2 =
+    p.tier2InputThreshold != null &&
+    p.tier2Input != null &&
+    p.tier2Output != null &&
+    inputTokens >= p.tier2InputThreshold;
+  const inputRate = useTier2 ? p.tier2Input! : p.input;
+  const outputRate = useTier2 ? p.tier2Output! : p.output;
+  return (inputTokens * inputRate + outputTokens * outputRate) / 1_000_000;
 }
 
 // gpt-image-2 — per-image $ from OpenAI cookbook calculator (Apr 2026).

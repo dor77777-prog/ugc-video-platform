@@ -1,24 +1,57 @@
-// V25 — Google Gemini client for structured generation.
+// V25 / V26.2 — Google Gemini client for structured generation.
 //
-// Used by `apps/web/lib/llm/scripts.ts` to replace the OpenAI script
-// engine with Gemini 3 Pro. Uses the official @google/generative-ai
-// SDK with `responseMimeType: "application/json"` + `responseSchema`
-// for type-safe structured output.
+// Used by `apps/web/lib/llm/scripts.ts` to drive the 6-framework Hebrew
+// script batch through Gemini 3. Built on the **new** `@google/genai`
+// SDK (the legacy `@google/generative-ai` package was removed in V26.2
+// — it doesn't know about Gemini 3 fields like `thinkingConfig` and the
+// docs explicitly call out this rename).
 //
-// The existing OpenAI JSON schemas use `additionalProperties: false`
-// which Gemini's responseSchema validator rejects on some accounts;
-// `stripIncompatibleKeywords()` deep-copies the schema and removes
-// the keyword while leaving everything else (type, properties,
-// required, enum, items, description) intact.
+// The flow:
+//   1. Caller passes a JSON Schema (the same OpenAI-style schemas that
+//      lib/llm/scripts.ts already maintains).
+//   2. We deep-copy and strip `additionalProperties` (Gemini's
+//      validator rejects it, even though it's part of standard JSON
+//      Schema) — see stripIncompatibleKeywords().
+//   3. We hand the schema to the SDK via the modern `responseJsonSchema`
+//      field (preferred over `responseSchema` per the SDK release
+//      notes — accepts any JSON Schema, not just SchemaUnion).
+//   4. For Gemini 3 models we pin `thinkingConfig.thinkingLevel: 'low'`
+//      by default. Gemini 3's default `'high'` burns 100+ thought
+//      tokens even on trivial replies and routinely overran our 60s
+//      Server Action ceiling on 6 parallel calls. Hebrew creative
+//      scriptwriting doesn't need deep multi-step reasoning.
+//   5. We DO NOT pass `temperature`. Gemini 3 docs explicitly warn that
+//      values below 1.0 cause looping / degraded reasoning.
+//
+// Reference: gemini-api-docs.md (sections "Gemini 3 Guide" + "Structured
+// Output" + "OpenAI Compatibility / thinking"). When debugging a 6-batch
+// failure check the docs for the latest model IDs and `thinkingLevel`
+// support matrix per model.
 
-import { GoogleGenerativeAI, type Schema } from '@google/generative-ai';
+import { GoogleGenAI, ThinkingLevel } from '@google/genai';
 
-// V26.1 — Gemini 3 family models all end with `-preview` (verified via
-// `GET /v1beta/models`). The `gemini-3-pro` short alias does NOT resolve;
-// using it 404s with "model not found" which is what was crashing the
-// 6-script batch. Default to the canonical preview ID. Override via
-// GEMINI_SCRIPT_MODEL env (e.g. `gemini-3.1-pro-preview` for the latest,
-// or `gemini-3-flash-preview` for a 4× cheaper Flash run).
+// The SDK's ThinkingLevel enum uses UPPERCASE values (MINIMAL / LOW /
+// MEDIUM / HIGH); the docs show callers passing lowercase strings.
+// Both the wire format and the SDK accept the enum, so we map our
+// public lowercase API to the enum at the call site.
+const THINKING_LEVEL_MAP: Record<
+  'minimal' | 'low' | 'medium' | 'high',
+  ThinkingLevel
+> = {
+  minimal: ThinkingLevel.MINIMAL,
+  low: ThinkingLevel.LOW,
+  medium: ThinkingLevel.MEDIUM,
+  high: ThinkingLevel.HIGH,
+};
+
+// V26.1 — Gemini 3 family models all end with `-preview`. The
+// `gemini-3-pro` short alias does NOT resolve. `gemini-3-pro-preview`
+// IS valid (Google routes it to gemini-3.1-pro-preview server-side per
+// our /v1beta/models probe). Override via GEMINI_SCRIPT_MODEL env:
+//   - `gemini-3.1-pro-preview`        — current canonical Pro
+//   - `gemini-3-flash-preview`        — Pro-grade intelligence at 4×
+//                                       cheaper Flash pricing ($0.50/$3)
+//   - `gemini-3.1-flash-lite-preview` — workhorse for cost-efficiency
 const DEFAULT_MODEL = 'gemini-3-pro-preview';
 
 export class GeminiConfigError extends Error {
@@ -28,21 +61,23 @@ export class GeminiConfigError extends Error {
   }
 }
 
-let cachedClient: GoogleGenerativeAI | null = null;
-function client(): GoogleGenerativeAI {
+let cachedClient: GoogleGenAI | null = null;
+function client(): GoogleGenAI {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     throw new GeminiConfigError(
       'GEMINI_API_KEY is not set. Add it to .env / Vercel / Railway env vars to enable script generation.',
     );
   }
-  if (cachedClient === null) cachedClient = new GoogleGenerativeAI(apiKey);
+  if (cachedClient === null) cachedClient = new GoogleGenAI({ apiKey });
   return cachedClient;
 }
 
-/** Recursively strip OpenAI-specific JSON-Schema keywords that Gemini
- *  rejects. Returns a deep-copied schema safe to pass to
- *  generationConfig.responseSchema. */
+/** Recursively strip JSON-Schema keywords that Gemini rejects. Returns
+ *  a deep-copied schema safe to pass to config.responseJsonSchema.
+ *  `additionalProperties: false` is part of standard JSON Schema but
+ *  Gemini's validator rejects it — and we use it on every OpenAI-shape
+ *  schema we already have. Stripping it is the cheapest fix. */
 export function stripIncompatibleKeywords(schema: unknown): unknown {
   if (Array.isArray(schema)) {
     return schema.map((item) => stripIncompatibleKeywords(item));
@@ -50,7 +85,6 @@ export function stripIncompatibleKeywords(schema: unknown): unknown {
   if (schema && typeof schema === 'object') {
     const out: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(schema as Record<string, unknown>)) {
-      // Strip the keys Gemini doesn't support.
       if (key === 'additionalProperties') continue;
       out[key] = stripIncompatibleKeywords(value);
     }
@@ -62,36 +96,42 @@ export function stripIncompatibleKeywords(schema: unknown): unknown {
 export interface GeminiUsage {
   /** Resolved model id (e.g. 'gemini-3-pro-preview'). */
   model: string;
-  /** Tokens billed as input (system + user prompt). */
+  /** Tokens billed as input (system + user prompt + cached content). */
   inputTokens: number;
-  /** Tokens billed as output. */
+  /** Tokens billed as output. Includes thoughts — Google's published
+   *  Pro pricing line item is "Output (incl. thinking)". We sum
+   *  candidatesTokenCount + thoughtsTokenCount so cost attribution
+   *  matches the actual bill. */
   outputTokens: number;
+  /** Raw thoughts-only count, for telemetry. */
+  thoughtsTokens: number;
 }
 
 export interface GeminiStructuredCallOptions {
-  /** System instruction (prepended above the user prompt — equivalent
-   *  to OpenAI's `role: 'system'`). */
+  /** System instruction (equivalent to OpenAI's `role: 'system'`). */
   systemInstruction?: string;
   /** User prompt text. */
   userPrompt: string;
   /** Strict JSON schema describing the shape Gemini should return.
    *  `additionalProperties` is stripped automatically before send. */
   responseSchema: unknown;
-  /** Override the default model. */
+  /** Override the default model. Default is GEMINI_SCRIPT_MODEL env or
+   *  DEFAULT_MODEL. */
   model?: string;
   /** Optional temperature override. **Do not pass this for Gemini 3
    *  models** — Google explicitly recommends keeping it at the default
    *  (1.0); setting it lower causes looping / degraded performance on
    *  reasoning tasks. Left optional for callers that target older
-   *  Gemini families (1.5, 2.0, 2.5) where 0.7 is still safe. */
+   *  Gemini families (1.5 / 2.0 / 2.5) where 0.7 is still safe. */
   temperature?: number;
   /** Optional `thinkingConfig.thinkingLevel` for Gemini 3 models.
-   *  Default `'high'` burns the most thought tokens (104+ even on a
-   *  trivial reply) and frequently exceeds our 60s Server Action
-   *  ceiling on a 6-parallel script batch. We default to `'low'`
-   *  for the script-gen path — Hebrew creative writing doesn't need
-   *  deep multi-step reasoning, and the latency / cost savings are
-   *  significant. Pass `'medium'` or `'high'` for tasks that benefit. */
+   *  When the resolved model id starts with `gemini-3` and this is
+   *  unset, we default to `'low'` to bound thinking-token burn (the
+   *  model's own default `'high'` is dynamic and routinely overruns
+   *  our 60s Server Action ceiling on a 6-parallel batch). Pass
+   *  `'medium'` or `'high'` for tasks that genuinely need deeper
+   *  reasoning. Pass `'minimal'` only on Flash / Flash-Lite — Pro
+   *  doesn't support it and rejects with 400. */
   thinkingLevel?: 'minimal' | 'low' | 'medium' | 'high';
 }
 
@@ -112,35 +152,34 @@ export async function geminiStructuredCall<T>({
   temperature,
   thinkingLevel,
 }: GeminiStructuredCallOptions): Promise<GeminiStructuredCallResult<T>> {
-  const sanitized = stripIncompatibleKeywords(responseSchema) as Schema;
-  // V26.1 — Gemini 3 introduced `thinkingConfig.thinkingLevel`. The
-  // @google/generative-ai v0.24 type doesn't list it (predates Gemini 3),
-  // but the request body is JSON-serialized to the REST API, so unknown
-  // keys pass through. We cast through `unknown` to attach it.
+  const sanitized = stripIncompatibleKeywords(responseSchema);
   const isGemini3 = modelId.startsWith('gemini-3');
   const effectiveThinkingLevel =
     thinkingLevel ?? (isGemini3 ? 'low' : undefined);
-  const generationConfig: Record<string, unknown> = {
-    responseMimeType: 'application/json',
-    responseSchema: sanitized,
-    ...(temperature !== undefined ? { temperature } : {}),
-    ...(effectiveThinkingLevel !== undefined
-      ? { thinkingConfig: { thinkingLevel: effectiveThinkingLevel } }
-      : {}),
-  };
-  // The SDK's TypeScript model strips unknown keys at the type layer
-  // but serializes the object as-is over the wire — eslint-disable the
-  // cast to `unknown as` so future Gemini-3-only fields can ride along
-  // without bumping the SDK version.
-  const generativeModel = client().getGenerativeModel({
+
+  const response = await client().models.generateContent({
     model: modelId,
-    systemInstruction,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    generationConfig: generationConfig as any,
+    contents: userPrompt,
+    config: {
+      ...(systemInstruction ? { systemInstruction } : {}),
+      responseMimeType: 'application/json',
+      // The new SDK's `responseJsonSchema` field accepts arbitrary JSON
+      // Schema (including the OpenAI-flavored ones we emit). Strict typing
+      // would require porting every schema to the SDK's `Schema` type;
+      // instead we cast through `unknown` — the wire format is identical.
+      responseJsonSchema: sanitized,
+      ...(temperature !== undefined ? { temperature } : {}),
+      ...(effectiveThinkingLevel !== undefined
+        ? {
+            thinkingConfig: {
+              thinkingLevel: THINKING_LEVEL_MAP[effectiveThinkingLevel],
+            },
+          }
+        : {}),
+    },
   });
-  const result = await generativeModel.generateContent(userPrompt);
-  const response = result.response;
-  const text = response.text();
+
+  const text = response.text;
   if (!text) {
     throw new Error('Gemini returned empty response.');
   }
@@ -154,16 +193,19 @@ export async function geminiStructuredCall<T>({
     );
   }
 
-  // Token accounting from the SDK's usageMetadata. promptTokenCount
-  // counts the system + user input; candidatesTokenCount is output.
   const usageMetadata = response.usageMetadata;
+  const candidates = usageMetadata?.candidatesTokenCount ?? 0;
+  const thoughts = usageMetadata?.thoughtsTokenCount ?? 0;
   return {
     parsed,
     raw: text,
     usage: {
       model: modelId,
       inputTokens: usageMetadata?.promptTokenCount ?? 0,
-      outputTokens: usageMetadata?.candidatesTokenCount ?? 0,
+      // Pro pricing is "Output (incl. thinking)" — sum both so the
+      // cost ledger matches the bill.
+      outputTokens: candidates + thoughts,
+      thoughtsTokens: thoughts,
     },
   };
 }
