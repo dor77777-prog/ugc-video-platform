@@ -13,7 +13,7 @@ export function ProgressBar({
 }) {
   const barClasses =
     variant === 'accent'
-      ? 'bg-gradient-to-r from-transparent via-accent to-transparent'
+      ? 'bg-gradient-to-r from-transparent via-ai to-transparent'
       : 'bg-gradient-to-r from-transparent via-primary to-transparent';
   return (
     <div className={cn('relative h-1 w-full overflow-hidden rounded-full bg-muted', className)}>

@@ -45,9 +45,9 @@ export default async function AdminOverview() {
   const successRate = rendersToday > 0 ? Math.round((completedToday / rendersToday) * 100) : 0;
 
   return (
-    <div className="p-6 md:p-10 max-w-7xl space-y-8">
-      <div className="space-y-1">
-        <div className="text-xs uppercase tracking-widest text-muted-foreground">Admin · Overview</div>
+    <div className="p-6 md:p-10 max-w-container-admin mx-auto space-y-8">
+      <div className="space-y-2 motion-fade-up">
+        <div className="kicker-muted font-mono text-[10px] uppercase">Admin · Overview</div>
         <h1 className="text-3xl font-bold tracking-tight">מבט־על על המערכת</h1>
       </div>
 
@@ -136,12 +136,15 @@ function KpiCard({
   sublabel?: string;
   accent?: boolean;
 }) {
+  // V27: a "good metric" KPI uses success-soft (not ai — not an active
+  // AI process; just a healthy-state highlight). Default uses tier-surface
+  // for Vercel-mode chrome.
   return (
-    <Card className={accent ? 'bg-ai/20 border-ai/40' : undefined}>
+    <Card className={accent ? 'bg-success-soft/60 border-success/40 tier-surface' : 'tier-surface'}>
       <CardContent className="p-5">
-        <div className="text-xs text-muted-foreground uppercase tracking-wider">{label}</div>
-        <div className="text-3xl font-bold mt-1">{value}</div>
-        {sublabel && <div className="text-xs text-muted-foreground mt-1">{sublabel}</div>}
+        <div className="text-xs text-fg-tertiary uppercase tracking-[0.18em] font-mono">{label}</div>
+        <div className="text-3xl font-bold mt-1 font-mono tabular-nums">{value}</div>
+        {sublabel && <div className="text-xs text-fg-tertiary mt-1">{sublabel}</div>}
       </CardContent>
     </Card>
   );

@@ -3,6 +3,9 @@ import { getOrCreateAppUser } from '@/lib/auth/sync-user';
 import { prisma } from '@/lib/db';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { DensityScope } from '@/components/density/density-scope';
+import { SectionKicker } from '@/components/ui/section-kicker';
+import { Library } from 'lucide-react';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,10 +20,10 @@ export default async function LibraryPage() {
   });
 
   return (
-    <div className="p-6 md:p-10 max-w-6xl space-y-6">
-      <div className="space-y-1">
-        <div className="text-xs uppercase tracking-widest text-muted-foreground">ספרייה</div>
-        <h1 className="text-3xl font-bold tracking-tight">הסרטונים שלכם</h1>
+    <DensityScope mode="comfortable" as="div" className="p-6 md:p-10 max-w-container-showcase mx-auto space-y-8">
+      <div className="space-y-2 motion-fade-up">
+        <SectionKicker variant="loud" text="ספרייה" english="Library" icon={Library} />
+        <h1 className="text-4xl md:text-5xl font-bold tracking-tight leading-tight">הסרטונים שלכם</h1>
       </div>
 
       {finishedJobs.length === 0 ? (
@@ -41,7 +44,7 @@ export default async function LibraryPage() {
             const isMock = (job.finalVideoUrl ?? '').startsWith('mock://');
             const playableUrl = isMock ? null : job.finalVideoUrl;
             return (
-              <Card key={job.id} className="overflow-hidden" id={`job-${job.id}`}>
+              <Card key={job.id} className="overflow-hidden tier-elevated motion-fade-up motion-tilt-hover" id={`job-${job.id}`}>
                 <div className="aspect-[9/16] bg-black relative">
                   {playableUrl ? (
                     // Inline 9:16 player — controls + click-anywhere to play.
@@ -113,6 +116,6 @@ export default async function LibraryPage() {
           })}
         </div>
       )}
-    </div>
+    </DensityScope>
   );
 }

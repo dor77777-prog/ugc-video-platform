@@ -17,18 +17,25 @@ export function Topbar({ email, creditsBalance, role, mobileNav }: TopbarProps) 
   const initials = email.slice(0, 2).toUpperCase();
   const isAdmin = role === 'admin';
 
+  // V27 — Vercel-mode chrome: tier-surface no-blur on the topbar itself,
+  // primary tones for credits chrome (not ai — ai is semantic-only),
+  // success tones for the admin pill (elevated permissions = "blessed"
+  // state), glow-primary on the avatar.
   return (
-    <header className="h-16 border-b border-border-subtle bg-background/60 backdrop-blur-xl sticky top-0 z-30">
+    <header
+      data-density="dense"
+      className="h-16 border-b border-divider bg-canvas/80 backdrop-blur-xl sticky top-0 z-30"
+    >
       <div className="h-full flex items-center justify-between gap-3 px-4 md:px-6">
         {/* Right (in RTL): logo + admin pill */}
         <div className="flex items-center gap-3">
-          <Link href="/dashboard" className="hover:opacity-90 transition-opacity">
+          <Link href="/dashboard" className="hover:opacity-90 transition-opacity motion-press">
             <Logo size="md" />
           </Link>
           {isAdmin && (
             <Link
               href="/admin"
-              className="hidden sm:flex text-[10px] items-center gap-1 px-2 h-6 rounded-md bg-ai/15 border border-ai/30 text-ai font-bold tracking-widest uppercase hover:bg-ai/25 transition-colors"
+              className="hidden sm:flex text-[10px] items-center gap-1 px-2 h-6 rounded-md bg-success-soft/60 border border-success/30 text-success font-bold tracking-[0.18em] uppercase hover:bg-success-soft transition-colors motion-press"
             >
               <ShieldCheck className="h-3 w-3" />
               Admin
@@ -38,13 +45,13 @@ export function Topbar({ email, creditsBalance, role, mobileNav }: TopbarProps) 
 
         {/* Left (in RTL): credits, plan, user, mobile menu */}
         <div className="flex items-center gap-2 md:gap-3">
-          <div className="hidden sm:flex items-center gap-2 px-3 h-9 rounded-lg bg-ai/15 border border-ai/30 text-sm font-medium">
-            <Coins className="h-3.5 w-3.5 text-ai" />
+          <div className="hidden sm:flex items-center gap-2 px-3 h-9 rounded-md tier-surface text-sm font-medium">
+            <Coins className="h-3.5 w-3.5 text-primary" />
             <span className="font-mono font-bold">{creditsBalance}</span>
-            <span className="text-muted-foreground text-xs">קרדיטים</span>
+            <span className="text-fg-tertiary text-xs">קרדיטים</span>
           </div>
 
-          <Button asChild size="sm" variant="outline" className="hidden md:inline-flex border-border bg-card/40">
+          <Button asChild intent="default" variant="outline" className="hidden md:inline-flex">
             <Link href="/pricing">תוכניות</Link>
           </Button>
 
@@ -52,7 +59,7 @@ export function Topbar({ email, creditsBalance, role, mobileNav }: TopbarProps) 
             <button
               type="submit"
               title={`התנתקות (${email})`}
-              className="flex items-center justify-center w-11 h-11 rounded-full bg-gradient-to-br from-primary to-accent text-background text-xs font-bold hover:opacity-90 transition-opacity shadow-glow"
+              className="flex items-center justify-center w-11 h-11 rounded-full bg-gradient-to-br from-primary to-primary-press text-primary-foreground text-xs font-bold hover:opacity-90 transition-opacity glow-primary motion-press"
             >
               {initials}
             </button>

@@ -3,21 +3,25 @@ import { getOrCreateAppUser } from '@/lib/auth/sync-user';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { PLAN_CONFIGS, type PlanSlug } from '@/lib/plans';
+import { DensityScope } from '@/components/density/density-scope';
+import { SectionKicker } from '@/components/ui/section-kicker';
+import { Settings as SettingsIcon } from 'lucide-react';
 
 export default async function SettingsPage() {
   const { authUser, dbUser } = await getOrCreateAppUser();
   const planConfig = PLAN_CONFIGS[dbUser.plan as PlanSlug] ?? PLAN_CONFIGS.free_trial;
 
+  // V27 Vercel-mode: settings is functional chrome — dense.
   return (
-    <div className="p-6 md:p-10 max-w-3xl space-y-6">
-      <div className="space-y-1">
-        <div className="text-xs uppercase tracking-widest text-muted-foreground">הגדרות</div>
+    <DensityScope mode="dense" as="div" className="p-6 md:p-10 max-w-container-form mx-auto space-y-6">
+      <div className="space-y-2 motion-fade-up">
+        <SectionKicker variant="muted" text="הגדרות" english="Settings" icon={SettingsIcon} />
         <h1 className="text-3xl font-bold tracking-tight">החשבון שלכם</h1>
       </div>
 
-      <Card>
+      <Card className="tier-surface motion-fade-up">
         <CardHeader>
-          <CardTitle>פרטים</CardTitle>
+          <CardTitle className="text-xl">פרטים</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <Field label="אימייל" value={authUser.email!} />
@@ -32,7 +36,7 @@ export default async function SettingsPage() {
           />
           <div className="pt-3">
             <Link href="/pricing">
-              <Button variant="default" className="w-full">
+              <Button intent="action" className="w-full">
                 {dbUser.plan === 'free_trial' ? 'שדרג לתוכנית בתשלום' : 'החלף תוכנית / שדרוג'}
               </Button>
             </Link>
@@ -40,11 +44,11 @@ export default async function SettingsPage() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="tier-surface motion-fade-up">
         <CardHeader>
-          <CardTitle>בחנאי, יבוא בהמשך</CardTitle>
+          <CardTitle className="text-xl">בחנאי, יבוא בהמשך</CardTitle>
         </CardHeader>
-        <CardContent className="text-sm text-muted-foreground space-y-2">
+        <CardContent className="text-sm text-fg-tertiary space-y-2">
           <ul className="list-disc list-inside space-y-1">
             <li>שינוי סיסמה</li>
             <li>חיובים ומסמכי חיוב</li>
@@ -53,15 +57,15 @@ export default async function SettingsPage() {
           </ul>
         </CardContent>
       </Card>
-    </div>
+    </DensityScope>
   );
 }
 
 function Field({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex justify-between items-center py-2 border-b border-border last:border-0">
-      <span className="text-sm text-muted-foreground">{label}</span>
-      <span className="text-sm font-medium" dir="ltr">{value}</span>
+    <div className="flex justify-between items-center py-2 border-b border-divider last:border-0">
+      <span className="text-sm text-fg-tertiary">{label}</span>
+      <span className="text-sm font-medium font-mono" dir="ltr">{value}</span>
     </div>
   );
 }

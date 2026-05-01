@@ -16,10 +16,18 @@ const NAV = [
 export function AdminSidebar() {
   const pathname = usePathname();
 
+  // V27 — Admin sidebar is the canonical Vercel-mode chrome surface.
+  // tier-surface (no blur), dense density, primary-tone active state
+  // with glow-primary, neutral hover. The previous inverted bg was too
+  // loud for the V27 "chrome retreats" principle — admin is for work,
+  // not a brand statement.
   return (
-    <aside className="w-64 border-l border-border bg-foreground text-background flex flex-col">
-      <div className="p-4 border-b border-background/10">
-        <div className="text-xs uppercase tracking-widest opacity-60">Admin</div>
+    <aside
+      data-density="dense"
+      className="w-64 border-l border-divider tier-surface flex flex-col"
+    >
+      <div className="p-4 border-b border-divider">
+        <div className="kicker-muted font-mono text-[10px] uppercase">Admin</div>
         <div className="text-lg font-bold mt-1">לוח בקרה ניהולי</div>
       </div>
 
@@ -33,10 +41,10 @@ export function AdminSidebar() {
               key={item.href}
               href={item.href}
               className={cn(
-                'flex items-center gap-3 px-3 py-2.5 rounded-md text-sm transition-colors',
+                'flex items-center gap-3 px-3 py-2.5 rounded-md text-sm transition-colors motion-press',
                 active
-                  ? 'bg-ai text-ai-foreground font-semibold'
-                  : 'text-background/70 hover:bg-background/10 hover:text-background',
+                  ? 'bg-primary text-primary-foreground font-semibold glow-primary'
+                  : 'text-fg-secondary hover:bg-elevated hover:text-fg',
               )}
             >
               <Icon className="w-4 h-4" />
@@ -46,10 +54,10 @@ export function AdminSidebar() {
         })}
       </nav>
 
-      <div className="p-4 border-t border-background/10">
+      <div className="p-4 border-t border-divider">
         <Link
           href="/dashboard"
-          className="flex items-center gap-2 text-sm text-background/70 hover:text-background"
+          className="flex items-center gap-2 text-sm text-fg-tertiary hover:text-fg motion-press"
         >
           <span>←</span>
           <span>חזרה לדאשבורד משתמש</span>

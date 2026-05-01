@@ -203,7 +203,7 @@ async function CompletedVideosShowcase({ userId }: { userId: string }) {
                   className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
                 />
               ) : (
-                <div className="absolute inset-0 bg-gradient-to-br from-primary/20 to-accent/15" />
+                <div className="absolute inset-0 bg-gradient-to-br from-primary/20 to-ai/15" />
               )}
               {/* Bottom-only fade so the video stays visible. */}
               <div className="absolute inset-x-0 bottom-0 h-2/5 bg-gradient-to-t from-black/90 via-black/40 to-transparent pointer-events-none" />
@@ -265,7 +265,7 @@ function FirstVideoHero() {
             9:16 בעברית — מוכן לפייסבוק וטיקטוק תוך פחות מ־5 דקות.
           </p>
         </div>
-        <Button asChild size="lg" className="shadow-glow self-start">
+        <Button asChild intent="hero" className="glow-primary self-start">
           <Link href="/projects/new" className="flex items-center gap-2">
             <Sparkles className="h-4 w-4" />
             צור סרטון מוצר
@@ -312,7 +312,7 @@ function ReturningUserHero({ completedCount }: { completedCount: number }) {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          <Button asChild size="lg" className="shadow-glow">
+          <Button asChild intent="hero" className="glow-primary">
             <Link href="/projects/new" className="flex items-center gap-2">
               <Plus className="h-4 w-4" />
               פרויקט חדש
@@ -321,9 +321,9 @@ function ReturningUserHero({ completedCount }: { completedCount: number }) {
           </Button>
           <Button
             asChild
-            size="lg"
+            intent="hero"
             variant="outline"
-            className="border-border bg-card/40 backdrop-blur-md"
+            className="bg-elevated/60"
           >
             <Link href="/library" className="flex items-center gap-2">
               <Library className="h-4 w-4" />
@@ -372,7 +372,7 @@ function StatTile({
           className={
             accent
               ? 'h-10 w-10 rounded-xl bg-ai/25 text-ai-foreground flex items-center justify-center'
-              : 'h-10 w-10 rounded-xl bg-gradient-to-br from-primary/30 to-accent/15 text-primary flex items-center justify-center'
+              : 'h-10 w-10 rounded-xl bg-gradient-to-br from-primary/30 to-ai/15 text-primary flex items-center justify-center'
           }
         >
           <Icon className="h-5 w-5" />
@@ -457,7 +457,7 @@ async function RecentProjectsSection({ userId }: { userId: string }) {
                 }).format(featuredInProgress.updatedAt)}
               </p>
             </div>
-            <Button asChild size="lg" className="shadow-glow">
+            <Button asChild intent="hero" className="glow-primary">
               <Link
                 href={getResumeUrl({
                   id: featuredInProgress.id,
@@ -532,7 +532,7 @@ async function RecentProjectsSection({ userId }: { userId: string }) {
                         </span>
                       </div>
                     </div>
-                    <Button asChild size="sm" className="shadow-glow">
+                    <Button asChild intent="action" className="glow-primary">
                       <Link href={resumeUrl} className="flex items-center gap-1.5">
                         המשך
                         <ArrowLeft className="h-3.5 w-3.5" />
@@ -607,7 +607,7 @@ async function RecentProjectsSection({ userId }: { userId: string }) {
       {projectCount === 0 && (
         <Card className="tier-atmosphere border-dashed border-2 border-primary/30 motion-fade-up">
           <CardContent className="p-12 text-center space-y-5">
-            <div className="mx-auto h-16 w-16 rounded-2xl bg-gradient-to-br from-primary/30 to-accent/30 flex items-center justify-center shadow-glow">
+            <div className="mx-auto h-16 w-16 rounded-2xl bg-gradient-to-br from-primary/30 to-ai/30 flex items-center justify-center shadow-glow">
               <Sparkles className="h-8 w-8 text-primary" />
             </div>
             <div className="space-y-1">

@@ -4,6 +4,9 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { PLAN_CONFIGS, type PlanSlug } from '@/lib/plans';
 import { SelectPlanButton } from './client-bits';
+import { DensityScope } from '@/components/density/density-scope';
+import { SectionKicker } from '@/components/ui/section-kicker';
+import { Coins } from 'lucide-react';
 
 const PLAN_FEATURES: Record<PlanSlug, string[]> = {
   free_trial: [
@@ -47,15 +50,15 @@ export default async function PricingPage() {
   const currentPlan = dbUser.plan as PlanSlug;
 
   return (
-    <div className="p-6 md:p-10 max-w-7xl mx-auto space-y-8">
-      <div className="space-y-2 text-center">
-        <div className="text-xs uppercase tracking-widest text-muted-foreground">
-          תוכניות + מחירים
+    <DensityScope mode="default" as="div" className="p-6 md:p-10 max-w-container-grid mx-auto space-y-10">
+      <div className="space-y-3 text-center motion-fade-up">
+        <div className="flex justify-center">
+          <SectionKicker variant="loud" text="תוכניות + מחירים" english="Plans & Pricing" icon={Coins} />
         </div>
-        <h1 className="text-4xl font-bold tracking-tight">בחר את התוכנית שלך</h1>
-        <p className="text-sm text-muted-foreground max-w-2xl mx-auto">
+        <h1 className="text-4xl md:text-5xl font-bold tracking-tight">בחר את התוכנית שלך</h1>
+        <p className="text-sm text-fg-secondary max-w-2xl mx-auto">
           1 קרדיט = $0.10. יוצרי קליפים מונפשים ועריכה מלאה — תוכנית{' '}
-          <strong>Creator</strong> ומעלה. עכשיו אתה על:{' '}
+          <strong className="text-fg">Creator</strong> ומעלה. עכשיו אתה על:{' '}
           <Badge variant="default">{PLAN_CONFIGS[currentPlan].displayName}</Badge>
         </p>
       </div>
@@ -73,10 +76,10 @@ export default async function PricingPage() {
               key={slug}
               className={
                 isPopular
-                  ? 'border-primary border-2 shadow-lg relative'
+                  ? 'tier-elevated edge-gradient-primary border-primary/40 relative motion-fade-up motion-tilt-hover'
                   : isCurrent
-                    ? 'border-ai border-2'
-                    : 'border-border'
+                    ? 'tier-elevated border-success border-2 motion-fade-up'
+                    : 'tier-surface motion-fade-up motion-lift-hover'
               }
             >
               {isPopular && (
@@ -132,7 +135,7 @@ export default async function PricingPage() {
                   {isCurrent ? (
                     <button
                       disabled
-                      className="w-full h-11 rounded-md border border-ai bg-ai/10 text-ai font-semibold text-sm"
+                      className="w-full h-11 rounded-md border border-success/60 bg-success-soft/60 text-success font-semibold text-sm"
                     >
                       ✓ התוכנית הנוכחית שלך
                     </button>
@@ -183,11 +186,11 @@ export default async function PricingPage() {
       <div className="text-center">
         <Link
           href="/dashboard"
-          className="text-xs text-muted-foreground hover:text-foreground"
+          className="text-xs text-fg-tertiary hover:text-fg motion-press"
         >
           ← חזרה לדאשבורד
         </Link>
       </div>
-    </div>
+    </DensityScope>
   );
 }

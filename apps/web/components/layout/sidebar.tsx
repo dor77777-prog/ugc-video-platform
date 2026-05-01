@@ -53,11 +53,19 @@ export function Sidebar({ recentProjects = [] }: { recentProjects?: RecentProjec
   const projectMatch = pathname.match(/^\/projects\/([^\/]+)/);
   const activeProjectId = projectMatch?.[1] ?? null;
 
+  // V27 — Vercel-mode chrome. The sidebar is dense by default. Active
+  // items use glow-primary; secondary nav stays muted; pinned-projects
+  // status icons use text-success (completed) / text-primary (active
+  // — and only the truly-currently-routed-to project gets the
+  // motion-pulse-ai signal because the user IS actively in it).
   return (
-    <aside className="hidden md:flex w-64 border-l border-border-subtle bg-card/40 backdrop-blur-md flex-col flex-shrink-0">
+    <aside
+      data-density="dense"
+      className="hidden md:flex w-64 border-l border-divider tier-surface flex-col flex-shrink-0"
+    >
       <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
         {/* PRIMARY NAV */}
-        <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-[0.25em] px-3 mb-3">
+        <div className="kicker-muted font-mono text-[10px] uppercase px-3 mb-3 mt-1">
           תפריט
         </div>
         {NAV_ITEMS.map((item) => (
@@ -67,7 +75,7 @@ export function Sidebar({ recentProjects = [] }: { recentProjects?: RecentProjec
         {/* PINNED PROJECTS */}
         {recentProjects.length > 0 && (
           <>
-            <div className="pt-6 flex items-center gap-1.5 text-[10px] font-bold text-muted-foreground uppercase tracking-[0.25em] px-3 mb-3">
+            <div className="pt-6 flex items-center gap-1.5 kicker-muted font-mono text-[10px] uppercase px-3 mb-3">
               <Pin className="h-3 w-3" />
               פרויקטים אחרונים
             </div>
@@ -79,17 +87,17 @@ export function Sidebar({ recentProjects = [] }: { recentProjects?: RecentProjec
                   key={p.id}
                   href={`/projects/${p.id}/${p.isCompleted ? 'videos' : 'scripts'}`}
                   className={cn(
-                    'group flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs transition-all',
+                    'group flex items-center gap-2.5 px-3 py-2 rounded-md text-xs transition-all motion-press',
                     isActiveProject
-                      ? 'bg-primary/15 border border-primary/30 text-foreground font-semibold'
-                      : 'text-muted-foreground hover:bg-secondary hover:text-foreground',
+                      ? 'bg-primary/15 border border-primary/30 text-fg font-semibold'
+                      : 'text-fg-tertiary hover:bg-elevated hover:text-fg',
                   )}
                   title={p.name}
                 >
                   <StatusIcon
                     className={cn(
                       'h-3.5 w-3.5 flex-shrink-0',
-                      p.isCompleted ? 'text-ai' : 'text-primary',
+                      p.isCompleted ? 'text-success' : 'text-primary',
                     )}
                   />
                   <span className="truncate flex-1">{p.name}</span>
@@ -103,7 +111,7 @@ export function Sidebar({ recentProjects = [] }: { recentProjects?: RecentProjec
         )}
 
         {/* SECONDARY NAV */}
-        <div className="pt-6 text-[10px] font-bold text-muted-foreground uppercase tracking-[0.25em] px-3 mb-3">
+        <div className="pt-6 kicker-muted font-mono text-[10px] uppercase px-3 mb-3">
           עזרה
         </div>
         {SECONDARY_NAV.map((item) => (
@@ -111,10 +119,10 @@ export function Sidebar({ recentProjects = [] }: { recentProjects?: RecentProjec
         ))}
       </nav>
 
-      <div className="p-4 border-t border-border-subtle">
+      <div className="p-4 border-t border-divider">
         <Link
           href="/pricing"
-          className="block rounded-2xl bg-gradient-to-br from-primary via-primary/85 to-primary/60 text-primary-foreground p-4 space-y-2 hover:opacity-95 transition-all hover:scale-[1.02] shadow-glow"
+          className="block rounded-xl bg-gradient-to-br from-primary via-primary-press to-primary-soft text-primary-foreground p-4 space-y-2 hover:opacity-95 transition-all hover:scale-[1.02] glow-primary motion-press"
         >
           <div className="flex items-center gap-2">
             <Sparkles className="h-4 w-4" />
@@ -123,7 +131,7 @@ export function Sidebar({ recentProjects = [] }: { recentProjects?: RecentProjec
           <div className="text-[11px] opacity-90 leading-snug">
             יותר קרדיטים, יותר lipsync, יצוא MP4 מלא.
           </div>
-          <div className="w-full mt-2 bg-ai text-ai-foreground text-xs font-bold py-1.5 rounded-lg flex items-center justify-center gap-1.5">
+          <div className="w-full mt-2 bg-canvas/30 text-primary-foreground text-xs font-bold py-1.5 rounded-md flex items-center justify-center gap-1.5">
             ראה תוכניות
             <ArrowLeft className="h-3 w-3" />
           </div>
@@ -144,12 +152,12 @@ function NavLink({ item, active }: { item: SidebarItem; active: boolean }) {
     <Link
       href={item.href}
       className={cn(
-        'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all',
+        'flex items-center gap-3 px-3 py-2.5 rounded-md text-sm transition-all motion-press',
         active
-          ? 'bg-primary text-primary-foreground font-semibold shadow-glow'
+          ? 'bg-primary text-primary-foreground font-semibold glow-primary'
           : item.accent
             ? 'text-primary font-semibold hover:bg-primary/10'
-            : 'text-foreground hover:bg-secondary',
+            : 'text-fg hover:bg-elevated',
       )}
     >
       <Icon className="w-4 h-4 flex-shrink-0" />

@@ -177,7 +177,7 @@ export default async function RootPage() {
               className="rounded-3xl tier-elevated glow-primary p-6 md:p-8 text-center card-hover motion-fade-up"
               style={{ animationDelay: `${i * 80}ms` }}
             >
-              <div className="h-10 w-10 mx-auto rounded-2xl bg-gradient-to-br from-primary/30 to-accent/20 flex items-center justify-center mb-4">
+              <div className="h-10 w-10 mx-auto rounded-2xl bg-gradient-to-br from-primary/30 to-ai/20 flex items-center justify-center mb-4">
                 <s.icon className="h-5 w-5 text-primary" />
               </div>
               <div className="text-4xl md:text-5xl font-black text-gradient leading-none tracking-tight">
@@ -268,7 +268,7 @@ export default async function RootPage() {
               <div className="absolute top-3 right-3 text-[10px] font-mono text-primary opacity-60">
                 {String(i + 1).padStart(2, '0')}
               </div>
-              <div className="flex items-center justify-center h-12 w-12 rounded-2xl bg-gradient-to-br from-primary/25 to-accent/15 mb-4">
+              <div className="flex items-center justify-center h-12 w-12 rounded-2xl bg-gradient-to-br from-primary/25 to-ai/15 mb-4">
                 <step.icon className="h-5 w-5 text-primary" />
               </div>
               <div className="text-base font-bold mb-1.5">{step.label}</div>
@@ -301,7 +301,7 @@ export default async function RootPage() {
               style={{ animationDelay: `${i * 60}ms` }}
             >
               <CardContent className="p-7 space-y-5 h-full">
-                <div className="h-14 w-14 rounded-2xl bg-gradient-to-br from-primary/30 to-accent/20 flex items-center justify-center group-hover:scale-110 transition-transform">
+                <div className="h-14 w-14 rounded-2xl bg-gradient-to-br from-primary/30 to-ai/20 flex items-center justify-center group-hover:scale-110 transition-transform">
                   <f.icon className="h-7 w-7 text-primary" />
                 </div>
                 <div className="text-xl font-black tracking-tight">{f.title}</div>
@@ -344,7 +344,7 @@ export default async function RootPage() {
                 style={{ animationDelay: `${i * 80}ms` }}
               >
                 {isFeatured && (
-                  <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full bg-gradient-to-br from-primary to-accent text-background text-[10px] font-black uppercase tracking-widest shadow-glow">
+                  <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full bg-gradient-to-br from-primary to-ai text-background text-[10px] font-black uppercase tracking-widest shadow-glow">
                     הכי פופולרי
                   </div>
                 )}
