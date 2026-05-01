@@ -3,6 +3,7 @@ import type { UserRole } from '@prisma/client';
 import { Coins, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Logo } from '@/components/brand/logo';
+import { ThemeToggle } from '@/components/theme/theme-toggle';
 
 interface TopbarProps {
   email: string;
@@ -56,6 +57,8 @@ export function Topbar({ email, creditsBalance, role, mobileNav }: TopbarProps) 
             <span className="font-mono font-bold tabular-nums">{creditsBalance}</span>
             <span className="text-fg-tertiary text-xs">קרדיטים</span>
           </div>
+
+          <ThemeToggle className="hidden sm:flex" />
 
           <Button asChild intent="default" variant="outline" className="hidden md:inline-flex">
             <Link href="/pricing">תוכניות</Link>

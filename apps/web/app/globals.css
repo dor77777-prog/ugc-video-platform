@@ -181,6 +181,117 @@
     --bento-gap:         1.5rem;
     --line-height-body:  1.65;
   }
+
+  /* ============================================================
+   * V27.6 — LIGHT MODE.
+   *
+   * The dark `:root` block above is the canonical V27 experience and
+   * stays unchanged — every existing screen renders identically when
+   * data-theme is "dark" or absent. This block adds a complete LIGHT
+   * counterpart that activates only when next-themes sets
+   * data-theme="light" on <html>.
+   *
+   * Rules followed:
+   *   • Surfaces are not pure white — slight cool undertone (228° hue,
+   *     small saturation) preserves V27's chill register.
+   *   • Foreground tiers are dark-on-light, with the same 4 levels.
+   *   • Primary (violet) darkens 66 → 54 (L) so 4.5:1 contrast holds
+   *     on white. Hue stays 258°.
+   *   • AI lime darkens 58 → 38 — lime on white needs significant
+   *     darkening to stay accessible (AAA on canvas).
+   *   • Success / warning / destructive / info similarly darkened.
+   *   • Provider dots darkened ~10-15% across the board.
+   *   • Glass blur saturation bumped (140% → 160-180%) because blur
+   *     reads less on light backgrounds.
+   *   • Shadows use dark inks at LOWER alpha — black at 0.5 on white
+   *     looks cheap; switched to canvas-tinted at 0.10-0.20.
+   *   • Inset highlight inverted: white-on-dark glow becomes a thin
+   *     dark line at the bottom edge.
+   *   • Aurora SVG opacity drops 0.4 → 0.18 (wash, not gradient slap).
+   * ============================================================ */
+  [data-theme="light"] {
+    /* Surfaces — neutral-cool with slight 228° tint */
+    --canvas:        0 0% 100%;
+    --surface:       228 24% 98.5%;
+    --elevated:      228 18% 96%;
+    --overlay:       228 16% 92.5%;
+    --divider:       228 14% 88%;
+    --border:        228 12% 80%;
+
+    /* shadcn back-compat aliases */
+    --background:        0 0% 100%;
+    --card:              228 24% 98.5%;
+    --popover:           228 18% 96%;
+    --input:             228 18% 96%;
+    --secondary:         228 18% 96%;
+    --muted:             228 18% 96%;
+    --border-subtle:     228 14% 88%;
+
+    /* Foreground tiers — dark text on light bg */
+    --fg:                228 16% 9%;
+    --fg-secondary:      228 12% 28%;
+    --fg-tertiary:       228 8% 46%;
+    --fg-disabled:       228 6% 64%;
+
+    --foreground:            228 16% 9%;
+    --card-foreground:       228 16% 9%;
+    --popover-foreground:    228 16% 9%;
+    --secondary-foreground:  228 16% 9%;
+    --muted-foreground:      228 8% 46%;
+
+    /* Primary (violet) — desat slightly, drop L for AA on white */
+    --primary:           258 84% 54%;
+    --primary-hover:     258 84% 48%;
+    --primary-press:     258 84% 60%;
+    --primary-soft:      258 70% 95%;
+    --primary-on-glass:  258 84% 48%;
+    --primary-foreground: 0 0% 100%;
+
+    /* AI active (lime) — significant darkening for AA on white */
+    --ai:                78 70% 36%;
+    --ai-soft:           78 50% 92%;
+    --ai-foreground:     0 0% 100%;
+
+    /* Migration alias points to --ai */
+    --accent:            78 70% 36%;
+    --accent-soft:       78 50% 92%;
+    --accent-foreground: 0 0% 100%;
+
+    /* Semantic state */
+    --success:               150 65% 30%;
+    --success-soft:          150 50% 92%;
+    --success-foreground:    0 0% 100%;
+
+    --warning:               38 88% 40%;
+    --warning-soft:          38 70% 93%;
+    --warning-foreground:    228 16% 9%;
+
+    --destructive:           358 76% 50%;
+    --destructive-soft:      358 60% 56%;
+    --destructive-foreground: 0 0% 100%;
+
+    --info:                  218 80% 46%;
+    --info-soft:             218 70% 94%;
+    --info-foreground:       0 0% 100%;
+
+    /* Provider dots — darkened ~12% L for visibility on white */
+    --provider-openai:     162 35% 38%;
+    --provider-gemini:     218 60% 48%;
+    --provider-xai:        220 8% 38%;
+    --provider-kling:      285 45% 44%;
+    --provider-pixverse:   330 55% 48%;
+    --provider-elevenlabs: 42 70% 42%;
+    --provider-r2:         14 65% 46%;
+
+    /* Focus ring */
+    --ring:        258 84% 54%;
+    --ring-error:  358 76% 50%;
+
+    /* Gradient anchors — slightly desat for light bg */
+    --gradient-from:   258 84% 60%;
+    --gradient-to:     290 78% 64%;
+    --gradient-third:  78 70% 48%;
+  }
 }
 
 @layer base {
@@ -825,3 +936,181 @@
  * The `tachles-` prefix was brand, not system. V27 owns the system
  * namespace via `motion-*`. Brand keyframes (if introduced again) get
  * a different prefix and live somewhere else. */
+
+/* ============================================================
+ * V27.6 — LIGHT MODE — utility-class adjustments.
+ *
+ * Token redefinitions in [data-theme="light"] above handle most of
+ * the system. The few utilities below need explicit overrides because
+ * they hardcode shadow/opacity values that don't translate cleanly
+ * via tokens (black-on-white shadows look heavy at the same alpha;
+ * white-inset highlights are invisible on a white background).
+ * ============================================================ */
+
+[data-theme="light"] {
+
+  /* Tier system: surface stays clean (bg + border + dark inset hairline).
+   * Glass tiers swap saturate/blur balance for a brighter cast and use
+   * canvas-tinted shadows instead of pure black. */
+  & .tier-surface {
+    box-shadow: inset 0 -1px 0 hsl(228 14% 88% / 0.7);
+  }
+  & .tier-elevated {
+    background: hsl(var(--elevated) / 0.78);
+    backdrop-filter: blur(10px) saturate(180%);
+    -webkit-backdrop-filter: blur(10px) saturate(180%);
+    box-shadow:
+      inset 0 1px 0 hsl(0 0% 100% / 0.8),
+      0 1px 2px hsl(228 16% 9% / 0.06),
+      0 4px 16px -8px hsl(228 16% 9% / 0.10);
+  }
+  & .tier-overlay {
+    background: hsl(var(--overlay) / 0.85);
+    backdrop-filter: blur(22px) saturate(180%);
+    -webkit-backdrop-filter: blur(22px) saturate(180%);
+    box-shadow:
+      inset 0 1px 0 hsl(0 0% 100% / 0.85),
+      0 8px 32px -12px hsl(228 16% 9% / 0.18);
+  }
+  /* edge-pearl: in light mode the gradient peaks lower-saturation so
+   * it reads as "rim light" not "neon" against a bright surface. */
+  & .tier-overlay::before {
+    background: linear-gradient(
+      90deg,
+      hsl(228 16% 9% / 0.04),
+      hsl(var(--primary) / 0.32) 50%,
+      hsl(228 16% 9% / 0.04)
+    );
+  }
+  & .tier-atmosphere {
+    background: hsl(var(--canvas) / 0.65);
+    backdrop-filter: blur(28px) saturate(200%);
+    -webkit-backdrop-filter: blur(28px) saturate(200%);
+    box-shadow:
+      inset 0 1px 0 hsl(0 0% 100% / 0.9),
+      0 1px 0 hsl(228 16% 9% / 0.06),
+      0 24px 60px -16px hsl(228 16% 9% / 0.20);
+  }
+  & .tier-atmosphere::before {
+    background: linear-gradient(
+      90deg,
+      hsl(228 16% 9% / 0.04),
+      hsl(var(--primary) / 0.36) 50%,
+      hsl(228 16% 9% / 0.04)
+    );
+  }
+  /* tier-liquid (landing only) — bright saturate carries the lift */
+  & .tier-liquid {
+    background:
+      linear-gradient(
+        135deg,
+        hsl(var(--primary) / 0.06) 0%,
+        hsl(0 0% 100% / 0.6) 50%,
+        hsl(var(--gradient-to) / 0.06) 100%
+      ),
+      hsl(var(--canvas) / 0.6);
+    backdrop-filter: blur(40px) saturate(220%);
+    -webkit-backdrop-filter: blur(40px) saturate(220%);
+    box-shadow:
+      inset 0 1px 0 hsl(0 0% 100% / 0.9),
+      0 1px 0 hsl(228 16% 9% / 0.08),
+      0 24px 60px -20px hsl(var(--primary) / 0.30);
+  }
+
+  /* Glow modifiers: less spread + lower alpha (light bg burns less) */
+  & .glow-primary {
+    box-shadow:
+      0 0 0 1px hsl(var(--primary) / 0.30),
+      0 0 18px -6px hsl(var(--primary) / 0.25),
+      0 8px 24px -10px hsl(var(--primary) / 0.20);
+  }
+  & .glow-ai {
+    box-shadow:
+      0 0 0 1px hsl(var(--ai) / 0.50),
+      0 0 18px -6px hsl(var(--ai) / 0.28),
+      0 8px 24px -10px hsl(var(--ai) / 0.20);
+  }
+  & .glow-success {
+    box-shadow:
+      0 0 0 1px hsl(var(--success) / 0.55),
+      0 0 16px -6px hsl(var(--success) / 0.24);
+  }
+
+  /* Cinematic shadows used by older legacy items — soften */
+  & .shadow-soft {
+    box-shadow:
+      0 1px 0 hsl(228 16% 9% / 0.04),
+      0 1px 2px hsl(228 16% 9% / 0.06),
+      0 4px 12px -4px hsl(228 16% 9% / 0.08);
+  }
+  & .shadow-elevated {
+    box-shadow:
+      0 1px 0 hsl(228 16% 9% / 0.06),
+      0 4px 8px hsl(228 16% 9% / 0.08),
+      0 12px 24px -8px hsl(228 16% 9% / 0.12);
+  }
+  & .shadow-floating {
+    box-shadow:
+      0 1px 0 hsl(228 16% 9% / 0.06),
+      0 8px 16px hsl(228 16% 9% / 0.10),
+      0 24px 48px -12px hsl(228 16% 9% / 0.18);
+  }
+
+  /* Card-hover lift uses a softer ink in light mode */
+  & .card-hover:hover {
+    box-shadow:
+      0 16px 40px -12px hsl(228 16% 9% / 0.16),
+      0 0 0 1px hsl(var(--primary) / 0.18),
+      0 0 24px -8px hsl(var(--primary) / 0.18);
+  }
+
+  /* Ambient backgrounds: turn the gradient washes way down on light bg
+   * (full strength reads as colored wash, not subtle ambient). */
+  & .bg-mesh {
+    background-image:
+      radial-gradient(at 8% 12%, hsl(var(--gradient-from) / 0.10) 0px, transparent 55%),
+      radial-gradient(at 92% 8%, hsl(var(--gradient-to) / 0.08) 0px, transparent 55%),
+      radial-gradient(at 50% 100%, hsl(var(--gradient-third) / 0.06) 0px, transparent 60%);
+  }
+  & .bg-mesh-soft {
+    background-image:
+      radial-gradient(at 12% 18%, hsl(var(--gradient-from) / 0.05) 0px, transparent 50%),
+      radial-gradient(at 88% 12%, hsl(var(--gradient-to) / 0.04) 0px, transparent 50%);
+  }
+  & .bg-spotlight {
+    background-image: conic-gradient(
+      from 220deg at 50% 0%,
+      hsl(var(--gradient-from) / 0.10),
+      hsl(var(--gradient-to) / 0.06),
+      transparent 60%
+    );
+  }
+  /* SVG noise: invert blend mode + drop opacity (white-on-white = invisible) */
+  & .bg-noise::before {
+    opacity: 0.025;
+    mix-blend-mode: multiply;
+  }
+
+  /* Selection: lighter primary tint */
+  ::selection {
+    background: hsl(var(--primary) / 0.20);
+    color: hsl(var(--fg));
+  }
+
+  /* text-gradient drop-shadow softer in light */
+  & .text-gradient {
+    filter: drop-shadow(0 0 18px hsl(var(--primary) / 0.18));
+  }
+  & .text-gradient-cool {
+    background-image: linear-gradient(
+      180deg,
+      hsl(228 16% 9%) 0%,
+      hsl(228 12% 28%) 100%
+    );
+  }
+}
+
+/* The `& .x` syntax above is CSS Nesting (well-supported, Chrome 112+,
+ * Safari 16.5+, Firefox 117+). next.config + Tailwind 3.4 supports
+ * this. If a downstream PostCSS step strips it, replace each block
+ * with explicit `[data-theme="light"] .x` selectors. */

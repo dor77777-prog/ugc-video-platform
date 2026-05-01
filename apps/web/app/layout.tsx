@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { Heebo, Geist, Geist_Mono } from 'next/font/google';
 import { Toaster } from 'sonner';
 import { BRAND } from '@/lib/brand';
+import { ThemeProvider } from '@/components/theme/theme-provider';
 import './globals.css';
 
 // V27 — Tri-Modal Liquid font stack:
@@ -49,21 +50,28 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       lang="he"
       dir="rtl"
       className={`${heebo.variable} ${geistSans.variable} ${geistMono.variable}`}
+      // suppressHydrationWarning is required because next-themes injects
+      // a script in <head> that sets data-theme="..." on <html> BEFORE
+      // React hydrates. The mismatch with the server-rendered HTML is
+      // intentional + handled internally; React's warning is noise here.
+      suppressHydrationWarning
     >
       <body className="font-sans antialiased min-h-screen" suppressHydrationWarning>
-        {children}
-        {/* Sonner toaster — RTL via dir attribute, Heebo for Hebrew. */}
-        <Toaster
-          position="top-center"
-          dir="rtl"
-          toastOptions={{
-            style: {
-              fontFamily: 'var(--font-heebo)',
-            },
-          }}
-          richColors
-          closeButton
-        />
+        <ThemeProvider>
+          {children}
+          {/* Sonner toaster — RTL via dir attribute, Heebo for Hebrew. */}
+          <Toaster
+            position="top-center"
+            dir="rtl"
+            toastOptions={{
+              style: {
+                fontFamily: 'var(--font-heebo)',
+              },
+            }}
+            richColors
+            closeButton
+          />
+        </ThemeProvider>
       </body>
     </html>
   );

@@ -229,7 +229,7 @@ export default async function RootPage() {
                 </div>
                 <div className="text-sm font-bold capitalize">{id}</div>
               </div>
-              <div className="absolute top-2 right-2 px-1.5 py-0.5 rounded-sm tier-overlay text-[9px] font-mono font-bold uppercase tracking-[0.18em] tabular-nums">
+              <div className="absolute top-2.5 right-2.5 text-[10px] font-mono font-medium tabular-nums text-white/65 [text-shadow:0_1px_2px_hsl(0_0%_0%/0.55)]">
                 {String(i + 1).padStart(2, '0')}
               </div>
             </div>

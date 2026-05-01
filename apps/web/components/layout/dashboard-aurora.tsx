@@ -9,8 +9,13 @@ export function DashboardAurora() {
   return (
     <div className="fixed inset-0 -z-10 pointer-events-none overflow-hidden" aria-hidden>
       <div className="absolute inset-0 bg-mesh-soft" />
+      {/* V27.6 — opacity 0.4 dark / 0.18 light. mix-blend-screen on dark
+          adds light; on a near-white canvas it has no effect (anything
+          on white screened stays white). [data-theme="light"] swaps to
+          mix-blend-multiply at lower opacity so the gradient reads as a
+          subtle wash, not a strong color cast. */}
       <svg
-        className="absolute inset-0 w-full h-full opacity-40 mix-blend-screen"
+        className="absolute inset-0 w-full h-full opacity-40 mix-blend-screen [[data-theme=light]_&]:opacity-[0.18] [[data-theme=light]_&]:mix-blend-multiply"
         viewBox="0 0 1200 1200"
         preserveAspectRatio="none"
       >

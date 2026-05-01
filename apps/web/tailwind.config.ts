@@ -10,7 +10,12 @@ import animate from 'tailwindcss-animate';
  * (transitions, glass, motion).
  */
 const config: Config = {
-  darkMode: ['class'],
+  // V27.6 — `dark:` Tailwind variants apply when an ancestor has
+  // [data-theme="dark"]. Since :root already declares dark tokens, the
+  // V27 dark experience is the default with or without an explicit
+  // theme attribute set; this selector lets future code that needs
+  // explicitly dark-only utilities (e.g. dark:hidden) resolve.
+  darkMode: ['selector', '[data-theme="dark"]'],
   content: [
     './app/**/*.{ts,tsx}',
     './components/**/*.{ts,tsx}',
