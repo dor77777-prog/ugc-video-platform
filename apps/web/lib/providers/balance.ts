@@ -399,9 +399,9 @@ export async function fetchGeminiBalance(): Promise<GeminiBalanceError> {
   return {
     ok: false,
     error:
-      'Google does not expose a per-API-key cost endpoint for the Generative Language API. ' +
-      'Check Google Cloud Console → Billing for authoritative spend; the dashboard below is computed ' +
-      'from local ApiCall rows (always-on, accurate).',
+      'Google לא חושפת endpoint של עלויות per-API-key ל-Generative Language API. ' +
+      'הסכום האותנטי זמין ב-Google Cloud Console → Billing. הלוח למטה מחושב ' +
+      'מטבלת ApiCall המקומית (תמיד פעיל, מדויק).',
   };
 }
 
@@ -423,9 +423,9 @@ export async function fetchXaiBalance(): Promise<XaiBalanceError> {
   return {
     ok: false,
     error:
-      'xAI does not expose a per-API-key cost endpoint for the video API. ' +
-      'Check console.x.ai → Billing for authoritative spend; the dashboard below is computed ' +
-      'from local ApiCall rows (always-on, accurate).',
+      'xAI לא חושפת endpoint של עלויות per-API-key ל-video API. ' +
+      'הסכום האותנטי זמין ב-console.x.ai → Billing. הלוח למטה מחושב ' +
+      'מטבלת ApiCall המקומית (תמיד פעיל, מדויק).',
   };
 }
 

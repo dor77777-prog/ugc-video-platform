@@ -588,7 +588,7 @@ export default async function AdminUsagePage() {
                     ? providerBalances.gemini.error
                     : 'no balance data'
                 }
-                fixHint="Google Cloud Console → Billing → APIs Detail → Generative Language API for authoritative spend (Google doesn't expose per-API-key cost)."
+                fixHint="לסכום האותנטי: Google Cloud Console → Billing → APIs Detail → Generative Language API (Google לא חושפת עלות per-API-key)."
               />
             </div>
 
@@ -611,7 +611,7 @@ export default async function AdminUsagePage() {
                     ? providerBalances.xai.error
                     : 'no balance data'
                 }
-                fixHint="console.x.ai → Billing for authoritative spend (xAI doesn't expose per-API-key cost on the video API)."
+                fixHint="לסכום האותנטי: console.x.ai → Billing (xAI לא חושפת עלות per-API-key על ה-video API)."
               />
             </div>
           </div>
