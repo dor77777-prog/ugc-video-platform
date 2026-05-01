@@ -2,49 +2,60 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ============================================================
+ * V19 — Dark-mode-first theme overhaul.
+ *
+ * Inspiration: kling.ai (cinematic, deep violet-black, neon accents)
+ * + krea.ai (workspace feel, gradient washes, glass surfaces).
+ *
+ * Tachles signature stays — electric violet primary + acid lime accent
+ * — but everything else is rebuilt around a near-black canvas with
+ * subtle violet undertone, refined borders, and a heavier glow culture.
+ * ============================================================ */
+
 @layer base {
   :root {
-    /* V15 — refined palette. Cream-warm base + electric violet primary +
-       acid lime accent. Minor saturation bumps to read as "premium AI"
-       under the new gradient mesh backgrounds. */
-    --background: 45 35% 96%;
-    --foreground: 240 10% 4%;
+    /* Near-black with a slight violet tint — reads as premium AI tool,
+       not generic dark gray. Surfaces step up from canvas → card →
+       elevated. Borders are SUBTLE: 8-14% lightness deltas. */
+    --background: 240 18% 5%;
+    --foreground: 0 0% 96%;
 
-    --card: 0 0% 100%;
-    --card-foreground: 240 10% 4%;
+    --card: 240 14% 8%;
+    --card-foreground: 0 0% 96%;
 
-    --popover: 0 0% 100%;
-    --popover-foreground: 240 10% 4%;
+    --popover: 240 16% 7%;
+    --popover-foreground: 0 0% 96%;
 
-    --primary: 257 100% 58%;
-    --primary-foreground: 0 0% 100%;
-    /* Soft variant of primary for tinted backgrounds. */
-    --primary-soft: 257 100% 96%;
+    /* Slightly hotter primary for contrast against black. */
+    --primary: 258 100% 68%;
+    --primary-foreground: 240 18% 5%;
+    --primary-soft: 258 60% 18%;
 
-    --secondary: 45 25% 92%;
-    --secondary-foreground: 240 8% 5%;
+    --secondary: 240 10% 14%;
+    --secondary-foreground: 0 0% 96%;
 
-    --muted: 45 20% 90%;
-    --muted-foreground: 240 5% 35%;
+    --muted: 240 8% 12%;
+    --muted-foreground: 240 6% 60%;
 
-    --accent: 73 100% 62%;
-    --accent-foreground: 240 10% 4%;
-    --accent-soft: 73 70% 92%;
+    --accent: 73 95% 62%;
+    --accent-foreground: 240 18% 5%;
+    --accent-soft: 73 30% 16%;
 
-    --destructive: 0 84% 60%;
-    --destructive-foreground: 0 0% 100%;
+    --destructive: 0 70% 60%;
+    --destructive-foreground: 0 0% 98%;
 
-    --border: 45 15% 85%;
-    --border-subtle: 45 12% 92%;
-    --input: 45 15% 88%;
-    --ring: 257 100% 58%;
+    --border: 240 10% 16%;
+    --border-subtle: 240 10% 12%;
+    --input: 240 10% 14%;
+    --ring: 258 100% 68%;
 
     --radius: 0.875rem;
 
-    /* Two gradient stops used by the mesh background. Pulled out so the
-       same hues drive cards, hero, and CTA surfaces consistently. */
-    --gradient-from: 257 100% 70%;
-    --gradient-to: 290 90% 75%;
+    /* Hot gradient stops for hero / CTA / text-gradient. */
+    --gradient-from: 258 100% 70%;
+    --gradient-to: 290 100% 70%;
+    --gradient-third: 73 95% 62%;
   }
 }
 
@@ -52,104 +63,205 @@
   * {
     @apply border-border;
   }
+  html {
+    /* Smooth-scroll for in-page anchors on the landing page. */
+    scroll-behavior: smooth;
+  }
   body {
     @apply bg-background text-foreground;
     font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
-    /* V15 — slightly tighter default kerning at heading sizes; modern
-       AI-startup typographic look without overriding line-height. */
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
+    /* Slightly tighter base line height for a denser, premium feel. */
+    line-height: 1.55;
   }
-  /* Heading defaults — tracking-tight reads as 2026 vs 2024's loose tracking. */
+  /* Heading scale — much bigger + much tighter than V15. */
   h1, h2, h3, h4 {
-    letter-spacing: -0.02em;
+    letter-spacing: -0.025em;
+    font-weight: 800;
+    line-height: 1.05;
   }
   h1 {
-    letter-spacing: -0.025em;
+    letter-spacing: -0.04em;
+    font-weight: 900;
+  }
+  h2 {
+    letter-spacing: -0.03em;
+  }
+  /* Selection styling for premium feel. */
+  ::selection {
+    background: hsl(var(--primary) / 0.35);
+    color: hsl(var(--foreground));
   }
 }
 
-/* ==================================================================
- * V15 — utility classes for the new design system.
- * ================================================================== */
+/* ============================================================
+ * V19 — utility classes.
+ * ============================================================ */
 
-/* Mesh gradient — soft radial-blur background used on hero / dashboard. */
+/* Cinematic mesh — three-stop radial that washes the canvas with
+   violet → magenta → lime hints. Designed for hero backgrounds. */
 .bg-mesh {
   background-color: hsl(var(--background));
   background-image:
-    radial-gradient(at 12% 18%, hsl(var(--gradient-from) / 0.18) 0px, transparent 45%),
-    radial-gradient(at 88% 12%, hsl(var(--accent) / 0.14) 0px, transparent 45%),
-    radial-gradient(at 50% 90%, hsl(var(--gradient-to) / 0.12) 0px, transparent 50%);
+    radial-gradient(at 8% 12%, hsl(var(--gradient-from) / 0.32) 0px, transparent 55%),
+    radial-gradient(at 92% 8%, hsl(var(--gradient-to) / 0.22) 0px, transparent 55%),
+    radial-gradient(at 50% 100%, hsl(var(--gradient-third) / 0.14) 0px, transparent 60%);
 }
 
-/* Subtle SVG noise overlay — hand-tuned 0.025 alpha so it reads as
-   texture without competing with content. Apply on a layer above the
-   mesh, below the foreground. */
+/* Smaller, tamer mesh for inner pages where the hero shouldn't shout. */
+.bg-mesh-soft {
+  background-color: hsl(var(--background));
+  background-image:
+    radial-gradient(at 12% 18%, hsl(var(--gradient-from) / 0.16) 0px, transparent 50%),
+    radial-gradient(at 88% 12%, hsl(var(--gradient-to) / 0.10) 0px, transparent 50%);
+}
+
+/* Conic spotlight behind a hero element — pairs with bg-mesh. */
+.bg-spotlight {
+  background-image: conic-gradient(
+    from 220deg at 50% 0%,
+    hsl(var(--gradient-from) / 0.3),
+    hsl(var(--gradient-to) / 0.2),
+    transparent 60%
+  );
+}
+
+/* SVG noise — heavier alpha than V15 because we're on dark and noise
+   reads less. Still subtle. */
 .bg-noise::before {
   content: '';
   position: absolute;
   inset: 0;
   pointer-events: none;
-  opacity: 0.025;
+  opacity: 0.04;
   mix-blend-mode: overlay;
+  z-index: 0;
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
-/* Glass card — backdrop-blur + semi-transparent background. Use over
-   the mesh / hero to read as elevated surface. */
+/* Glass card — refined for dark. Slight inner highlight + softer
+   border. Use over the mesh / hero surfaces. */
 .glass {
-  @apply bg-card/70 backdrop-blur-xl border border-border-subtle;
+  background: hsl(var(--card) / 0.55);
+  backdrop-filter: blur(20px) saturate(140%);
+  -webkit-backdrop-filter: blur(20px) saturate(140%);
+  border: 1px solid hsl(var(--border-subtle));
+  box-shadow:
+    inset 0 1px 0 hsl(0 0% 100% / 0.04),
+    0 8px 32px -16px hsl(0 0% 0% / 0.5);
 }
 
-/* Gradient text — for hero H1s and key numbers. */
+/* Heavier glass for primary CTAs / hero panels. */
+.glass-strong {
+  background: hsl(var(--card) / 0.75);
+  backdrop-filter: blur(28px) saturate(160%);
+  -webkit-backdrop-filter: blur(28px) saturate(160%);
+  border: 1px solid hsl(var(--border));
+  box-shadow:
+    inset 0 1px 0 hsl(0 0% 100% / 0.06),
+    0 12px 48px -16px hsl(var(--primary) / 0.25);
+}
+
+/* Refined gradient text — three-stop. */
 .text-gradient {
   background-image: linear-gradient(
     135deg,
-    hsl(var(--primary)) 0%,
+    hsl(var(--gradient-from)) 0%,
     hsl(var(--gradient-to)) 50%,
-    hsl(var(--accent)) 100%
+    hsl(var(--gradient-third)) 100%
   );
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
 }
 
-/* Soft glow shadow — used on primary CTA buttons + selected cards. */
+/* Two-stop gradient for headings that want less rainbow energy. */
+.text-gradient-cool {
+  background-image: linear-gradient(
+    135deg,
+    hsl(0 0% 96%) 0%,
+    hsl(var(--primary)) 100%
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Strong neon glow for CTAs. Layered: tight inner ring + soft outer. */
 .shadow-glow {
   box-shadow:
-    0 0 0 1px hsl(var(--primary) / 0.1),
-    0 8px 24px -8px hsl(var(--primary) / 0.35),
-    0 4px 10px -6px hsl(var(--primary) / 0.2);
+    0 0 0 1px hsl(var(--primary) / 0.15),
+    0 0 24px -4px hsl(var(--primary) / 0.5),
+    0 8px 32px -8px hsl(var(--primary) / 0.4);
 }
 
-/* Card with hover lift — adds a subtle 2px translateY + shadow grow. */
+.shadow-glow-accent {
+  box-shadow:
+    0 0 0 1px hsl(var(--accent) / 0.15),
+    0 0 24px -4px hsl(var(--accent) / 0.45),
+    0 8px 32px -8px hsl(var(--accent) / 0.35);
+}
+
+/* Card hover — subtle lift + glow pickup. Deeper effect than V15. */
 .card-hover {
-  @apply transition-all duration-200 ease-out;
+  @apply transition-all duration-300 ease-out;
+  position: relative;
 }
 .card-hover:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 12px 28px -10px hsl(var(--foreground) / 0.12);
+  transform: translateY(-3px);
+  border-color: hsl(var(--primary) / 0.4);
+  box-shadow:
+    0 16px 40px -12px hsl(0 0% 0% / 0.6),
+    0 0 0 1px hsl(var(--primary) / 0.15),
+    0 0 24px -8px hsl(var(--primary) / 0.25);
 }
 
-/* ==================================================================
- * Animations.
- * ================================================================== */
+/* Animated gradient border — the kling.ai card halo effect. Used
+   sparingly on hero cards / featured pricing tier. */
+.gradient-border {
+  position: relative;
+  background-clip: padding-box;
+  border: 1px solid transparent;
+}
+.gradient-border::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(
+    135deg,
+    hsl(var(--primary) / 0.6),
+    hsl(var(--gradient-to) / 0.4),
+    hsl(var(--accent) / 0.5)
+  );
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
 
-/* Indeterminate progress bar — sliding gradient. Used while we wait for an
-   AI provider where we have no real progress events. */
+/* Pure utility — translate the focus ring into something that feels
+   custom-tuned rather than the Tailwind default. */
+.focus-ring {
+  @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 focus-visible:ring-offset-2 focus-visible:ring-offset-background;
+}
+
+/* ============================================================
+ * Animations.
+ * ============================================================ */
+
+/* Indeterminate progress bar — sliding gradient. */
 @keyframes tachles-progress-shimmer {
-  0% {
-    transform: translateX(-100%);
-  }
-  100% {
-    transform: translateX(200%);
-  }
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(200%); }
 }
 .animate-progress-shimmer {
   animation: tachles-progress-shimmer 1.4s infinite cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* Subtle pulse on the loading skeleton inside scene cards. */
+/* Skeleton pulse on loading scene cards. */
 @keyframes tachles-shimmer-overlay {
   0%, 100% { opacity: 0.4; }
   50% { opacity: 0.85; }
@@ -158,20 +270,29 @@
   animation: tachles-shimmer-overlay 1.6s infinite ease-in-out;
 }
 
-/* V15 — slow pulse for live activity indicators (e.g. "rendering now"). */
+/* Slow pulse for live activity indicators. */
 @keyframes tachles-soft-pulse {
   0%, 100% { opacity: 0.5; transform: scale(1); }
-  50% { opacity: 1; transform: scale(1.15); }
+  50% { opacity: 1; transform: scale(1.12); }
 }
 .animate-soft-pulse {
-  animation: tachles-soft-pulse 2s infinite ease-in-out;
+  animation: tachles-soft-pulse 2.2s infinite ease-in-out;
 }
 
-/* V15 — fade-in-up: stagger entry for grid cards. */
+/* Fade-in-up — staggered entry for grid cards. */
 @keyframes tachles-fade-in-up {
-  0% { opacity: 0; transform: translateY(8px); }
+  0% { opacity: 0; transform: translateY(12px); }
   100% { opacity: 1; transform: translateY(0); }
 }
 .animate-fade-in-up {
-  animation: tachles-fade-in-up 0.4s ease-out backwards;
+  animation: tachles-fade-in-up 0.5s cubic-bezier(0.22, 0.61, 0.36, 1) backwards;
+}
+
+/* Slow gradient drift — for hero gradient backgrounds. */
+@keyframes tachles-aurora-drift {
+  0%, 100% { transform: translate(0, 0) rotate(0deg); }
+  50% { transform: translate(2%, -3%) rotate(8deg); }
+}
+.animate-aurora-drift {
+  animation: tachles-aurora-drift 22s ease-in-out infinite;
 }
