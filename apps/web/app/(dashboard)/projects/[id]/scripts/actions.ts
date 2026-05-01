@@ -399,11 +399,20 @@ export async function selectScriptAction(formData: FormData) {
   revalidatePath(`/projects/${projectId}/scripts`);
 }
 
-export async function continueAfterSelectAction(formData: FormData) {
+// V27.4 — pattern shift: action no longer redirects. It returns the
+// next-step path so the CLIENT can wrap router.push in
+// document.startViewTransition. This is the canonical hop named in the
+// V27 brief (script chosen → scenes born); the View Transition carries
+// the WizardProgressStrip + credits-meter + selected-script across the
+// nav. revalidatePath isn't needed here (no DB write — selection
+// already happened in selectScriptAction); if you add one, run it
+// BEFORE returning so the new route renders fresh data.
+export async function continueAfterSelectAction(
+  formData: FormData,
+): Promise<{ ok: true; redirectTo: string } | { ok: false }> {
   const projectId = String(formData.get('projectId') ?? '');
-  if (!projectId) return;
-  // Next step is /scenes (placeholder for now).
-  redirect(`/projects/${projectId}/scenes`);
+  if (!projectId) return { ok: false };
+  return { ok: true, redirectTo: `/projects/${projectId}/scenes` };
 }
 
 // Save user edits to hook / cta / scenes for a single script.

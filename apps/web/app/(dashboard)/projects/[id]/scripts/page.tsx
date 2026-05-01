@@ -15,7 +15,8 @@ import { Button } from '@/components/ui/button';
 import { Stepper } from '@/components/wizard/stepper';
 import { ProjectHero } from '@/components/wizard/project-hero';
 import { GenerateButton, ScriptCard } from './client-bits';
-import { selectScriptAction, continueAfterSelectAction } from './actions';
+import { selectScriptAction } from './actions';
+import { ContinueButton } from './continue-button';
 
 // V2: framework labels in Hebrew. Older scripts (pre-V2) won't have a `framework`
 // field — for those we fall back to the legacy angle label.
@@ -236,12 +237,9 @@ export default async function ScriptsPage({
 
           <div className="flex justify-between items-center gap-3 pt-4" dir="ltr">
             <GenerateButton projectId={projectId} regenerate />
-            <form action={continueAfterSelectAction}>
-              <input type="hidden" name="projectId" value={projectId} />
-              <Button type="submit" intent="action" disabled={!selectedScriptId}>
-                המשך לשלב הבא →
-              </Button>
-            </form>
+            <ContinueButton projectId={projectId} disabled={!selectedScriptId}>
+              המשך לשלב הבא →
+            </ContinueButton>
           </div>
         </>
       )}
