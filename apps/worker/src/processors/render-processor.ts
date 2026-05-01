@@ -301,9 +301,41 @@ export async function processRenderJob(job: Job<RenderJobPayload>) {
       const globalWords: Array<
         WordTiming & { globalStartMs: number; globalEndMs: number; sceneId: string }
       > = [];
+      // V26.12 — caption-timeline accuracy fix.
+      //
+      // Bug observed in production: captions felt "slow / out of beat /
+      // missing the mumbling at scene tails". Two compounding causes:
+      //
+      //   (A) `clipDurationSeconds` in the DB stores Kling's INTEGER
+      //       silent-clip duration (3-10s), but the actual MP4 written
+      //       to R2 is voice-length-padded by ffmpeg's mux step
+      //       (`tpad` extends the silent video to match the voice MP3,
+      //       which is typically 5.2-7.5s). On a 4-scene ad this drift
+      //       compounded — by scene 4 the cumulative offset was wrong
+      //       by 800ms-1.5s, so captions raced ahead of (or fell
+      //       behind) the audio.
+      //
+      //   (B) The per-scene end cap clipped legit closing chunks. A
+      //       chunk spanning 5.0-5.3s in scene-local time was capped
+      //       at `cumulativeMs + 5000ms` and dropped — the closing
+      //       phrase silently disappeared from captions.
+      //
+      // Fix: cumulativeMs and the per-scene cap now use the LARGER of
+      // clipDurationSeconds (provider-reported) and voiceDurationSeconds
+      // (ffprobe-measured on the actual MP3). For non-lipsync the voice
+      // duration is the truth; for lipsync they're ~equal.
       let cumulativeMs = 0;
+      // Standard UGC caption lead-in: words appear ~100ms before they
+      // are heard. Gives the viewer a beat of read-time. Universally
+      // used by CapCut, Descript, Submagic, captions.ai presets.
+      const CAPTION_LEAD_MS = 100;
       for (const s of scenes) {
-        const sceneClipDurationSec = s.clipDurationSeconds ?? s.durationSeconds ?? 5;
+        const sceneClipDurationSec = Math.max(
+          s.clipDurationSeconds ?? 0,
+          s.voiceDurationSeconds ?? 0,
+          s.durationSeconds ?? 0,
+          3, // floor
+        );
         const sceneClipDurationMs = Math.round(sceneClipDurationSec * 1000);
         const raw =
           (s as unknown as { captionChunksJson?: unknown }).captionChunksJson ?? null;
@@ -314,16 +346,21 @@ export async function processRenderJob(job: Job<RenderJobPayload>) {
           );
           perSceneCaptionCount.push({ sceneId: s.id, count: 0 });
         } else {
-          // Validate + offset to global timeline.
+          // Validate + offset to global timeline. V26.12: pull start
+          // back by CAPTION_LEAD_MS (clamped to 0) so each chunk
+          // appears just before its first word is spoken.
           for (const c of sceneChunks) {
             if (c.endMs <= c.startMs) {
               captionWarnings.push(`scene ${s.sceneOrder + 1}: invalid chunk window — dropped`);
               continue;
             }
-            const globalStartMs = cumulativeMs + Math.max(0, c.startMs);
-            // Hard cap: never let a caption extend past the scene clip's
-            // end on the global timeline (the audio probe was
-            // occasionally a few ms longer than the rendered clip).
+            const globalStartMs =
+              cumulativeMs + Math.max(0, c.startMs - CAPTION_LEAD_MS);
+            // Hard cap at the scene's effective duration (= max of
+            // clip+voice durations per the V26.12 derivation). The
+            // ffmpeg mux pads the silent clip to voice length, so
+            // chunks ending in the last few hundred ms of the voice
+            // MP3 are still inside the actual MP4 timeline.
             const globalEndMs = Math.min(
               cumulativeMs + sceneClipDurationMs,
               cumulativeMs + Math.max(0, c.endMs),
@@ -348,7 +385,9 @@ export async function processRenderJob(job: Job<RenderJobPayload>) {
           if (sceneWords) {
             for (const w of sceneWords) {
               if (w.endMs <= w.startMs) continue;
-              const globalStartMs = cumulativeMs + Math.max(0, w.startMs);
+              // V26.12 — same lead-in as phrase chunks.
+              const globalStartMs =
+                cumulativeMs + Math.max(0, w.startMs - CAPTION_LEAD_MS);
               const globalEndMs = Math.min(
                 cumulativeMs + sceneClipDurationMs,
                 cumulativeMs + Math.max(0, w.endMs),
