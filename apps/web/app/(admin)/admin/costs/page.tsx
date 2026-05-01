@@ -220,8 +220,8 @@ export default async function AdminUsagePage() {
         <div className="text-xs uppercase tracking-widest text-muted-foreground">Admin · API Usage</div>
         <h1 className="text-3xl font-bold tracking-tight">עלויות וקריאות API</h1>
         <p className="text-sm text-muted-foreground">
-          כל קריאה ל-OpenAI / ElevenLabs / Kling / וכו׳ מתועדת עם עלות מחושבת. רענן את
-          הדף לערכים עדכניים.
+          כל קריאה ל-Gemini / OpenAI / ElevenLabs / Kling / xAI / PixVerse מתועדת עם עלות מחושבת.
+          רענן את הדף לערכים עדכניים.
         </p>
       </div>
 
@@ -720,14 +720,18 @@ export default async function AdminUsagePage() {
             </TableHeader>
             <TableBody>
               {[
-                { op: 'openai_script_batch', provider: 'openai', cost: PROVIDER_COST_ESTIMATES_USD.openai_script_batch, note: '6 תסריטים בbatch אחד' },
+                { op: 'gemini_script_batch', provider: 'gemini', cost: PROVIDER_COST_ESTIMATES_USD.gemini_script_batch, note: 'V25/V26.3 — gemini-3-flash-preview, thinkingLevel minimal' },
                 { op: 'openai_scene_image', provider: 'openai', cost: PROVIDER_COST_ESTIMATES_USD.openai_scene_image, note: 'gpt-image-2 medium 1024x1792' },
                 { op: 'openai_motion_analysis_scene', provider: 'openai', cost: PROVIDER_COST_ESTIMATES_USD.openai_motion_analysis_scene, note: 'gpt-4o-mini vision לכל סצנה' },
                 { op: 'elevenlabs_voice_scene', provider: 'elevenlabs', cost: PROVIDER_COST_ESTIMATES_USD.elevenlabs_voice_scene, note: 'Multilingual v2 ~200 chars' },
                 { op: 'kling_i2v_clip', provider: 'kling', cost: PROVIDER_COST_ESTIMATES_USD.kling_i2v_clip, note: '1.44 tok × $0.546 = $0.79 ממוצע' },
+                { op: 'xai_video_clip', provider: 'xai', cost: PROVIDER_COST_ESTIMATES_USD.xai_video_clip, note: 'V26 — Grok Imagine i2v חלופי (5s 720p)' },
+                { op: 'xai_video_per_sec_720p', provider: 'xai', cost: PROVIDER_COST_ESTIMATES_USD.xai_video_per_sec_720p, note: 'תעריף לשנייה ב-720p HD' },
+                { op: 'xai_video_per_sec_480p', provider: 'xai', cost: PROVIDER_COST_ESTIMATES_USD.xai_video_per_sec_480p, note: 'תעריף לשנייה ב-480p (זול יותר)' },
                 { op: 'pixverse_lipsync_scene', provider: 'pixverse', cost: PROVIDER_COST_ESTIMATES_USD.pixverse_lipsync_scene, note: '16 PixVerse credits @ $0.00444 = $0.071' },
                 { op: 'pixverse_lipsync_second', provider: 'pixverse', cost: PROVIDER_COST_ESTIMATES_USD.pixverse_lipsync_second, note: 'לחישוב לפי שנייה (~$0.018/s)' },
                 { op: 'pixverse_media_upload', provider: 'pixverse', cost: PROVIDER_COST_ESTIMATES_USD.pixverse_media_upload, note: 'אין חיוב נצפה — נרשם למקרה שזה ישתנה' },
+                { op: 'openai_script_batch', provider: 'openai', cost: PROVIDER_COST_ESTIMATES_USD.openai_script_batch, note: 'legacy — לפני V25 (לא בשימוש בפרודקשן)' },
               ].map((row) => (
                 <TableRow key={row.op}>
                   <TableCell className="font-mono text-xs" dir="ltr">{row.op}</TableCell>
@@ -797,13 +801,14 @@ export default async function AdminUsagePage() {
                   credits: number;
                   note: string;
                 }> = [
-                  { op: 'script_batch', provider: 'openai', costUsd: PROVIDER_COST_ESTIMATES_USD.openai_script_batch, credits: OPERATION_CREDIT_PRICING.script_batch, note: 'batch של 6 תסריטים' },
+                  { op: 'script_batch', provider: 'gemini', costUsd: PROVIDER_COST_ESTIMATES_USD.gemini_script_batch, credits: OPERATION_CREDIT_PRICING.script_batch, note: 'V25/V26.3 — Gemini 3 Flash + thinkingLevel minimal (~$0.10/batch)' },
                   { op: 'scene_image_generate', provider: 'openai', costUsd: PROVIDER_COST_ESTIMATES_USD.openai_scene_image, credits: OPERATION_CREDIT_PRICING.scene_image_generate, note: 'יצירה ראשונה' },
                   { op: 'scene_image_regenerate', provider: 'openai', costUsd: PROVIDER_COST_ESTIMATES_USD.openai_scene_image, credits: OPERATION_CREDIT_PRICING.scene_image_regenerate, note: 'first regen חינם (FIRST_REGEN_FREE.image)' },
                   { op: 'voice_generate', provider: 'elevenlabs', costUsd: PROVIDER_COST_ESTIMATES_USD.elevenlabs_voice_scene, credits: OPERATION_CREDIT_PRICING.voice_generate, note: 'Hebrew TTS' },
                   { op: 'voice_regenerate', provider: 'elevenlabs', costUsd: PROVIDER_COST_ESTIMATES_USD.elevenlabs_voice_scene, credits: OPERATION_CREDIT_PRICING.voice_regenerate, note: 'first regen חינם' },
                   { op: 'motion_analysis', provider: 'openai', costUsd: PROVIDER_COST_ESTIMATES_USD.openai_motion_analysis_scene, credits: OPERATION_CREDIT_PRICING.motion_analysis, note: 'משולב במחיר הקליפ' },
-                  { op: 'kling_i2v_clip', provider: 'kling', costUsd: PROVIDER_COST_ESTIMATES_USD.kling_i2v_clip, credits: OPERATION_CREDIT_PRICING.kling_i2v_clip, note: 'נטען תמיד כשהי2v רץ' },
+                  { op: 'kling_i2v_clip', provider: 'kling', costUsd: PROVIDER_COST_ESTIMATES_USD.kling_i2v_clip, credits: OPERATION_CREDIT_PRICING.kling_i2v_clip, note: 'V26 — ברירת מחדל; ראה גם xai_i2v_clip' },
+                  { op: 'xai_i2v_clip', provider: 'xai', costUsd: PROVIDER_COST_ESTIMATES_USD.xai_video_clip, credits: OPERATION_CREDIT_PRICING.kling_i2v_clip, note: 'V26 — Grok Imagine; קרדיטים זהים ל-Kling, הפרשי עלות נופלים עלינו' },
                   { op: 'pixverse_lipsync_scene', provider: 'pixverse', costUsd: PROVIDER_COST_ESTIMATES_USD.pixverse_lipsync_scene, credits: OPERATION_CREDIT_PRICING.pixverse_lipsync_scene, note: 'נטען רק אם PixVerse באמת רץ (face-gate עבר)' },
                   { op: 'lipsync_only', provider: 'pixverse', costUsd: PROVIDER_COST_ESTIMATES_USD.pixverse_lipsync_scene, credits: OPERATION_CREDIT_PRICING.lipsync_only, note: 'PixVerse על קליפ קיים — בלי i2v' },
                   { op: 'final_export_15s', provider: 'ffmpeg', costUsd: 0, credits: OPERATION_CREDIT_PRICING.final_export_15s, note: 'מקומי (storage + compute)' },
@@ -876,12 +881,12 @@ export default async function AdminUsagePage() {
           </Table>
           <div className="text-[11px] text-muted-foreground">
             פיצול עלות ל-15s: {' '}
-            ${VIDEO_COST_ESTIMATES.fifteenSec.scriptBatchUsd.toFixed(2)} script + {' '}
-            ${VIDEO_COST_ESTIMATES.fifteenSec.imagesUsd.toFixed(2)} images + {' '}
-            ${VIDEO_COST_ESTIMATES.fifteenSec.voicesUsd.toFixed(2)} voices + {' '}
-            ${VIDEO_COST_ESTIMATES.fifteenSec.motionAnalysisUsd.toFixed(3)} motion + {' '}
-            ${VIDEO_COST_ESTIMATES.fifteenSec.klingI2vUsd.toFixed(2)} kling + {' '}
-            ${VIDEO_COST_ESTIMATES.fifteenSec.pixverseLipSyncUsd.toFixed(3)} pixverse.
+            ${VIDEO_COST_ESTIMATES.fifteenSec.scriptBatchUsd.toFixed(2)} script (Gemini 3 Flash) + {' '}
+            ${VIDEO_COST_ESTIMATES.fifteenSec.imagesUsd.toFixed(2)} images (gpt-image-2) + {' '}
+            ${VIDEO_COST_ESTIMATES.fifteenSec.voicesUsd.toFixed(2)} voices (ElevenLabs) + {' '}
+            ${VIDEO_COST_ESTIMATES.fifteenSec.motionAnalysisUsd.toFixed(3)} motion (gpt-4o-mini) + {' '}
+            ${VIDEO_COST_ESTIMATES.fifteenSec.klingI2vUsd.toFixed(2)} i2v (Kling — או Grok ב-${PROVIDER_COST_ESTIMATES_USD.xai_video_clip.toFixed(2)}) + {' '}
+            ${VIDEO_COST_ESTIMATES.fifteenSec.pixverseLipSyncUsd.toFixed(3)} lipsync (PixVerse).
           </div>
         </CardContent>
       </Card>

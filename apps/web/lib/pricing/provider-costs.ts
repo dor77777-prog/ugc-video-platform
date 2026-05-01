@@ -132,7 +132,10 @@ function estimateVideoCost(
   lipSyncSceneCount: number,
 ): VideoCostEstimate {
   const c = PROVIDER_COST_ESTIMATES_USD;
-  const scriptBatchUsd = c.openai_script_batch;
+  // V25 / V26.3 — script generation moved from OpenAI to Gemini
+  // (default `gemini-3-flash-preview`, thinkingLevel `minimal`).
+  // gemini_script_batch defaults $0.10 (was $0.04 on OpenAI).
+  const scriptBatchUsd = c.gemini_script_batch;
   const imagesUsd = sceneCount * c.openai_scene_image;
   const voicesUsd = sceneCount * c.elevenlabs_voice_scene;
   const motionAnalysisUsd = sceneCount * c.openai_motion_analysis_scene;
