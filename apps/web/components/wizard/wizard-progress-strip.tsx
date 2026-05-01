@@ -63,22 +63,14 @@ export function WizardProgressStrip({
         const isDone = done.includes(step.num) || step.num < currentStep;
         const isFuture = !isCurrent && !isDone;
         const Icon = step.icon;
-        const Wrapper = !isFuture ? Link : 'div';
-        const wrapperProps = !isFuture
-          ? { href: `/projects/${projectId}${STEP_ROUTES[step.num] ?? '/scripts'}` }
-          : {};
-
-        return (
-          <Wrapper
-            key={step.num}
-            {...wrapperProps}
-            className={cn(
-              'relative rounded-2xl glass p-4 transition-all',
-              isCurrent && 'border-primary/50 shadow-glow ring-1 ring-primary/30 cursor-pointer',
-              isDone && !isCurrent && 'border-accent/30 hover:border-accent/50 cursor-pointer',
-              isFuture && 'opacity-50 cursor-default',
-            )}
-          >
+        const tileClass = cn(
+          'relative rounded-2xl glass p-4 transition-all',
+          isCurrent && 'border-primary/50 shadow-glow ring-1 ring-primary/30 cursor-pointer',
+          isDone && !isCurrent && 'border-accent/30 hover:border-accent/50 cursor-pointer',
+          isFuture && 'opacity-50 cursor-default',
+        );
+        const inner = (
+          <>
             <div className="absolute top-2.5 right-3 text-[10px] font-mono text-muted-foreground/80">
               {String(step.num).padStart(2, '0')}
             </div>
@@ -108,7 +100,24 @@ export function WizardProgressStrip({
                 <span className="font-mono uppercase tracking-widest">בוצע</span>
               </div>
             )}
-          </Wrapper>
+          </>
+        );
+
+        if (isFuture) {
+          return (
+            <div key={step.num} className={tileClass}>
+              {inner}
+            </div>
+          );
+        }
+        return (
+          <Link
+            key={step.num}
+            href={`/projects/${projectId}${STEP_ROUTES[step.num] ?? '/scripts'}`}
+            className={tileClass}
+          >
+            {inner}
+          </Link>
         );
       })}
     </div>
