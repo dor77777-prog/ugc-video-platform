@@ -10,12 +10,23 @@ import {
   Beaker,
   Sparkles,
   ArrowLeft,
+  CheckCircle2,
+  CircleDashed,
+  Pin,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-// V16 — sidebar refresh: Lucide icons, glass surface, primary-tinted
-// active state with subtle glow on the live route. Layout structure
-// unchanged so existing dashboard pages keep working.
+// V21.1 — sidebar with workspace context: top section is fixed nav,
+// middle is a "Pinned projects" list (recent 5 projects from layout),
+// bottom is the upgrade-plan promo. Active route highlights with
+// shadow-glow. Active project (when URL is /projects/<id>/...) gets
+// a primary highlight in the pinned list.
+
+interface RecentProject {
+  id: string;
+  name: string;
+  isCompleted: boolean;
+}
 
 const NAV_ITEMS: SidebarItem[] = [
   { href: '/dashboard', label: 'לוח בקרה', icon: LayoutDashboard },
@@ -35,20 +46,64 @@ interface SidebarItem {
   accent?: boolean;
 }
 
-export function Sidebar() {
+export function Sidebar({ recentProjects = [] }: { recentProjects?: RecentProject[] }) {
   const pathname = usePathname();
+  // Detect "current project" from URL — used to highlight the matching
+  // pinned card. Path looks like /projects/<id>/scripts.
+  const projectMatch = pathname.match(/^\/projects\/([^\/]+)/);
+  const activeProjectId = projectMatch?.[1] ?? null;
 
   return (
-    <aside className="w-64 border-l border-border-subtle bg-card/40 backdrop-blur-md flex flex-col">
-      <nav className="flex-1 p-4 space-y-1">
-        <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-widest px-3 mb-3">
+    <aside className="w-64 border-l border-border-subtle bg-card/40 backdrop-blur-md flex flex-col flex-shrink-0">
+      <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
+        {/* PRIMARY NAV */}
+        <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-[0.25em] px-3 mb-3">
           תפריט
         </div>
         {NAV_ITEMS.map((item) => (
           <NavLink key={item.href} item={item} active={isActive(pathname, item.href)} />
         ))}
 
-        <div className="pt-6 text-[11px] font-semibold text-muted-foreground uppercase tracking-widest px-3 mb-3">
+        {/* PINNED PROJECTS */}
+        {recentProjects.length > 0 && (
+          <>
+            <div className="pt-6 flex items-center gap-1.5 text-[10px] font-bold text-muted-foreground uppercase tracking-[0.25em] px-3 mb-3">
+              <Pin className="h-3 w-3" />
+              פרויקטים אחרונים
+            </div>
+            {recentProjects.map((p) => {
+              const isActiveProject = p.id === activeProjectId;
+              const StatusIcon = p.isCompleted ? CheckCircle2 : CircleDashed;
+              return (
+                <Link
+                  key={p.id}
+                  href={`/projects/${p.id}/${p.isCompleted ? 'videos' : 'scripts'}`}
+                  className={cn(
+                    'group flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs transition-all',
+                    isActiveProject
+                      ? 'bg-primary/15 border border-primary/30 text-foreground font-semibold'
+                      : 'text-muted-foreground hover:bg-secondary hover:text-foreground',
+                  )}
+                  title={p.name}
+                >
+                  <StatusIcon
+                    className={cn(
+                      'h-3.5 w-3.5 flex-shrink-0',
+                      p.isCompleted ? 'text-accent' : 'text-primary',
+                    )}
+                  />
+                  <span className="truncate flex-1">{p.name}</span>
+                  {isActiveProject && (
+                    <span className="h-1.5 w-1.5 rounded-full bg-primary animate-soft-pulse flex-shrink-0" />
+                  )}
+                </Link>
+              );
+            })}
+          </>
+        )}
+
+        {/* SECONDARY NAV */}
+        <div className="pt-6 text-[10px] font-bold text-muted-foreground uppercase tracking-[0.25em] px-3 mb-3">
           עזרה
         </div>
         {SECONDARY_NAV.map((item) => (
@@ -63,14 +118,14 @@ export function Sidebar() {
         >
           <div className="flex items-center gap-2">
             <Sparkles className="h-4 w-4" />
-            <div className="text-sm font-semibold">שדרג את התוכנית</div>
+            <div className="text-sm font-bold">שדרג את התוכנית</div>
           </div>
-          <div className="text-xs opacity-90">
+          <div className="text-[11px] opacity-90 leading-snug">
             יותר קרדיטים, יותר lipsync, יצוא MP4 מלא.
           </div>
-          <div className="w-full mt-2 bg-accent text-accent-foreground text-sm font-semibold py-2 rounded-lg flex items-center justify-center gap-1.5">
+          <div className="w-full mt-2 bg-accent text-accent-foreground text-xs font-bold py-1.5 rounded-lg flex items-center justify-center gap-1.5">
             ראה תוכניות
-            <ArrowLeft className="h-3.5 w-3.5" />
+            <ArrowLeft className="h-3 w-3" />
           </div>
         </Link>
       </div>

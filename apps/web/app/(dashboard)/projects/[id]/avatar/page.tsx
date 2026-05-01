@@ -1,9 +1,11 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { Users } from 'lucide-react';
 import { prisma } from '@/lib/db';
 import { getOrCreateAppUser } from '@/lib/auth/sync-user';
 import { Card, CardContent } from '@/components/ui/card';
 import { Stepper } from '@/components/wizard/stepper';
+import { ProjectHero } from '@/components/wizard/project-hero';
 import { AvatarPicker } from './client-bits';
 import { selectAvatarAction, continueFromAvatarAction } from './actions';
 
@@ -24,37 +26,40 @@ export default async function AvatarPage({
     typeof productData.selectedAvatarId === 'string' ? productData.selectedAvatarId : null;
 
   return (
-    <div className="p-6 md:p-10 max-w-6xl space-y-8">
-      <div className="space-y-1">
-        <div className="text-xs uppercase tracking-widest text-muted-foreground">
-          {project.productName}
-        </div>
-        <h1 className="text-3xl font-bold tracking-tight">בחר את הדמות שלך</h1>
-        <p className="text-sm text-muted-foreground">
-          בחר את הדמות שתופיע בכל הסצנות. ה-AI ישמור על אותה דמות לאורך כל הסרטון —
-          אותו מראה, אותם מאפיינים. תוכל לסנן לפי מגדר וטווח גיל.
-        </p>
-      </div>
+    <div className="relative bg-mesh-soft bg-noise min-h-screen">
+      <div className="relative px-6 md:px-10 py-8 md:py-10 max-w-6xl mx-auto space-y-8">
+        <ProjectHero
+          kicker="אווטאר"
+          title="בחר את הדמות שלך"
+          description="בחר את הדמות שתופיע בכל הסצנות. ה-AI ישמור על אותה דמות לאורך כל הסרטון — אותו מראה, אותם מאפיינים. תוכל לסנן לפי מגדר וטווח גיל."
+          projectName={project.productName}
+          step={2}
+          totalSteps={6}
+          icon={Users}
+          backHref={`/projects/${projectId}/edit`}
+          backLabel="חזרה לפרטי המוצר"
+        />
 
-      <Stepper current={2} done={[1]} projectId={projectId} />
+        <Stepper current={2} done={[1]} projectId={projectId} />
 
-      <Card>
-        <CardContent className="p-6">
-          <AvatarPicker
-            projectId={projectId}
-            initialSelectedId={initialSelectedId}
-            selectAction={selectAvatarAction}
-            continueAction={continueFromAvatarAction}
-          />
-        </CardContent>
-      </Card>
+        <Card className="glass">
+          <CardContent className="p-6">
+            <AvatarPicker
+              projectId={projectId}
+              initialSelectedId={initialSelectedId}
+              selectAction={selectAvatarAction}
+              continueAction={continueFromAvatarAction}
+            />
+          </CardContent>
+        </Card>
 
-      <div className="flex items-center justify-between text-xs text-muted-foreground border-t border-border pt-4">
-        <Link href={`/projects/${projectId}/edit`} className="hover:text-foreground">
-          ← חזרה לפרטי המוצר
-        </Link>
-        <div className="text-[10px]">
-          הקטלוג כרגע: 16 אווטארים placeholder. בקרוב: אינטגרציה עם HeyGen / קטלוג מלא.
+        <div className="flex items-center justify-between text-xs text-muted-foreground border-t border-border-subtle pt-4">
+          <Link href={`/projects/${projectId}/edit`} className="hover:text-foreground transition-colors">
+            ← חזרה לפרטי המוצר
+          </Link>
+          <div className="text-[10px] font-mono">
+            25 אווטארים בקטלוג · gpt-image-2 generated
+          </div>
         </div>
       </div>
     </div>

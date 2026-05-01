@@ -14,6 +14,9 @@ import {
   Sparkles,
   Clock,
   CheckCircle2,
+  Library,
+  Plus,
+  TrendingUp,
 } from 'lucide-react';
 import { getOrCreateAppUser } from '@/lib/auth/sync-user';
 import { prisma } from '@/lib/db';
@@ -22,10 +25,20 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { getCurrentStepNumber, getResumeUrl } from '@/lib/wizard/current-step';
 import { WIZARD_STEPS } from '@/components/wizard/stepper';
+import { StudioCanvasIllustration } from '@/components/brand/illustrations';
 import { DeleteProjectButton } from './delete-button';
 
 export default async function DashboardHome() {
   const { dbUser } = await getOrCreateAppUser();
+
+  // V21.1 — branch the hero CTA based on whether the user is new or
+  // returning. We do this read up front (cheap query, hits the same
+  // index as the count tiles) so the right hero renders in the
+  // initial paint.
+  const completedRendersCount = await prisma.renderJob.count({
+    where: { userId: dbUser.id, status: 'completed' },
+  });
+  const isReturningUser = completedRendersCount > 0;
 
   return (
     <div className="relative bg-mesh-soft bg-noise min-h-screen">
@@ -37,48 +50,19 @@ export default async function DashboardHome() {
             <span>לוח בקרה</span>
           </div>
           <h1 className="text-3xl md:text-5xl font-black tracking-tight">
-            ברוכים הבאים,{' '}
+            {isReturningUser ? 'שלום שוב, ' : 'ברוכים הבאים, '}
             <span className="text-gradient">{dbUser.email.split('@')[0]}</span>
           </h1>
         </div>
 
         {/* ───────────── Bento — hero CTA + stats ───────────── */}
         <div className="bento animate-fade-in-up [animation-delay:80ms]">
-          {/* Hero CTA — spans 3 cols × 2 rows on desktop */}
-          <Card className="bento-3x1 md:bento-2x2 glass-strong gradient-border relative overflow-hidden card-hover">
-            <div
-              className="absolute inset-0 -z-10 opacity-60"
-              style={{
-                background:
-                  'radial-gradient(circle at 20% 100%, hsl(258 100% 65% / 0.4), transparent 60%), radial-gradient(circle at 80% 0%, hsl(73 95% 60% / 0.3), transparent 60%)',
-              }}
-            />
-            <CardContent className="p-7 md:p-10 h-full flex flex-col justify-between gap-6">
-              <div className="space-y-4">
-                <Badge
-                  variant="outline"
-                  className="border-primary/40 bg-primary/10 text-primary gap-1.5 backdrop-blur-md"
-                >
-                  <Sparkles className="h-3 w-3" />
-                  Powered by AI
-                </Badge>
-                <h2 className="text-3xl md:text-4xl font-black tracking-tight leading-tight">
-                  צרו את הסרטון <span className="text-gradient">הראשון שלכם</span>
-                </h2>
-                <p className="text-sm md:text-base text-muted-foreground leading-relaxed max-w-md">
-                  הזינו כתובת מוצר. נכתוב 6 תסריטים, נבחר אווטאר ונרכיב סרטון
-                  9:16 בעברית — מוכן לפייסבוק וטיקטוק תוך פחות מ־5 דקות.
-                </p>
-              </div>
-              <Button asChild size="lg" className="shadow-glow self-start">
-                <Link href="/projects/new" className="flex items-center gap-2">
-                  <Sparkles className="h-4 w-4" />
-                  צור סרטון מוצר
-                  <ArrowLeft className="h-4 w-4" />
-                </Link>
-              </Button>
-            </CardContent>
-          </Card>
+          {/* Hero CTA — different copy for new vs returning users */}
+          {!isReturningUser ? (
+            <FirstVideoHero />
+          ) : (
+            <ReturningUserHero completedCount={completedRendersCount} />
+          )}
 
           {/* Stats — three tiles stacked on the right */}
           <Suspense fallback={<StatTile label="פרויקטים" value={null} icon={FolderKanban} />}>
@@ -101,6 +85,106 @@ export default async function DashboardHome() {
         </Suspense>
       </div>
     </div>
+  );
+}
+
+// V21.1 — Hero for first-time users (no completed renders yet).
+// Encourages them to create their first ad.
+function FirstVideoHero() {
+  return (
+    <Card className="bento-3x1 md:bento-2x2 glass-strong gradient-border relative overflow-hidden card-hover">
+      <div
+        className="absolute inset-0 -z-10 opacity-60"
+        style={{
+          background:
+            'radial-gradient(circle at 20% 100%, hsl(258 100% 65% / 0.4), transparent 60%), radial-gradient(circle at 80% 0%, hsl(73 95% 60% / 0.3), transparent 60%)',
+        }}
+      />
+      <CardContent className="p-7 md:p-10 h-full flex flex-col justify-between gap-6">
+        <div className="space-y-4">
+          <Badge
+            variant="outline"
+            className="border-primary/40 bg-primary/10 text-primary gap-1.5 backdrop-blur-md"
+          >
+            <Sparkles className="h-3 w-3" />
+            Powered by AI
+          </Badge>
+          <h2 className="text-3xl md:text-4xl font-black tracking-tight leading-tight">
+            צרו את הסרטון <span className="text-gradient">הראשון שלכם</span>
+          </h2>
+          <p className="text-sm md:text-base text-muted-foreground leading-relaxed max-w-md">
+            הזינו כתובת מוצר. נכתוב 6 תסריטים, נבחר אווטאר ונרכיב סרטון
+            9:16 בעברית — מוכן לפייסבוק וטיקטוק תוך פחות מ־5 דקות.
+          </p>
+        </div>
+        <Button asChild size="lg" className="shadow-glow self-start">
+          <Link href="/projects/new" className="flex items-center gap-2">
+            <Sparkles className="h-4 w-4" />
+            צור סרטון מוצר
+            <ArrowLeft className="h-4 w-4" />
+          </Link>
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
+// V21.1 — Hero for returning users (≥1 completed render). Surfaces
+// production stats + dual CTA: "create another" + "browse library".
+// Replaces the "create your first" pitch which feels condescending
+// to a returning user.
+function ReturningUserHero({ completedCount }: { completedCount: number }) {
+  return (
+    <Card className="bento-3x1 md:bento-2x2 glass-strong gradient-border relative overflow-hidden card-hover">
+      <div
+        className="absolute inset-0 -z-10 opacity-60"
+        style={{
+          background:
+            'radial-gradient(circle at 20% 100%, hsl(258 100% 65% / 0.4), transparent 60%), radial-gradient(circle at 80% 0%, hsl(73 95% 60% / 0.3), transparent 60%)',
+        }}
+      />
+      <div className="absolute right-6 top-6 hidden md:block opacity-30 pointer-events-none">
+        <StudioCanvasIllustration className="w-64 h-36" />
+      </div>
+      <CardContent className="relative p-7 md:p-10 h-full flex flex-col justify-between gap-6">
+        <div className="space-y-4">
+          <Badge
+            variant="outline"
+            className="border-accent/40 bg-accent/10 text-accent gap-1.5 backdrop-blur-md"
+          >
+            <TrendingUp className="h-3 w-3" />
+            סטודיו פעיל · {completedCount} סרטונים
+          </Badge>
+          <h2 className="text-3xl md:text-4xl font-black tracking-tight leading-tight">
+            <span className="text-gradient">סרטון נוסף</span> במחי לחיצה
+          </h2>
+          <p className="text-sm md:text-base text-muted-foreground leading-relaxed max-w-md">
+            יש לך כבר {completedCount} סרטונים בספרייה. צור גרסה חדשה למוצר שכבר
+            הזנת, או התחל פרויקט חדש לגמרי. הצינור הולך הרבה יותר מהר בפעם השנייה.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <Button asChild size="lg" className="shadow-glow">
+            <Link href="/projects/new" className="flex items-center gap-2">
+              <Plus className="h-4 w-4" />
+              פרויקט חדש
+              <ArrowLeft className="h-4 w-4" />
+            </Link>
+          </Button>
+          <Button
+            asChild
+            size="lg"
+            variant="outline"
+            className="border-border bg-card/40 backdrop-blur-md"
+          >
+            <Link href="/library" className="flex items-center gap-2">
+              <Library className="h-4 w-4" />
+              ספריית הסרטונים
+            </Link>
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 

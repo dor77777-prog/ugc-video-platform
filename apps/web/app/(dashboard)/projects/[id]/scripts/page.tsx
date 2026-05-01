@@ -5,6 +5,7 @@ export const maxDuration = 120;
 
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { Wand2 } from 'lucide-react';
 import { ScriptAngle } from '@prisma/client';
 import { prisma } from '@/lib/db';
 import { getOrCreateAppUser } from '@/lib/auth/sync-user';
@@ -12,6 +13,7 @@ import { timed } from '@/lib/timing';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Stepper } from '@/components/wizard/stepper';
+import { ProjectHero } from '@/components/wizard/project-hero';
 import { GenerateButton, ScriptCard } from './client-bits';
 import { selectScriptAction, continueAfterSelectAction } from './actions';
 
@@ -121,19 +123,21 @@ export default async function ScriptsPage({
   const selectedScriptId = project.selectedScriptId;
 
   return (
-    <div className="p-6 md:p-10 max-w-6xl space-y-8">
-      <div className="space-y-1">
-        <div className="text-xs uppercase tracking-widest text-muted-foreground">
-          {project.productName}
-        </div>
-        <h1 className="text-3xl font-bold tracking-tight">בחר תסריט</h1>
-        <p className="text-sm text-muted-foreground">
-          ה-AI כותב 6 תסריטים בזוויות שיווקיות שונות. בחר אחד שמדבר אליך — תוכל גם לערוך
-          אותו ידנית בשלבים הבאים.
-        </p>
-      </div>
+    <div className="relative bg-mesh-soft bg-noise min-h-screen">
+      <div className="relative px-6 md:px-10 py-8 md:py-10 max-w-6xl mx-auto space-y-8">
+        <ProjectHero
+          kicker="תסריטים"
+          title="בחר תסריט"
+          description="ה-AI כותב 6 תסריטים בזוויות שיווקיות שונות (problem-agitation, סקפטיקל, הוכחה, עוגן מחיר, רגע ישראלי, דיירקט). בחר אחד שמדבר אליך — תוכל גם לערוך אותו ידנית בשלבים הבאים."
+          projectName={project.productName}
+          step={3}
+          totalSteps={6}
+          icon={Wand2}
+          backHref={`/projects/${projectId}/avatar`}
+          backLabel="חזרה לאווטאר"
+        />
 
-      <Stepper current={3} done={[1, 2]} projectId={projectId} />
+        <Stepper current={3} done={[1, 2]} projectId={projectId} />
 
       {!hasScripts ? (
         <Card className="border-dashed">
@@ -241,6 +245,7 @@ export default async function ScriptsPage({
         <div>
           קרדיטים: <span className="font-mono font-semibold">{dbUser.creditsBalance}</span>
         </div>
+      </div>
       </div>
     </div>
   );

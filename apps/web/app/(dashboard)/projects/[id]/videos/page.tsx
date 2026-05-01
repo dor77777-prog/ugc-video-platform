@@ -1,10 +1,12 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { Film, AlertTriangle, Mic2 } from 'lucide-react';
 import { prisma } from '@/lib/db';
 import { getOrCreateAppUser } from '@/lib/auth/sync-user';
 import { findVoicePreset } from '@/lib/voice/voice-presets';
 import { Card, CardContent } from '@/components/ui/card';
 import { Stepper } from '@/components/wizard/stepper';
+import { ProjectHero } from '@/components/wizard/project-hero';
 // V14.3-B — MusicPicker is exported from client-bits as a
 // next/dynamic lazy wrapper (ssr: false). VoicePicker is no longer
 // imported here — V14.7 moved all voice UI to step 4 (scenes page).
@@ -81,17 +83,31 @@ export default async function VideosPage({
 
   if (!project.selectedScript) {
     return (
-      <div className="p-6 md:p-10 max-w-5xl space-y-6">
-        <h1 className="text-3xl font-bold tracking-tight">סצנות מונפשות</h1>
-        <Stepper current={5} done={[1, 2, 3, 4]} projectId={projectId} />
-        <Card>
-          <CardContent className="p-6 text-sm text-muted-foreground">
-            עדיין לא נבחר תסריט.{' '}
-            <Link href={`/projects/${projectId}/scripts`} className="text-primary underline">
-              חזור לבחירת תסריט →
-            </Link>
-          </CardContent>
-        </Card>
+      <div className="relative bg-mesh-soft bg-noise min-h-screen">
+        <div className="relative px-6 md:px-10 py-8 md:py-10 max-w-5xl mx-auto space-y-6">
+          <ProjectHero
+            kicker="קליפים"
+            title="סצנות מונפשות"
+            projectName={project.productName}
+            step={5}
+            totalSteps={6}
+            icon={Film}
+            backHref={`/projects/${projectId}/scripts`}
+            backLabel="חזרה לתסריטים"
+          />
+          <Stepper current={5} done={[1, 2, 3, 4]} projectId={projectId} />
+          <Card className="glass border-amber-500/30">
+            <CardContent className="p-6 text-sm text-muted-foreground flex items-center gap-3">
+              <AlertTriangle className="h-5 w-5 text-amber-500 flex-shrink-0" />
+              <div>
+                עדיין לא נבחר תסריט.{' '}
+                <Link href={`/projects/${projectId}/scripts`} className="text-primary underline">
+                  חזור לבחירת תסריט →
+                </Link>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       </div>
     );
   }
@@ -109,59 +125,66 @@ export default async function VideosPage({
   const missingImages = sceneInfos.filter((s) => !s.hasImage).length;
 
   return (
-    <div className="p-6 md:p-10 max-w-7xl space-y-8">
-      <div className="space-y-1">
-        <div className="text-xs uppercase tracking-widest text-muted-foreground">
-          {project.productName}
-        </div>
-        <h1 className="text-3xl font-bold tracking-tight">סצנות מונפשות</h1>
-        <p className="text-sm text-muted-foreground max-w-2xl">
-          לכל סצנה — voice-over בעברית + קליפ מונפש עם lip-sync. תוכל לערוך, להאזין,
-          ולרגנר כל אחד בנפרד. כשכל הסצנות מוכנות, לחץ "הרכב סרטון סופי" למטה.
-        </p>
-      </div>
+    <div className="relative bg-mesh-soft bg-noise min-h-screen">
+      <div className="relative px-6 md:px-10 py-8 md:py-10 max-w-7xl mx-auto space-y-8">
+        <ProjectHero
+          kicker="קליפים"
+          title="סצנות מונפשות"
+          description="לכל סצנה — קליפ מונפש עם lip-sync על voice-over שיצרת בשלב הסצנות. תוכל לרגנר כל קליפ בנפרד. כשכל הסצנות מוכנות, לחץ 'הרכב סרטון סופי' למטה."
+          projectName={project.productName}
+          step={5}
+          totalSteps={6}
+          icon={Film}
+          backHref={`/projects/${projectId}/scenes`}
+          backLabel="חזרה לסצנות"
+          meta={
+            voicePreset ? (
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl glass max-w-fit">
+                <Mic2 className="h-3.5 w-3.5 text-accent" />
+                <div className="text-xs">
+                  <span className="text-muted-foreground">קול:</span>{' '}
+                  <span className="font-semibold">{voicePreset.displayName}</span>
+                  <span className="text-muted-foreground ms-1">
+                    ({voicePreset.gender === 'female' ? 'אישה' : 'גבר'} · {voicePreset.ageRange})
+                  </span>
+                </div>
+                <Link
+                  href={`/projects/${projectId}/scenes`}
+                  className="text-[10px] text-primary hover:underline ms-1"
+                >
+                  שנה
+                </Link>
+              </div>
+            ) : null
+          }
+        />
 
-      <Stepper current={5} done={[1, 2, 3, 4]} projectId={projectId} />
+        <Stepper current={5} done={[1, 2, 3, 4]} projectId={projectId} />
 
-      {/* Block clearly when prerequisites are missing */}
-      {missingImages > 0 && (
-        <Card className="border-amber-500/30 bg-amber-500/5">
-          <CardContent className="p-4 text-sm">
-            ⚠ ל-{missingImages} סצנות אין תמונה עדיין.{' '}
-            <Link
-              href={`/projects/${projectId}/scenes`}
-              className="font-semibold text-primary underline"
-            >
-              חזור לשלב 4 וצור אותן →
-            </Link>{' '}
-            תוצאות הקליפים תלויות בתמונות הסצנה.
-          </CardContent>
-        </Card>
-      )}
+        {/* Block clearly when prerequisites are missing */}
+        {missingImages > 0 && (
+          <Card className="glass border-amber-500/30">
+            <CardContent className="p-4 text-sm flex items-center gap-3">
+              <AlertTriangle className="h-5 w-5 text-amber-500 flex-shrink-0" />
+              <div>
+                ל-{missingImages} סצנות אין תמונה עדיין.{' '}
+                <Link
+                  href={`/projects/${projectId}/scenes`}
+                  className="font-semibold text-primary underline"
+                >
+                  חזור לשלב 4 וצור אותן →
+                </Link>{' '}
+                תוצאות הקליפים תלויות בתמונות הסצנה.
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
-      {/* V14.7 — voice picker + voice batch button moved to step 4
-          (scenes page). This page only shows clip generation and final
-          render. The voice-pick state is read-only here for context. */}
-      {voicePreset && (
-        <Card className="bg-accent/10 border-accent/30">
-          <CardContent className="p-3 flex items-center gap-3 text-xs">
-            <span className="text-muted-foreground">קול נבחר:</span>
-            <span className="font-semibold">{voicePreset.displayName}</span>
-            <span className="text-muted-foreground">
-              ({voicePreset.gender === 'female' ? 'אישה' : 'גבר'} · {voicePreset.ageRange}
-              )
-            </span>
-            <Link
-              href={`/projects/${projectId}/scenes`}
-              className="ms-auto text-primary underline"
-            >
-              שנה קול בשלב הסצנות →
-            </Link>
-          </CardContent>
-        </Card>
-      )}
+      {/* V14.7 — voice picker moved to step 4. V21 — moved this
+          read-only voice indicator into the ProjectHero meta slot;
+          only the missing-voice warning remains here. */}
       {!voicePreset && (
-        <Card className="border-amber-500/30 bg-amber-500/5">
+        <Card className="glass border-amber-500/30">
           <CardContent className="p-4 text-sm">
             ⚠ עדיין לא נבחר קול.{' '}
             <Link
@@ -272,6 +295,7 @@ export default async function VideosPage({
           </div>
         );
       })()}
+      </div>
     </div>
   );
 }
