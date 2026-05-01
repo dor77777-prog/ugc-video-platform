@@ -411,13 +411,31 @@ export async function generateScripts(
   // persisted" to the user instead of pretending success.
   let persistFailures = 0;
 
-  // Fire all 6 framework-pinned calls in parallel. Each call uses
-  // SINGLE_SCRIPT_JSON_SCHEMA so the response is one well-typed script;
-  // we then forward the result to onScriptReady (best-effort) so the
-  // caller can persist immediately.
-  const results = await Promise.all(
-    FRAMEWORK_ORDER.map(async (framework, index) => {
+  // V27.10 — warmup-first dispatch.
+  //
+  // The system prompt + schema is a 700+-line cacheable prefix. With
+  // Anthropic prompt caching (`cache_control: ephemeral`), the FIRST
+  // call to write that prefix pays full input cost AND ~30s wall-clock;
+  // subsequent calls within the 5-min cache window pay ~10% input cost
+  // and ~8-12s wall-clock.
+  //
+  // Pre-V27.10: all 6 framework calls fired via `Promise.all` —
+  // simultaneously. They all saw "no cache yet", all attempted to
+  // write the prefix, and the provider serializes those writes →
+  // every call paid the cold-write cost. Effective wall-clock: 60-90s.
+  //
+  // V27.10: fire ONE call serially (warmup, writes the cache), then
+  // the remaining 5 in parallel (cache reads). Wall-clock:
+  //   warmup ~25-35s  +  parallel-warm max(~8-12s)  ≈  35-45s.
+  // The user also sees the first script ~25s sooner because
+  // onScriptReady fires immediately when the warmup completes,
+  // instead of waiting for the slowest of 6 cold-writes.
+  //
+  // Cost: identical or slightly cheaper (cache reads are 10% of input
+  // cost; we lose nothing by writing-once-reading-five vs writing-six).
+  const buildOneCall = async (framework: ScriptFrameworkSlug, index: number) => {
       const userPrompt = buildSingleFrameworkPrompt(input, framework);
+      const callStartedAt = Date.now();
       try {
         // V14 — dispatch on the env-driven provider. Same prompt +
         // schema feeds all three paths; usage shape is identical.
@@ -480,13 +498,30 @@ export async function generateScripts(
           throw err;
         }
         console.warn(
-          `[scripts] framework=${framework} ${provider} call failed:`,
+          `[scripts] framework=${framework} ${provider} call failed in ${Date.now() - callStartedAt}ms:`,
           (err as Error).message,
         );
         return null;
       }
-    }),
+  };
+
+  // V27.10 — warmup-first: serial first call writes the cache, then
+  // 5 parallel calls read it. Mirrors the comment block above.
+  const [warmupFramework, ...restFrameworks] = FRAMEWORK_ORDER;
+  if (!warmupFramework) {
+    throw new Error('FRAMEWORK_ORDER is empty — script-gen has no work to do.');
+  }
+  const warmupStartedAt = Date.now();
+  const warmupResult = await buildOneCall(warmupFramework, 0);
+  console.log(
+    `[scripts] warmup framework=${warmupFramework} done in ${Date.now() - warmupStartedAt}ms (cache primed)`,
   );
+
+  const restResults = await Promise.all(
+    restFrameworks.map((framework, i) => buildOneCall(framework, i + 1)),
+  );
+
+  const results = [warmupResult, ...restResults];
 
   const successful = results.filter((r): r is GeneratedScript => r !== null);
   if (successful.length === 0) {
