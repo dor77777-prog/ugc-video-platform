@@ -55,17 +55,56 @@ export function GenerateButton({
   // now fires the moment a new script lands, not on a fixed cadence.
   // We also keep polling for ~6s after `pending` flips to false to
   // catch the last persist that might race the Server Action return.
+  // V27.10.1 — auto-update fix.
+  //
+  // Symptom user reported: scripts page didn't refresh on its own —
+  // had to F5 to see new scripts. Two root causes:
+  //
+  //   1. Post-pending grace was only 6s. With V14 Sonnet 4.6 + V27.9
+  //      heavier prompt, individual framework calls can land 30-60s
+  //      AFTER the action returned (the slowest call resolves the
+  //      Promise.all, but onScriptReady persists were already racing).
+  //      Anything landing after the 6s window was invisible until F5.
+  //      → bumped to 60s.
+  //
+  //   2. router.refresh() was firing only on count growth. If the
+  //      Server Component re-render raced with a partial RSC payload,
+  //      the count could update on the client without a visible card
+  //      change. → also force a refresh on the FALLING edge of pending
+  //      (action just returned) and one final refresh when polling
+  //      stops.
+  //
+  // Polling cadence stays 1s; this is just about WHEN to refresh.
   const lastSeenCountRef = useRef(0);
+  const wasPendingRef = useRef(false);
   useEffect(() => {
     if (typeof window === 'undefined') return;
     let aborted = false;
     let stopAfterMs: number | null = null;
-    const stop = () => { aborted = true; clearInterval(id); };
+    const stop = () => {
+      aborted = true;
+      clearInterval(id);
+      // One final refresh on stop, in case the last script landed
+      // between the previous tick and now.
+      router.refresh();
+    };
+
+    // Edge: action just flipped from pending → !pending. Force a
+    // refresh immediately — at this moment all 6 calls have returned
+    // and the DB has the final state, but the last persist might have
+    // raced the action's `return` and not yet shown up via polling.
+    if (wasPendingRef.current && !pending) {
+      router.refresh();
+    }
+    wasPendingRef.current = pending;
+
     const tick = async () => {
       if (aborted) return;
       if (!isPageVisible()) return;
-      // After pending=false, keep polling for ~6s to catch the tail.
-      if (!pending && stopAfterMs == null) stopAfterMs = Date.now() + 6_000;
+      // V27.10.1 — extended post-pending grace 6s → 60s. Sonnet 4.6
+      // can land scripts up to ~30s after the action's Promise.all
+      // resolves (Anthropic's per-call wall-clock variance).
+      if (!pending && stopAfterMs == null) stopAfterMs = Date.now() + 60_000;
       if (stopAfterMs != null && Date.now() > stopAfterMs) { stop(); return; }
       try {
         const res = await fetch(`/api/projects/${projectId}/scripts/list`, { cache: 'no-store' });
