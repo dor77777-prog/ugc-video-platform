@@ -56,7 +56,13 @@ import { withRetry } from '@/lib/utils/retry';
 // To restore Sonnet 4.6 (quality over speed): set
 //   ANTHROPIC_SCRIPT_MODEL=claude-sonnet-4-6
 // in Vercel env vars. To go even bigger: claude-opus-4-7.
-const DEFAULT_MODEL = 'claude-haiku-4-5';
+//
+// V27.10.3 — Haiku 4.5 needs the explicit date suffix on Anthropic's
+// API. Sonnet 4.6 / Opus 4.7 resolve via the alias-style id; Haiku 4.5
+// returns "model not found" without the YYYYMMDD pin. Live failure
+// observed: project cmoni5rbq0001ib04udikpi9h saw all 6 framework
+// calls fail because of this.
+const DEFAULT_MODEL = 'claude-haiku-4-5-20251001';
 
 // Effort default. Sonnet 4.6 defaults to "high" which silently turns
 // on adaptive thinking and adds 10-30s thinking-phase latency before
