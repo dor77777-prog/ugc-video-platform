@@ -67,8 +67,17 @@ export function WizardProgressStrip({
   done?: number[];
   className?: string;
 }) {
+  // V27 Wave 3 anchor: view-transition-name on the strip wrapper makes
+  // the browser's native View Transitions API treat this element as
+  // persistent across same-origin route changes (Chrome 111+, Safari
+  // 18+). When step 3 → step 4 navigation happens, the strip slides
+  // its active dot smoothly instead of full-rerender. No-op in older
+  // browsers. Reserved name from globals.css §10.
   return (
-    <div className={cn('grid grid-cols-3 md:grid-cols-4 lg:grid-cols-8 gap-2', className)}>
+    <div
+      className={cn('grid grid-cols-3 md:grid-cols-4 lg:grid-cols-8 gap-2', className)}
+      style={{ viewTransitionName: '--vt-wizard-progress-strip' } as React.CSSProperties}
+    >
       {STEPS.map((step) => {
         const isCurrent = step.num === currentStep;
         const isDone = done.includes(step.num) || step.num < currentStep;
