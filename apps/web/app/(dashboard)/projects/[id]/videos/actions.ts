@@ -3,25 +3,18 @@
 import { revalidatePath } from 'next/cache';
 import { prisma } from '@/lib/db';
 import { getOrCreateAppUser } from '@/lib/auth/sync-user';
-import { generateSceneVoiceImpl } from '@/lib/scenes/voice-impl';
 import { generateSceneClipImpl, regenLipSyncOnlyImpl } from '@/lib/scenes/clip-impl';
 import { deriveSceneRouting } from '@/lib/animation/scene-routing';
 
-// Server actions used by the SINGLE-scene buttons on a SceneClipCard
-// (via useActionState). The "Generate all voices" / "Generate all clips"
-// batch loops call the parallel-friendly Route Handlers directly via
-// fetch() — Server Actions are serialized per-route by Next.js, so
-// Promise.all over them runs sequentially.
-
-export type GenerateVoiceState =
-  | {
-      error?: string;
-      needsCredits?: boolean;
-      needsVoiceSelection?: boolean;
-      configError?: boolean;
-      timedOut?: boolean;
-    }
-  | undefined;
+// Server actions used by the SINGLE-scene clip buttons on a
+// SceneClipCard (via useActionState). The "Generate all clips" batch
+// loop calls the parallel-friendly Route Handler directly via fetch()
+// — Server Actions are serialized per-route by Next.js.
+//
+// V21 cleanup: voice gen is on step 4 (scenes page) and the per-card
+// regen there calls /api/scenes/[id]/voice directly (no server action
+// needed). The generateSceneVoiceAction + GenerateVoiceState that
+// used to live here were removed — only clip actions remain.
 
 export type GenerateClipState =
   | {
@@ -34,31 +27,6 @@ export type GenerateClipState =
       failedStage?: 'motion' | 'lipsync';
     }
   | undefined;
-
-export async function generateSceneVoiceAction(
-  sceneId: string,
-  _prev: GenerateVoiceState,
-  _formData: FormData,
-): Promise<GenerateVoiceState> {
-  const { dbUser } = await getOrCreateAppUser();
-  const projectId = await prisma.scene
-    .findUnique({ where: { id: sceneId }, select: { script: { select: { projectId: true } } } })
-    .then((s) => s?.script.projectId);
-
-  const result = await generateSceneVoiceImpl(sceneId, dbUser.id);
-  if (projectId) revalidatePath(`/projects/${projectId}/videos`);
-
-  if (!result.success) {
-    return {
-      error: result.error,
-      needsCredits: result.needsCredits,
-      needsVoiceSelection: result.needsVoiceSelection,
-      configError: result.configError,
-      timedOut: result.timedOut,
-    };
-  }
-  return undefined;
-}
 
 // Set or clear the per-scene "requires lipsync" override. `null` means
 // "use the auto-derived value" (deriveSceneRouting on cameraDirection).

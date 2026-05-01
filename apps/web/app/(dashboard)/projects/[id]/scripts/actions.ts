@@ -9,7 +9,6 @@ import { generateScripts, LlmConfigError, type GeneratedScript } from '@/lib/llm
 import { recordApiCallStart, recordApiCallComplete } from '@/lib/usage/log';
 import { priceOpenAiText } from '@/lib/usage/pricing';
 import { attributeOpenAiTextCost } from '@/lib/usage/cost-attribution';
-import { buildCreditMutationOps } from '@/lib/usage/credits';
 import { checkRateLimit, RateLimitedError } from '@/lib/usage/rate-limit';
 import { checkSpendCap, SpendCapExceededError } from '@/lib/usage/spend-cap';
 import { findAvatar, describeAvatar } from '@/lib/avatars/catalog';

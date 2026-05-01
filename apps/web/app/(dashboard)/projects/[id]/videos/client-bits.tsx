@@ -51,19 +51,14 @@ import {
   type CaptionPresetId,
 } from '@ugc-video/shared';
 import {
-  generateSceneVoiceAction,
   generateSceneClipAction,
   regenLipSyncOnlyAction,
   setSceneRequiresLipSyncAction,
-  type GenerateVoiceState,
   type GenerateClipState,
 } from './actions';
 
-// Window-level events the cards listen to during batch runs. Pattern lifted
-// from the scenes-page polling implementation. Naming kept distinct so a
-// voice batch doesn't trigger clip polling (and vice versa).
-const VOICES_BATCH_START = 'voices:batch-start';
-const VOICES_BATCH_DONE = 'voices:batch-done';
+// V21 cleanup — VOICES_BATCH_* events removed; voice gen lives on
+// the scenes page now. Clip batch events still in use.
 const CLIPS_BATCH_START = 'clips:batch-start';
 const CLIPS_BATCH_DONE = 'clips:batch-done';
 
@@ -106,124 +101,11 @@ function raceWithTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
 
 /* ============================================================
  * Batch buttons
+ *
+ * V14.7 / V21 cleanup: GenerateAllVoicesButton was removed entirely
+ * — voice generation moved to step 4 (scenes page). The clip batch
+ * remains here because clips are step-5-only.
  * ============================================================ */
-
-export function GenerateAllVoicesButton({
-  scenes,
-  creditsBalance,
-  voiceSelected,
-}: {
-  scenes: SceneInfo[];
-  creditsBalance: number;
-  voiceSelected: boolean;
-}) {
-  const router = useRouter();
-  const [pending, setPending] = useState(false);
-  const [progress, setProgress] = useState({ done: 0, total: 0, failed: 0 });
-  const [error, setError] = useState<string | null>(null);
-
-  const queue = scenes.filter((s) => !s.hasVoice);
-  if (queue.length === 0) return null;
-
-  const cost = queue.length;
-  const canRun = voiceSelected && creditsBalance >= cost;
-
-  const run = async () => {
-    if (!canRun || pending) return;
-    setError(null);
-    setProgress({ done: 0, total: queue.length, failed: 0 });
-    setPending(true);
-    if (typeof window !== 'undefined')
-      window.dispatchEvent(new CustomEvent(VOICES_BATCH_START));
-
-    try {
-      let done = 0;
-      let failed = 0;
-      let abort = false;
-      // Voice gen is fast (~3-5s) and ElevenLabs handles concurrent
-      // calls fine. Bumping from 2 → 5 fires all scenes at once,
-      // shaving 60-90s off a 5-scene batch.
-      const PARALLELISM = 5;
-      const PER_SCENE_BUDGET_MS = 120_000;
-
-      const runOne = async (s: SceneInfo) => {
-        if (abort) return;
-        try {
-          const result = await raceWithTimeout(
-            fetch(`/api/scenes/${s.id}/voice`, { method: 'POST' }).then(
-              (r) =>
-                r.json() as Promise<{
-                  success: boolean;
-                  error?: string;
-                  needsCredits?: boolean;
-                  needsVoiceSelection?: boolean;
-                  configError?: boolean;
-                }>,
-            ),
-            PER_SCENE_BUDGET_MS,
-          );
-          if (!result.success) {
-            failed++;
-            setError(result.error ?? 'יצירת voice-over נכשלה');
-            if (result.needsCredits || result.needsVoiceSelection || result.configError) {
-              abort = true;
-            }
-          } else {
-            done++;
-            setError(null);
-          }
-        } catch (err) {
-          failed++;
-          setError(`שגיאה: ${(err as Error).message}`);
-        }
-        setProgress({ done, total: queue.length, failed });
-      };
-
-      for (let i = 0; i < queue.length; i += PARALLELISM) {
-        if (abort) break;
-        const chunk = queue.slice(i, i + PARALLELISM);
-        await Promise.all(chunk.map(runOne));
-        router.refresh();
-      }
-    } finally {
-      setPending(false);
-      if (typeof window !== 'undefined')
-        window.dispatchEvent(new CustomEvent(VOICES_BATCH_DONE));
-    }
-  };
-
-  return (
-    <Card className="border-primary/40 bg-primary/[0.04]">
-      <CardContent className="p-4 flex items-center gap-3 justify-between">
-        <div className="flex-1 space-y-0.5">
-          <div className="text-sm font-semibold">
-            {pending ? 'יוצר voice-overs…' : 'צור voice-over לכל הסצנות החסרות'}
-          </div>
-          <div className="text-xs text-muted-foreground">
-            {pending
-              ? `${progress.done + progress.failed} מתוך ${progress.total}${progress.failed > 0 ? ` (${progress.failed} נכשלו)` : ''}`
-              : !voiceSelected
-                ? 'בחר קול לפני שמייצרים voice-overs'
-                : `${queue.length} חסרות · ${queue.length} קרדיטים (יש לך ${creditsBalance})`}
-          </div>
-          {pending && (
-            <div className="pt-2">
-              <ProgressBar variant="primary" />
-            </div>
-          )}
-          {error && (
-            <div className="text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded-md p-2 mt-2">
-              {error}
-            </div>
-          )}
-        </div>
-        <Button onClick={run} disabled={pending || !canRun} size="default">
-          {pending ? '…' : '🔊 צור הכל'}
-        </Button>
-      </CardContent>
-    </Card>
-  );
-}
 
 export function GenerateAllClipsButton({
   scenes,
@@ -394,12 +276,12 @@ function isFresh(iso: string | null, ttlMs: number): boolean {
 export function SceneClipCard(props: SceneClipCardProps) {
   const router = useRouter();
 
-  // Per-scene action wrappers (server actions for the single buttons).
-  const voiceAction = generateSceneVoiceAction.bind(null, props.sceneId);
-  const [voiceState, voiceFormAction, voicePending] = useActionState<
-    GenerateVoiceState,
-    FormData
-  >(voiceAction, undefined);
+  // V21 cleanup: voice gen moved to step 4 (scenes page). All
+  // voice-related useActionState / form action / batch-polling /
+  // post-action poll burst was deleted from this card. The remaining
+  // voice UI (audio preview + read-only spinner) drives off
+  // `voiceInFlightAt` from the server prop only.
+
   const clipAction = generateSceneClipAction.bind(null, props.sceneId);
   const [clipState, clipFormAction, clipPending] = useActionState<
     GenerateClipState,
@@ -417,7 +299,6 @@ export function SceneClipCard(props: SceneClipCardProps) {
   // we set these locally. Cleared once the prop catches up.
   const [liveVoiceUrl, setLiveVoiceUrl] = useState<string | null>(null);
   const [liveClipUrl, setLiveClipUrl] = useState<string | null>(null);
-  const [voiceBatchPolling, setVoiceBatchPolling] = useState(false);
   const [clipBatchPolling, setClipBatchPolling] = useState(false);
 
   const propsRef = useRef(props);
@@ -431,53 +312,7 @@ export function SceneClipCard(props: SceneClipCardProps) {
     if (liveClipUrl && props.clipUrl) setLiveClipUrl(null);
   }, [props.clipUrl, liveClipUrl]);
 
-  // Voice batch polling.
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    let intervalId: ReturnType<typeof setInterval> | null = null;
-    let aborted = false;
-    const stop = () => {
-      if (intervalId) clearInterval(intervalId);
-      intervalId = null;
-      setVoiceBatchPolling(false);
-    };
-    const tick = async () => {
-      if (aborted || propsRef.current.voiceUrl) {
-        stop();
-        return;
-      }
-      if (!isPageVisible()) return;
-      try {
-        const res = await fetch(`/api/scenes/${propsRef.current.sceneId}`, {
-          cache: 'no-store',
-        });
-        if (!res.ok) return;
-        const json = (await res.json()) as { voiceUrl: string | null };
-        if (json.voiceUrl && !aborted) {
-          setLiveVoiceUrl(json.voiceUrl);
-          stop();
-          router.refresh();
-        }
-      } catch { /* keep trying */ }
-    };
-    const onStart = () => {
-      if (propsRef.current.voiceUrl) return;
-      setVoiceBatchPolling(true);
-      void tick();
-      intervalId = setInterval(tick, 2500);
-    };
-    const onDone = () => stop();
-    window.addEventListener(VOICES_BATCH_START, onStart);
-    window.addEventListener(VOICES_BATCH_DONE, onDone);
-    return () => {
-      aborted = true;
-      window.removeEventListener(VOICES_BATCH_START, onStart);
-      window.removeEventListener(VOICES_BATCH_DONE, onDone);
-      stop();
-    };
-  }, [router]);
-
-  // Clip batch polling — same pattern.
+  // Clip batch polling — only batch left after V21 cleanup.
   useEffect(() => {
     if (typeof window === 'undefined') return;
     let intervalId: ReturnType<typeof setInterval> | null = null;
@@ -523,46 +358,9 @@ export function SceneClipCard(props: SceneClipCardProps) {
     };
   }, [router]);
 
-  // Per-card action bursts (single button completes → poll briefly).
-  // Captures the URL that was on the scene when the action started so we
-  // can detect *changes* (regeneration), not just first-creation.
-  const wasVoicePendingRef = useRef(voicePending);
-  const voiceUrlAtPendingRef = useRef<string | null>(props.voiceUrl);
-  useEffect(() => {
-    // Snapshot the pre-action URL exactly as the action begins.
-    if (!wasVoicePendingRef.current && voicePending) {
-      voiceUrlAtPendingRef.current = propsRef.current.voiceUrl;
-    }
-    if (wasVoicePendingRef.current && !voicePending && !voiceState?.error) {
-      // Action just succeeded. Force a router refresh so revalidatePath()
-      // results show up immediately. Then poll the GET endpoint until the
-      // URL is *different* from the pre-action one (new MP3 written).
-      router.refresh();
-      const startUrl = voiceUrlAtPendingRef.current;
-      let polls = 0;
-      const id = setInterval(async () => {
-        polls++;
-        if (!isPageVisible()) return;
-        try {
-          const res = await fetch(`/api/scenes/${propsRef.current.sceneId}`, {
-            cache: 'no-store',
-          });
-          if (res.ok) {
-            const json = (await res.json()) as { voiceUrl: string | null };
-            if (json.voiceUrl && json.voiceUrl !== startUrl) {
-              setLiveVoiceUrl(json.voiceUrl);
-              clearInterval(id);
-              router.refresh();
-              return;
-            }
-          }
-        } catch { /* */ }
-        if (polls > 6) clearInterval(id);
-      }, 2500);
-      return () => clearInterval(id);
-    }
-    wasVoicePendingRef.current = voicePending;
-  }, [voicePending, router, voiceState]);
+  // V21 cleanup: voice post-action burst deleted (no voice form here
+  // anymore). Server-side voiceInFlightAt + the regen-watch effect
+  // below handle the in-flight UX.
 
   const wasClipPendingRef = useRef(clipPending);
   const clipUrlAtPendingRef = useRef<string | null>(props.clipUrl);
@@ -613,7 +411,10 @@ export function SceneClipCard(props: SceneClipCardProps) {
   // on `!hasVoice` / `!hasClip`: during a regen the OLD result is still
   // visible (so the user can keep playing it), and we want the badge +
   // disabled button to reflect that a new generation is running.
-  const showVoiceWorking = voicePending || voiceBatchPolling || voiceInFlightServer;
+  // V21 — voice gen moved to step 4. Spinner here just mirrors the
+  // server-side in-flight flag (e.g. when a step-4 batch is still
+  // running while the user navigated to step 5).
+  const showVoiceWorking = voiceInFlightServer;
   const showClipWorking = clipPending || clipBatchPolling || clipInFlightServer;
 
   // Polling: when the server-side flag is set but we don't yet have a

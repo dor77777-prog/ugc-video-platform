@@ -367,58 +367,6 @@ export function findVoicePreset(id: string | null | undefined): VoicePreset | nu
   return VOICE_PRESETS.find((v) => v.id === id) ?? null;
 }
 
-// V14.2-B — pick a sensible default voice for an avatar so voice gen
-// can start before the user reaches the videos step. Match gender
-// strictly (we never want a male avatar with a female voice) and
-// prefer the closest age range. Falls back to the first matching
-// gender, then to the first preset overall.
-export function defaultVoicePresetForAvatar(opts: {
-  gender: VoiceGender;
-  // AvatarAgeRange uses the same slugs as VoiceAgeRange except '18-20'
-  // and '20-25'. Map both to '18-25' before passing.
-  ageRange?: VoiceAgeRange | null;
-}): VoicePreset {
-  const { gender, ageRange } = opts;
-  const sameGender = VOICE_PRESETS.filter((v) => v.gender === gender);
-  if (ageRange) {
-    const exact = sameGender.find((v) => v.ageRange === ageRange);
-    if (exact) return exact;
-  }
-  if (sameGender.length > 0) return sameGender[0]!;
-  return VOICE_PRESETS[0]!;
-}
-
-// AvatarAgeRange → VoiceAgeRange mapping. Avatars use '18-20' / '20-25' /
-// '25-30' / '30-40' / '40-50' / '50+'; voices use '18-25' / '25-35' /
-// '35-50' / '50+'. We pick the closest band that the voice catalog
-// supports.
-export function mapAvatarAgeToVoiceAge(
-  avatarAge:
-    | '18-20'
-    | '20-25'
-    | '25-30'
-    | '30-40'
-    | '40-50'
-    | '50+'
-    | null
-    | undefined,
-): VoiceAgeRange {
-  switch (avatarAge) {
-    case '18-20':
-    case '20-25':
-      return '18-25';
-    case '25-30':
-    case '30-40':
-      return '25-35';
-    case '40-50':
-      return '35-50';
-    case '50+':
-      return '50+';
-    default:
-      return '25-35';
-  }
-}
-
 export const ALL_VOICE_GENDERS: VoiceGender[] = ['female', 'male'];
 export const ALL_VOICE_AGE_RANGES: VoiceAgeRange[] = ['18-25', '25-35', '35-50', '50+'];
 export const ALL_VOICE_ENERGIES: VoiceEnergy[] = ['calm', 'warm', 'energetic', 'authoritative'];
