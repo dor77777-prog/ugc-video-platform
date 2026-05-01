@@ -467,15 +467,46 @@ export async function processRenderJob(job: Job<RenderJobPayload>) {
       musicFadeInDurationMs: 300,
       enableCaptions,
       captionsAssContent,
-      scenes: scenes.map((s) => ({
-        clipUrl: s.clipUrl!,
-        // The legacy `caption` field is kept empty because the V10 ASS
-        // file is built upstream from real word timings — feeding the
-        // legacy proportional path would double-build captions.
-        caption: '',
-        voiceDurationSeconds: s.voiceDurationSeconds ?? null,
-        durationSeconds: s.clipDurationSeconds ?? s.durationSeconds ?? 5,
-      })),
+      // V26.13 — pass the preset + lead-in so the composer can rebuild
+      // the ASS post-normalize using ffprobe-measured durations.
+      captionsPresetId,
+      captionsModeOverride: captionsMode,
+      captionsMarginBoostPx: scenes.some(
+        (s) =>
+          (s as unknown as { requiresLipSync?: boolean | null }).requiresLipSync === true,
+      ) || scenes.some(
+        (s) =>
+          (s as unknown as { cameraFocus?: string | null }).cameraFocus === 'product',
+      )
+        ? 40
+        : 0,
+      captionsLeadMs: 100,
+      scenes: scenes.map((s) => {
+        const raw =
+          (s as unknown as { captionChunksJson?: unknown }).captionChunksJson ?? null;
+        const sceneChunks = parseCaptionChunks(raw) ?? undefined;
+        const rawWords =
+          (s as unknown as { wordTimingsJson?: unknown }).wordTimingsJson ?? null;
+        const sceneWords = captionsPreset.perWord
+          ? parseWordTimings(rawWords) ?? undefined
+          : undefined;
+        return {
+          clipUrl: s.clipUrl!,
+          // The legacy `caption` field is kept empty because the V10 ASS
+          // file is built upstream from real word timings — feeding the
+          // legacy proportional path would double-build captions.
+          caption: '',
+          voiceDurationSeconds: s.voiceDurationSeconds ?? null,
+          durationSeconds: s.clipDurationSeconds ?? s.durationSeconds ?? 5,
+          // V26.13 — composer rebuilds the ASS using these chunks +
+          // ffprobe-measured per-scene durations. The cumulative
+          // offset is then exact, eliminating the gradual drift the
+          // user observed across long videos.
+          captionChunks: sceneChunks,
+          wordTimings: sceneWords,
+          sceneId: s.id,
+        };
+      }),
     });
 
     // Step 3 — upload final + persist Asset.

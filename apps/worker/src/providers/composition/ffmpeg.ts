@@ -27,6 +27,13 @@ import path from 'path';
 import os from 'os';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import {
+  buildAssFromChunks,
+  type CaptionChunk,
+  type CaptionPresetId,
+  type CaptionsMode,
+  type WordTiming,
+} from '@ugc-video/shared';
+import {
   CompositionProvider,
   CompositionInput,
   CompositionOutput,
@@ -39,6 +46,16 @@ interface FfmpegSceneInput {
    * by voiceDurationSeconds — captions don't linger past the speech. */
   durationSeconds: number;
   voiceDurationSeconds?: number | null;
+  /** V26.13 — scene-relative caption chunks. When provided AND the
+   *  composer-side ASS rebuild path is taken, these are offset by the
+   *  ffprobe-measured cumulative duration of preceding normalized
+   *  clips (instead of DB-stored durations which can drift). */
+  captionChunks?: CaptionChunk[];
+  /** V26.13 — scene-relative word timings. Same offset rule as
+   *  captionChunks; used by the `word_pop` preset. */
+  wordTimings?: WordTiming[];
+  /** Stable scene identifier for telemetry. */
+  sceneId?: string;
 }
 
 export interface FfmpegCompositionInput extends CompositionInput {
@@ -72,8 +89,20 @@ export interface FfmpegCompositionInput extends CompositionInput {
   /** V10 — pre-built ASS subtitle file content. When provided we burn
    * THIS file instead of the legacy proportional captions built from
    * `scenes`. Built by `packages/shared/src/captions/ass-builder.ts`
-   * upstream. Null/undefined → legacy path. */
+   * upstream. Null/undefined → legacy path. V26.13 — when ANY scene
+   * carries `captionChunks`, the composer rebuilds the ASS itself
+   * post-normalize using ffprobe-measured durations and this field
+   * is treated as a fallback only. */
   captionsAssContent?: string | null;
+  /** V26.13 — caption preset id for the in-composer ASS rebuild. */
+  captionsPresetId?: CaptionPresetId;
+  /** V26.13 — caption mode (phrase / word_highlight). */
+  captionsModeOverride?: CaptionsMode;
+  /** V26.13 — vertical bias when lipsync or product-low scenes exist. */
+  captionsMarginBoostPx?: number;
+  /** V26.13 — UGC lead-in: caption appears N ms before the word is
+   *  spoken. Default 100ms. */
+  captionsLeadMs?: number;
 }
 
 export const ffmpegCompositionProvider: CompositionProvider & {
@@ -209,6 +238,106 @@ export const ffmpegCompositionProvider: CompositionProvider & {
           `ffmpeg-norm-${i}`,
         );
         normalizedPaths.push(norm);
+      }
+
+      // V26.13 — probe each normalized clip for its actual duration.
+      // The byte-level concat in 3b stitches these end-to-end, so the
+      // final timeline is exactly sum(probedDurations). Captions
+      // built from these offsets stay in lockstep with the audio
+      // regardless of:
+      //   - PixVerse stretching audio for lipsync animation
+      //   - ffmpeg's mux tpad rounding to frame boundaries
+      //   - fps=30 cfr re-timing in stage 3a above
+      //   - Integer-rounded clipDurationSeconds in the DB
+      const probedDurationsMs: number[] = [];
+      for (let i = 0; i < normalizedPaths.length; i++) {
+        try {
+          const sec = await probeDurationSeconds(normalizedPaths[i]!);
+          probedDurationsMs.push(Math.round(sec * 1000));
+        } catch (err) {
+          // Probe failure — fall back to the input scene's declared
+          // duration. The captions for THIS scene's tail and all
+          // subsequent scenes may drift, but the render still ships.
+          const fallback = scenes[i]?.durationSeconds ?? 5;
+          console.warn(
+            `[ffmpeg] probe failed for norm-${i}, using declared ${fallback}s`,
+            (err as Error).message,
+          );
+          probedDurationsMs.push(Math.round(fallback * 1000));
+        }
+      }
+      console.log(
+        `[ffmpeg] probed normalized durations (ms): ` +
+          `[${probedDurationsMs.join(', ')}] sum=${probedDurationsMs.reduce((a, b) => a + b, 0)}`,
+      );
+
+      // V26.13 — if upstream passed scene-level chunks (the new path),
+      // rebuild the ASS using probed durations. This REPLACES the
+      // upstream-built `captionsAssContent` for accuracy.
+      const hasSceneCaptionData = scenes.some(
+        (s) =>
+          (s.captionChunks && s.captionChunks.length > 0) ||
+          (s.wordTimings && s.wordTimings.length > 0),
+      );
+      if (hasSceneCaptionData) {
+        const presetId = input.captionsPresetId ?? 'classic';
+        const captionsMode = input.captionsModeOverride ?? 'phrase';
+        const marginBoostPx = input.captionsMarginBoostPx ?? 0;
+        const leadMs = input.captionsLeadMs ?? 100;
+
+        const globalChunks: CaptionChunk[] = [];
+        const globalWords: Array<
+          WordTiming & { globalStartMs: number; globalEndMs: number; sceneId?: string }
+        > = [];
+        let cumulativeMs = 0;
+        for (let i = 0; i < scenes.length; i++) {
+          const s = scenes[i]!;
+          const sceneEndMs = cumulativeMs + (probedDurationsMs[i] ?? 0);
+          for (const c of s.captionChunks ?? []) {
+            if (c.endMs <= c.startMs) continue;
+            const globalStartMs =
+              cumulativeMs + Math.max(0, c.startMs - leadMs);
+            const globalEndMs = Math.min(
+              sceneEndMs,
+              cumulativeMs + Math.max(0, c.endMs),
+            );
+            if (globalEndMs <= globalStartMs) continue;
+            globalChunks.push({ ...c, sceneId: s.sceneId, globalStartMs, globalEndMs });
+          }
+          for (const w of s.wordTimings ?? []) {
+            if (w.endMs <= w.startMs) continue;
+            const globalStartMs =
+              cumulativeMs + Math.max(0, w.startMs - leadMs);
+            const globalEndMs = Math.min(
+              sceneEndMs,
+              cumulativeMs + Math.max(0, w.endMs),
+            );
+            if (globalEndMs <= globalStartMs) continue;
+            globalWords.push({
+              word: w.word,
+              startMs: w.startMs,
+              endMs: w.endMs,
+              globalStartMs,
+              globalEndMs,
+              sceneId: s.sceneId,
+            });
+          }
+          cumulativeMs = sceneEndMs;
+        }
+        const rebuiltAss = buildAssFromChunks(globalChunks, {
+          videoWidth: 1080,
+          videoHeight: 1920,
+          marginBoostPx,
+          mode: captionsMode,
+          presetId,
+          wordTimings: globalWords.length > 0 ? globalWords : undefined,
+        });
+        await fs.writeFile(assPath, rebuiltAss, 'utf8');
+        console.log(
+          `[ffmpeg] V26.13 rebuilt ASS post-normalize: ` +
+            `${globalChunks.length} chunks + ${globalWords.length} words ` +
+            `over ${cumulativeMs}ms. Replaces upstream captionsAssContent.`,
+        );
       }
 
       // 3b. concat-demuxer + `-c copy`. Stream-copy only — RAM stays flat.
@@ -388,6 +517,43 @@ function clampMusicVolume(v: number | undefined): number {
   if (v < MIN) return MIN;
   if (v > MAX) return MAX;
   return v;
+}
+
+// V26.13 — ffprobe a local MP4 for its actual duration in seconds.
+// Used post-normalize to compute accurate caption offsets that match
+// the concatenated MP4 timeline (DB-stored clipDurationSeconds
+// systematically drifts because it stores integer Kling output
+// instead of the voice-padded mux output).
+function probeDurationSeconds(filePath: string): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const proc = spawn(
+      'ffprobe',
+      [
+        '-v', 'error',
+        '-show_entries', 'format=duration',
+        '-of', 'default=noprint_wrappers=1:nokey=1',
+        filePath,
+      ],
+      { stdio: ['ignore', 'pipe', 'pipe'] },
+    );
+    let stdout = '';
+    let stderr = '';
+    proc.stdout.on('data', (d) => { stdout += d.toString(); });
+    proc.stderr.on('data', (d) => { stderr += d.toString(); });
+    proc.on('error', reject);
+    proc.on('close', (code) => {
+      if (code !== 0) {
+        reject(new Error(`ffprobe ${filePath} exit ${code}: ${stderr.slice(0, 200)}`));
+        return;
+      }
+      const n = Number(stdout.trim());
+      if (!Number.isFinite(n) || n <= 0) {
+        reject(new Error(`ffprobe ${filePath} produced non-numeric duration: ${stdout.slice(0, 100)}`));
+        return;
+      }
+      resolve(n);
+    });
+  });
 }
 
 function runFfmpeg(args: string[], label = 'ffmpeg'): Promise<void> {
