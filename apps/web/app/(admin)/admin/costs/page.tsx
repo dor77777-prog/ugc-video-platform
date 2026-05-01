@@ -30,6 +30,10 @@ export const revalidate = 300;
 
 const PROVIDER_LABEL: Record<string, string> = {
   openai: 'OpenAI',
+  // V25 — script generation now goes through Google Gemini.
+  gemini: 'Google Gemini',
+  // V26 — image-to-video animation supports Grok in addition to Kling.
+  xai: 'xAI / Grok',
   elevenlabs: 'ElevenLabs',
   kling: 'Kling',
   pixverse: 'PixVerse',
@@ -563,6 +567,29 @@ export default async function AdminUsagePage() {
                   fixHint="Edit the OpenAI service-account key → grant api.usage.read scope at platform.openai.com → Organization → Roles."
                 />
               )}
+            </div>
+
+            {/* V25 — Google Gemini (script generation). The
+                Generative Language API doesn't expose per-key billing,
+                so this card always falls back to local ApiCall
+                aggregates. */}
+            <div className="rounded-lg border border-border p-4 space-y-3">
+              <div className="flex items-baseline justify-between">
+                <h3 className="font-semibold">Google Gemini</h3>
+                <span className="text-[10px] text-muted-foreground">
+                  scripts (gemini-3-pro)
+                </span>
+              </div>
+              <ProviderFallbackCard
+                providerSlug="gemini"
+                byProviderRow={byProvider.find((p) => p.provider === 'gemini')}
+                errorMsg={
+                  'ok' in providerBalances.gemini && !providerBalances.gemini.ok
+                    ? providerBalances.gemini.error
+                    : 'no balance data'
+                }
+                fixHint="Google Cloud Console → Billing → APIs Detail → Generative Language API for authoritative spend (Google doesn't expose per-API-key cost)."
+              />
             </div>
           </div>
 

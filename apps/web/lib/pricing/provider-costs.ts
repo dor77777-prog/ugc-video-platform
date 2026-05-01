@@ -47,7 +47,17 @@ export const CREDIT_LIST_VALUE_USD = num('CREDIT_LIST_VALUE_USD', 0.10);
 //   PixVerse media upload: no separate observed billing today; logged
 //   so we can revisit if they start charging for it.
 export const PROVIDER_COST_ESTIMATES_USD = {
-  openai_script_batch: num('COST_OPENAI_SCRIPT_BATCH_USD', 0.05),
+  // V25 — script batch is now Gemini 3 Pro. Estimated $0.04/batch
+  // assuming ~6 calls × 4k input + 2k output tokens × Gemini 3 Pro
+  // pricing (~$1.25/M input, $10/M output). The legacy
+  // COST_OPENAI_SCRIPT_BATCH_USD env var is read first for back-compat.
+  gemini_script_batch: num(
+    'COST_GEMINI_SCRIPT_BATCH_USD',
+    num('COST_OPENAI_SCRIPT_BATCH_USD', 0.04),
+  ),
+  // Kept for back-compat references; alias for gemini_script_batch
+  // post-V25.
+  openai_script_batch: num('COST_OPENAI_SCRIPT_BATCH_USD', 0.04),
   openai_scene_image: num('COST_OPENAI_SCENE_IMAGE_USD', 0.06),
   openai_motion_analysis_scene: num('COST_OPENAI_MOTION_ANALYSIS_SCENE_USD', 0.005),
 

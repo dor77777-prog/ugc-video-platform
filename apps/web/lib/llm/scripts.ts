@@ -1,9 +1,13 @@
-import OpenAI from 'openai';
 import {
   SCRIPT_SYSTEM_PROMPT,
   SINGLE_SCRIPT_JSON_SCHEMA,
 } from '@ugc-video/prompts';
 import { resolveVideoMode } from '@/lib/video-mode';
+import {
+  geminiStructuredCall,
+  GeminiConfigError,
+  GEMINI_DEFAULT_MODEL,
+} from './gemini-client';
 
 // Script Engine V2 — wrapper.
 //
@@ -335,15 +339,17 @@ export async function generateScripts(
   input: ProductInput,
   options?: GenerateScriptsOptions,
 ): Promise<ScriptGenerationOutput> {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) {
+  // V25 — Gemini 3 Pro replaced gpt-5.4-mini for script generation.
+  // The same SCRIPT_SYSTEM_PROMPT + SINGLE_SCRIPT_JSON_SCHEMA flow,
+  // routed through @google/generative-ai with structured output.
+  // GEMINI_API_KEY missing → fail fast with a config error.
+  if (!process.env.GEMINI_API_KEY) {
     throw new LlmConfigError(
-      'OPENAI_API_KEY is not set. Add it to .env to enable script generation.',
+      'GEMINI_API_KEY is not set. Add it to .env / Vercel / Railway to enable script generation.',
     );
   }
 
-  const openai = new OpenAI({ apiKey });
-  const model = process.env.OPENAI_SCRIPT_MODEL || 'gpt-4o-mini';
+  const model = process.env.GEMINI_SCRIPT_MODEL || GEMINI_DEFAULT_MODEL;
 
   const startedAt = Date.now();
   let totalInputTokens = 0;
@@ -361,39 +367,18 @@ export async function generateScripts(
     FRAMEWORK_ORDER.map(async (framework, index) => {
       const userPrompt = buildSingleFrameworkPrompt(input, framework);
       try {
-        const resp = await openai.chat.completions.create({
+        const { parsed: parsedRegen, usage } = await geminiStructuredCall<LlmRegenResponse>({
+          systemInstruction: SCRIPT_SYSTEM_PROMPT,
+          userPrompt,
+          responseSchema: SINGLE_SCRIPT_JSON_SCHEMA,
           model,
-          messages: [
-            { role: 'system', content: SCRIPT_SYSTEM_PROMPT },
-            { role: 'user', content: userPrompt },
-          ],
-          response_format: {
-            type: 'json_schema',
-            json_schema: {
-              name: 'single_script_response',
-              strict: true,
-              schema: SINGLE_SCRIPT_JSON_SCHEMA as unknown as Record<string, unknown>,
-            },
-          },
+          temperature: 0.7,
         });
-        totalInputTokens += resp.usage?.prompt_tokens ?? 0;
-        totalOutputTokens += resp.usage?.completion_tokens ?? 0;
-        const content = resp.choices[0]?.message?.content;
-        if (!content) {
-          console.warn(`[scripts] framework=${framework} returned empty content`);
-          return null;
-        }
-        let parsedRegen: LlmRegenResponse;
-        try {
-          parsedRegen = JSON.parse(content) as LlmRegenResponse;
-        } catch (err) {
-          console.warn(`[scripts] framework=${framework} bad JSON:`, (err as Error).message);
-          return null;
-        }
+        totalInputTokens += usage.inputTokens;
+        totalOutputTokens += usage.outputTokens;
         if (!parsedRegen.script) return null;
-        // Force the framework slug — strict-mode should have done this
-        // already, but defensive: a model occasionally hallucinates a
-        // different slug despite the prompt pinning.
+        // Force the framework slug — defensive: a model occasionally
+        // hallucinates a different slug despite the prompt pinning.
         parsedRegen.script.framework = framework;
         const generated = toGenerated(parsedRegen.script, false);
         // Fire the streaming callback. Errors here are logged AND
@@ -415,8 +400,13 @@ export async function generateScripts(
         }
         return generated;
       } catch (err) {
+        if (err instanceof GeminiConfigError) {
+          // Re-throw config errors — caller decides whether to surface
+          // a specific "configure GEMINI_API_KEY" message.
+          throw err;
+        }
         console.warn(
-          `[scripts] framework=${framework} OpenAI call failed:`,
+          `[scripts] framework=${framework} Gemini call failed:`,
           (err as Error).message,
         );
         return null;

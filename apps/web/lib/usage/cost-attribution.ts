@@ -25,6 +25,7 @@ import {
   priceElevenLabsTts,
   priceKling,
   klingPricingKeyForModel,
+  priceGeminiText,
 } from '@/lib/usage/pricing';
 
 export type CostSource = 'actual_usage' | 'estimate' | 'observed_constant';
@@ -68,6 +69,39 @@ export function attributeOpenAiTextCost(args: {
     estimatedCostUsd,
     source: 'estimate',
     metadata: { model, note: 'no usage reported by provider' },
+  };
+}
+
+// ── Google Gemini text (V25 — script generation) ───────────────────────
+// Mirrors attributeOpenAiTextCost. Used by the script generation
+// path post-V25 (apps/web/app/(dashboard)/projects/[id]/scripts/actions.ts).
+export function attributeGeminiTextCost(args: {
+  model: string;
+  inputTokens?: number | null;
+  outputTokens?: number | null;
+}): AttributedCost {
+  const { model } = args;
+  const inputTokens = args.inputTokens ?? null;
+  const outputTokens = args.outputTokens ?? null;
+  const estimatedCostUsd =
+    inputTokens != null && outputTokens != null
+      ? priceGeminiText(model, inputTokens, outputTokens)
+      : PROVIDER_COST_ESTIMATES_USD.gemini_script_batch;
+  if (inputTokens != null && outputTokens != null) {
+    const actual = priceGeminiText(model, inputTokens, outputTokens);
+    return {
+      costUsd: actual,
+      estimatedCostUsd,
+      actualCostUsd: actual,
+      source: 'actual_usage',
+      metadata: { inputTokens, outputTokens, model, provider: 'gemini' },
+    };
+  }
+  return {
+    costUsd: estimatedCostUsd,
+    estimatedCostUsd,
+    source: 'estimate',
+    metadata: { model, provider: 'gemini', note: 'no usage reported by provider' },
   };
 }
 

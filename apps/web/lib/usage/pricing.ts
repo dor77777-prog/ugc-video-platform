@@ -35,6 +35,32 @@ export function priceOpenAiText(model: string, inputTokens: number, outputTokens
   return (inputTokens * p.input + outputTokens * p.output) / 1_000_000;
 }
 
+// V25 — Gemini text pricing per 1M tokens. From the Google AI Studio
+// pricing page (May 2026). Gemini 3 Pro launched at the same tier as
+// 2.5 Pro; Flash variants are cheaper. Numbers are USD / 1M tokens.
+const GEMINI_TEXT_PRICING: Record<string, { input: number; output: number }> = {
+  'gemini-3-pro': { input: 1.25, output: 10.0 },
+  'gemini-2.5-pro': { input: 1.25, output: 10.0 },
+  'gemini-2.5-flash': { input: 0.075, output: 0.3 },
+  'gemini-2.0-flash': { input: 0.1, output: 0.4 },
+  'gemini-1.5-pro': { input: 1.25, output: 5.0 },
+  'gemini-1.5-flash': { input: 0.075, output: 0.3 },
+  'gemini-flash-latest': { input: 0.075, output: 0.3 },
+};
+
+export function priceGeminiText(
+  model: string,
+  inputTokens: number,
+  outputTokens: number,
+): number {
+  // Gemini model ids don't carry version suffixes the way OpenAI's do
+  // (e.g. -2024-08), so a direct lookup works. Fall back to gemini-3-pro
+  // pricing if the model id isn't recognized — conservative for the
+  // admin cost dashboard.
+  const p = GEMINI_TEXT_PRICING[model] ?? GEMINI_TEXT_PRICING['gemini-3-pro']!;
+  return (inputTokens * p.input + outputTokens * p.output) / 1_000_000;
+}
+
 // gpt-image-2 — per-image $ from OpenAI cookbook calculator (Apr 2026).
 // 1024x1792 (true 9:16) interpolated from 1024x1024 / 1024x1536 columns.
 const OPENAI_IMAGE_PRICING: Record<

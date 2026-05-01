@@ -8,7 +8,8 @@ import { getOrCreateAppUser } from '@/lib/auth/sync-user';
 import { generateScripts, LlmConfigError, type GeneratedScript } from '@/lib/llm/scripts';
 import { recordApiCallStart, recordApiCallComplete } from '@/lib/usage/log';
 import { priceOpenAiText } from '@/lib/usage/pricing';
-import { attributeOpenAiTextCost } from '@/lib/usage/cost-attribution';
+import { attributeGeminiTextCost } from '@/lib/usage/cost-attribution';
+import { GEMINI_DEFAULT_MODEL } from '@/lib/llm/gemini-client';
 import { checkRateLimit, RateLimitedError } from '@/lib/usage/rate-limit';
 import { checkSpendCap, SpendCapExceededError } from '@/lib/usage/spend-cap';
 import { findAvatar, describeAvatar } from '@/lib/avatars/catalog';
@@ -134,10 +135,15 @@ export async function generateScriptsAction(
   let generated: GeneratedScript[];
   let usage: { model: string; inputTokens: number; outputTokens: number; durationMs: number } | null = null;
   const scriptStartedAt = Date.now();
+  // V25 — script generation is now routed through Google Gemini 3 Pro
+  // (was OpenAI gpt-5.4-mini). The provider field on ApiCall flips to
+  // 'gemini' so the admin /admin/costs dashboard groups the spend
+  // correctly. The model id reads from GEMINI_SCRIPT_MODEL with a
+  // safe default.
   const scriptCallId = await recordApiCallStart({
-    provider: 'openai',
+    provider: 'gemini',
     operation: 'script_gen',
-    model: process.env.OPENAI_SCRIPT_MODEL || 'gpt-5.4-mini',
+    model: process.env.GEMINI_SCRIPT_MODEL || GEMINI_DEFAULT_MODEL,
     userId: dbUser.id,
     projectId,
   });
@@ -292,7 +298,8 @@ export async function generateScriptsAction(
   }
 
   // Successful call — close the in-progress row with computed cost.
-  const scriptAttribution = attributeOpenAiTextCost({
+  // V25 — Gemini cost attribution.
+  const scriptAttribution = attributeGeminiTextCost({
     model: usage.model,
     inputTokens: usage.inputTokens,
     outputTokens: usage.outputTokens,

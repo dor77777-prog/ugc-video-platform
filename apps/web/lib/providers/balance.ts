@@ -375,16 +375,47 @@ export async function fetchOpenAIBalance(): Promise<
   }
 }
 
+// ── Google Gemini (V25 — script generation provider) ───────────────────
+// Google AI Studio doesn't expose a per-API-key billing endpoint —
+// usage is reported through Google Cloud Billing which requires OAuth +
+// a dedicated service-account flow. We surface an explicit "no balance
+// API" error so the dashboard falls back to local ApiCall aggregates
+// (the V12.6 ProviderFallbackCard). The user sees their real spend
+// computed from our own DB; the error block in <details> tells them
+// to check Google Cloud Console for authoritative numbers.
+
+export interface GeminiBalanceError {
+  ok: false;
+  error: string;
+}
+
+export async function fetchGeminiBalance(): Promise<GeminiBalanceError> {
+  const apiKey = process.env.GEMINI_API_KEY?.trim();
+  if (!apiKey) {
+    return { ok: false, error: 'GEMINI_API_KEY not configured' };
+  }
+  // Per-key cost / balance is not exposed by the Generative Language API.
+  // Return a sentinel error so the dashboard renders local aggregates.
+  return {
+    ok: false,
+    error:
+      'Google does not expose a per-API-key cost endpoint for the Generative Language API. ' +
+      'Check Google Cloud Console → Billing for authoritative spend; the dashboard below is computed ' +
+      'from local ApiCall rows (always-on, accurate).',
+  };
+}
+
 // ── Convenience: fetch all in parallel ──────────────────────────────────
 
 export async function fetchAllProviderBalances() {
-  const [kling, pixverse, elevenlabs, openai] = await Promise.all([
+  const [kling, pixverse, elevenlabs, openai, gemini] = await Promise.all([
     fetchKlingBalance(),
     fetchPixVerseBalance(),
     fetchElevenLabsBalance(),
     fetchOpenAIBalance(),
+    fetchGeminiBalance(),
   ]);
-  return { kling, pixverse, elevenlabs, openai };
+  return { kling, pixverse, elevenlabs, openai, gemini };
 }
 
 // Re-export for the admin page so it doesn't need two separate imports.
