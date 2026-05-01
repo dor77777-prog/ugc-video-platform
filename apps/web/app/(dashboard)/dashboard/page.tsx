@@ -105,11 +105,12 @@ export default async function DashboardHome() {
   );
 }
 
-// V22 — completed-renders showcase grid. Renders the user's 6 most-
-// recent completed RenderJobs as 9:16 thumbnail cards using the FIRST
-// scene image of each project as the visual (since we don't generate
-// dedicated MP4 thumbnails). Hover scale + numbered badge + Play
-// overlay to signal "click to play".
+// V22.1 — completed-renders showcase grid. Each tile renders the
+// ACTUAL finalVideoUrl as an autoplaying muted <video> loop. The
+// real ad plays as the thumbnail — way more impressive than a
+// static scene image. Falls back to the selected-script's first
+// scene image when finalVideoUrl is missing (rare, mostly older
+// renders pre-V12.2). Hover scale + Play overlay still applied.
 async function CompletedVideosShowcase({ userId }: { userId: string }) {
   const completed = await prisma.renderJob.findMany({
     where: { userId, status: 'completed' },
@@ -121,15 +122,19 @@ async function CompletedVideosShowcase({ userId }: { userId: string }) {
         select: {
           id: true,
           productName: true,
-          scripts: {
+          // V22.1 — query the SELECTED script (not just the first
+          // script) so we get the right thumbnail fallback. Pulls
+          // the first scene that has an imageUrl, ordered by
+          // sceneOrder.
+          selectedScript: {
             select: {
               scenes: {
-                where: { sceneOrder: 0 },
+                where: { imageUrl: { not: null } },
+                orderBy: { sceneOrder: 'asc' },
                 select: { imageUrl: true },
                 take: 1,
               },
             },
-            take: 1,
           },
         },
       },
@@ -157,7 +162,8 @@ async function CompletedVideosShowcase({ userId }: { userId: string }) {
       </div>
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 md:gap-4">
         {completed.map((job, i) => {
-          const thumbnail = job.project.scripts[0]?.scenes[0]?.imageUrl ?? null;
+          const fallbackImage =
+            job.project.selectedScript?.scenes[0]?.imageUrl ?? null;
           return (
             <Link
               key={job.id}
@@ -165,24 +171,38 @@ async function CompletedVideosShowcase({ userId }: { userId: string }) {
               className="group relative aspect-[9/16] rounded-2xl overflow-hidden glass card-hover animate-fade-in-up cursor-pointer"
               style={{ animationDelay: `${i * 50}ms` }}
             >
-              {thumbnail ? (
+              {job.finalVideoUrl ? (
+                // eslint-disable-next-line jsx-a11y/media-has-caption
+                <video
+                  src={job.finalVideoUrl}
+                  poster={fallbackImage ?? undefined}
+                  muted
+                  autoPlay
+                  loop
+                  playsInline
+                  preload="metadata"
+                  className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                />
+              ) : fallbackImage ? (
                 /* eslint-disable-next-line @next/next/no-img-element */
                 <img
-                  src={thumbnail}
+                  src={fallbackImage}
                   alt={job.project.productName ?? 'סרטון'}
                   className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
                 />
               ) : (
                 <div className="absolute inset-0 bg-gradient-to-br from-primary/20 to-accent/15" />
               )}
-              <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/20 to-transparent" />
-              <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+              {/* Bottom-only fade so the video stays visible. */}
+              <div className="absolute inset-x-0 bottom-0 h-2/5 bg-gradient-to-t from-black/90 via-black/40 to-transparent pointer-events-none" />
+              {/* Hover: dim the video + show Play button. */}
+              <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/30">
                 <div className="h-12 w-12 rounded-full bg-primary/90 backdrop-blur-md flex items-center justify-center shadow-glow">
                   <Play className="h-5 w-5 text-background ms-0.5" fill="currentColor" />
                 </div>
               </div>
               <div className="absolute inset-x-0 bottom-0 p-3">
-                <div className="text-xs font-bold truncate">
+                <div className="text-xs font-bold truncate drop-shadow-md">
                   {job.project.productName ?? '—'}
                 </div>
                 <div className="text-[10px] text-muted-foreground font-mono mt-0.5">
