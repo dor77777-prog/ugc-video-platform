@@ -194,7 +194,14 @@ class KlingProvider implements VideoGenerationProvider {
   async submitImageToVideo(input: ImageToVideoInput): Promise<SubmitResult> {
     const endpoint =
       process.env.KLING_IMAGE_TO_VIDEO_ENDPOINT ?? DEFAULT_I2V_ENDPOINT;
-    const model = process.env.KLING_IMAGE_TO_VIDEO_MODEL ?? DEFAULT_I2V_MODEL;
+    // V14+ — caller may override the model per-request (used for the
+    // dev compare button that runs kling-v3-omni AND kling-video-o1
+    // side by side on the same scene). Both models live on the
+    // /v1/videos/omni-video endpoint with the same body shape.
+    const model =
+      input.model?.trim() ||
+      process.env.KLING_IMAGE_TO_VIDEO_MODEL ||
+      DEFAULT_I2V_MODEL;
     const omni = isOmniEndpoint(endpoint);
 
     // Resolve all images to URLs/base64. Omni-Video accepts up to 4
@@ -328,7 +335,10 @@ class KlingProvider implements VideoGenerationProvider {
     const submit = await this.submitImageToVideo(input);
     return pollAndDownload(this, submit.providerJobId, {
       durationSeconds: input.durationSeconds,
-      modelUsed: process.env.KLING_IMAGE_TO_VIDEO_MODEL ?? DEFAULT_I2V_MODEL,
+      modelUsed:
+        input.model?.trim() ||
+        process.env.KLING_IMAGE_TO_VIDEO_MODEL ||
+        DEFAULT_I2V_MODEL,
     });
   }
 }

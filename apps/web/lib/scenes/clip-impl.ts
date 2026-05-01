@@ -585,14 +585,28 @@ async function generateSceneClipImplInner(
   // V14+ — provider chosen BEFORE the prompt is rendered so the
   // renderer can emit Kling-flavored short-clause tokens for Kling
   // and cinematic prose for Grok.
-  const DEFAULT_PROVIDER =
-    (process.env.DEFAULT_CLIP_PROVIDER ?? 'grok').toLowerCase() === 'kling'
-      ? 'kling'
-      : 'grok';
-  const userPreferredProvider =
+  //
+  // Three valid provider values today:
+  //   - 'grok'           → grokImagineProvider (xai grok-imagine-video)
+  //   - 'kling-omni-v3'  → klingProvider, model = kling-v3-omni
+  //   - 'kling-video-o1' → klingProvider, model = kling-video-o1
+  // The legacy stored value 'kling' is treated as kling-omni-v3.
+  const DEFAULT_PROVIDER = (() => {
+    const raw = (process.env.DEFAULT_CLIP_PROVIDER ?? 'grok').toLowerCase();
+    if (raw === 'kling-video-o1') return 'kling-video-o1';
+    if (raw === 'kling' || raw === 'kling-omni-v3') return 'kling-omni-v3';
+    return 'grok';
+  })();
+  const userPreferredProviderRaw =
     (scene as { clipProvider?: string | null }).clipProvider ?? null;
+  // Normalize legacy 'kling' → 'kling-omni-v3'.
+  const userPreferredProvider =
+    userPreferredProviderRaw === 'kling' ? 'kling-omni-v3' : userPreferredProviderRaw;
   const effectiveProvider = userPreferredProvider ?? DEFAULT_PROVIDER;
   const useGrok = effectiveProvider === 'grok';
+  // Kling model derived from the 3-way provider value.
+  const klingModelOverride =
+    effectiveProvider === 'kling-video-o1' ? 'kling-video-o1' : 'kling-v3-omni';
   const providerName = useGrok ? 'xai' : 'kling';
   const providerLog = useGrok ? logStage('grok-imagine', sceneId) : klingLog;
 
@@ -646,9 +660,10 @@ async function generateSceneClipImplInner(
   );
   const grokResolution = (process.env.XAI_VIDEO_RESOLUTION ?? '720p').toLowerCase();
   const grokModel = process.env.XAI_VIDEO_MODEL ?? 'grok-imagine-video';
-  const i2vModel = useGrok
-    ? grokModel
-    : process.env.KLING_IMAGE_TO_VIDEO_MODEL ?? 'kling-v3-omni';
+  // V14+ — i2vModel reflects the per-scene Kling-model choice (omni-v3
+  // vs video-o1) when the provider is Kling. Grok still has a single
+  // model (grok-imagine-video).
+  const i2vModel = useGrok ? grokModel : klingModelOverride;
 
   // V26.16 — read the project's aspect ratio off productData so each
   // i2v call uses the user-selected output shape (Kling and Grok both
@@ -719,6 +734,7 @@ async function generateSceneClipImplInner(
         aspectRatio: projectAspectRatio,
         sceneId,
         cfgScale: motionPrompt.cfgScale,
+        model: klingModelOverride,
       });
     }
   } catch (err) {
@@ -1076,7 +1092,10 @@ async function generateSceneClipImplInner(
   // (kling_i2v_clip) — provider-cost differences fall on us, not the
   // user. The user's preference column is overwritten here so the next
   // regen defaults to the same provider unless they flip it.
-  const recordedProvider = useGrok ? 'grok' : 'kling';
+  // V14+ — record the actual 3-way value so the toggle reflects it on
+  // the next regen. Legacy 'kling' was kept for back-compat reads
+  // earlier in the flow; on writes we always use the canonical names.
+  const recordedProvider = useGrok ? 'grok' : klingModelOverride;
   await prisma.$transaction([
     prisma.scene.update({
       where: { id: sceneId },

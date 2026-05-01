@@ -134,6 +134,15 @@ export default async function AdminSceneDebugPage({ params }: PageProps) {
           · scene_id <span className="font-mono">{scene.id}</span> · משתמש{' '}
           <span className="font-mono">{project.user?.email ?? '—'}</span>
         </p>
+        {scene.imageUrl && (
+          <Link
+            href={`/admin/scenes/${scene.id}/compare`}
+            className="inline-flex items-center gap-1 rounded-md bg-blue-600 text-white px-3 py-1.5 text-xs font-medium hover:bg-blue-700"
+            title="הנפש את התמונה ב-3 מנועים במקביל והשווה ביניהם (Kling Omni v3 / Kling video-o1 / Grok)"
+          >
+            🎬 השווה הנפשה ב-3 מנועים →
+          </Link>
+        )}
       </header>
 
       {/* ── Last error ─────────────────────────────────────────────── */}

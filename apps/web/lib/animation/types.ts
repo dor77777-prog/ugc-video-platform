@@ -56,6 +56,15 @@ export interface ImageToVideoInput {
    * adapter ignores it (xAI's video API has no equivalent field).
    */
   cfgScale?: number;
+  /**
+   * V14+ — explicit model override. When omitted, the provider falls
+   * back to its env default (`KLING_IMAGE_TO_VIDEO_MODEL` or
+   * `XAI_VIDEO_MODEL`). The Kling adapter accepts both `kling-v3-omni`
+   * and `kling-video-o1` on the same `/v1/videos/omni-video` endpoint
+   * — they share the request shape but produce different motion
+   * quality / cost profiles.
+   */
+  model?: string;
 }
 
 export interface LipSyncInput {

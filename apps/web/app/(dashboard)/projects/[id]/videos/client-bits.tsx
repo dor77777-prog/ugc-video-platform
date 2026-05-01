@@ -806,6 +806,22 @@ export function SceneClipCard(props: SceneClipCardProps) {
  * the lipsync pipeline is provider-agnostic.
  * ============================================================ */
 
+type ClipEngine = 'grok' | 'kling-omni-v3' | 'kling-video-o1';
+
+const CLIP_ENGINE_LABEL: Record<ClipEngine, string> = {
+  grok: 'Grok Imagine (xAI)',
+  'kling-omni-v3': 'Kling Omni v3',
+  'kling-video-o1': 'Kling video-o1',
+};
+
+function normalizeClipProvider(stored: string | null): ClipEngine {
+  // Legacy 'kling' was written before V14 introduced the 3-way split;
+  // treat it as kling-omni-v3 for back-compat.
+  if (stored === 'kling' || stored === 'kling-omni-v3') return 'kling-omni-v3';
+  if (stored === 'kling-video-o1') return 'kling-video-o1';
+  return 'grok';
+}
+
 function ClipProviderToggle({
   sceneId,
   clipProvider,
@@ -816,19 +832,13 @@ function ClipProviderToggle({
   const router = useRouter();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // V26.14 — default flipped Kling → Grok. clipProvider === null means
-  // "use the default" which is now Grok; only an explicit 'kling'
-  // value keeps Kling selected.
-  const [local, setLocal] = useState<string>(clipProvider === 'kling' ? 'kling' : 'grok');
+  // V14+ — three engines. clipProvider === null defaults to 'grok'.
+  const [local, setLocal] = useState<ClipEngine>(normalizeClipProvider(clipProvider));
   useEffect(() => {
-    setLocal(clipProvider === 'kling' ? 'kling' : 'grok');
+    setLocal(normalizeClipProvider(clipProvider));
   }, [clipProvider]);
 
-  // V26.4 — Grok works on lipsync scenes too. The lipsync pipeline is
-  // provider-agnostic: PixVerse takes a silent video URL regardless of
-  // whether Kling or Grok produced it, and the face-gate inspects
-  // `scene.imageUrl` (not the video) so source doesn't matter.
-  const set = async (value: 'kling' | 'grok') => {
+  const set = async (value: ClipEngine) => {
     if (value === local) return;
     setPending(true);
     setError(null);
@@ -842,42 +852,47 @@ function ClipProviderToggle({
     router.refresh();
   };
 
+  const btnClass = (engine: ClipEngine) =>
+    cn(
+      'flex-1 text-[11px] font-medium rounded px-2 py-1 transition-colors',
+      local === engine
+        ? 'bg-primary text-primary-foreground'
+        : 'bg-muted text-muted-foreground hover:bg-secondary',
+    );
+
   return (
     <div className="rounded-md border border-border bg-card/50 px-2.5 py-2 space-y-1.5">
       <div className="flex items-center justify-between gap-2 text-[11px]">
         <span className="text-muted-foreground">
           מנוע הנפשה:{' '}
-          <span className="font-medium text-foreground">
-            {local === 'grok' ? 'Grok Imagine (xAI)' : 'Kling Omni'}
-          </span>
+          <span className="font-medium text-foreground">{CLIP_ENGINE_LABEL[local]}</span>
         </span>
       </div>
       <div className="flex items-center gap-1.5">
         <button
           type="button"
-          onClick={() => set('kling')}
+          onClick={() => set('kling-omni-v3')}
           disabled={pending}
-          className={cn(
-            'flex-1 text-[11px] font-medium rounded px-2 py-1 transition-colors',
-            local === 'kling'
-              ? 'bg-primary text-primary-foreground'
-              : 'bg-muted text-muted-foreground hover:bg-secondary',
-          )}
-          title="Kling Omni v3 — ספק ברירת מחדל. תומך גם ב-Lipsync (PixVerse)."
+          className={btnClass('kling-omni-v3')}
+          title="Kling Omni v3 — Kling ה-multimodal הקלאסי. תומך ב-Lipsync דרך PixVerse."
         >
-          🎬 Kling
+          🎬 Omni v3
+        </button>
+        <button
+          type="button"
+          onClick={() => set('kling-video-o1')}
+          disabled={pending}
+          className={btnClass('kling-video-o1')}
+          title="Kling video-o1 — דור הבא של Kling על אותו endpoint. פרופיל תנועה שונה."
+        >
+          🆕 video-o1
         </button>
         <button
           type="button"
           onClick={() => set('grok')}
           disabled={pending}
-          className={cn(
-            'flex-1 text-[11px] font-medium rounded px-2 py-1 transition-colors',
-            local === 'grok'
-              ? 'bg-primary text-primary-foreground'
-              : 'bg-muted text-muted-foreground hover:bg-secondary',
-          )}
-          title="Grok Imagine (xAI) — i2v חלופי. סצנת Lipsync? PixVerse עדיין יבצע סנכרון שפתיים על הוידאו של Grok."
+          className={btnClass('grok')}
+          title="Grok Imagine (xAI) — i2v חלופי. סצנת Lipsync? PixVerse יבצע סנכרון שפתיים על הוידאו של Grok."
         >
           ✨ Grok
         </button>

@@ -80,14 +80,22 @@ export async function setSceneRequiresLipSyncAction(
 }
 
 // V26 — per-scene clip provider selection. The user picks which i2v
-// engine animates this specific scene (Kling default, Grok alternative).
-// Persisted on Scene.clipProvider; clip-impl reads it pre-flight to
-// dispatch and overwrites it post-flight with the actual provider used.
+// engine animates this specific scene.
+//
+// V14+ — third option added: kling-video-o1 (next-gen Kling on the
+// same /v1/videos/omni-video endpoint, different motion profile).
+// The legacy value 'kling' is preserved for old data and treated as
+// kling-omni-v3 by the dispatcher in clip-impl.
 //
 // Lipsync scenes can't currently route through Grok — face-gate +
 // PixVerse only run against Kling output. We accept the value either
 // way, but the impl quietly falls back to Kling for lipsync.
-const ALLOWED_CLIP_PROVIDERS = new Set(['kling', 'grok']);
+const ALLOWED_CLIP_PROVIDERS = new Set([
+  'kling',           // legacy alias for kling-omni-v3
+  'kling-omni-v3',
+  'kling-video-o1',
+  'grok',
+]);
 
 export async function setSceneClipProviderAction(
   sceneId: string,
