@@ -26,6 +26,7 @@
 
 import OpenAI from 'openai';
 import { withRetry } from '@/lib/utils/retry';
+import { isOpenAiReasoningModel } from '@/lib/llm/openai-models';
 
 // V27.10.18 — `gpt-5.5-mini` returns 400 model_not_found region-wide;
 // fell back to gpt-5.4-mini which supports the same Responses-API
@@ -257,6 +258,10 @@ export async function analyzeSceneForMotion(
     // input-image `detail` field, so we cast through unknown at the
     // SDK boundary while keeping our payload type-checked above.
     // V26.11 — transparent retry on transient (network/5xx) failures.
+    // V27.10.20 — `reasoning.effort` only on reasoning-family models.
+    // OPENAI_MOTION_VISION_MODEL may point at gpt-4o-mini (env override),
+    // which 400s on the param. Conditionally include.
+    const supportsReasoning = isOpenAiReasoningModel(MODEL);
     const requestPayload = {
       model: MODEL,
       instructions: SYSTEM,
@@ -269,7 +274,7 @@ export async function analyzeSceneForMotion(
           ],
         },
       ],
-      reasoning: { effort: 'low' as const },
+      ...(supportsReasoning ? { reasoning: { effort: 'low' as const } } : {}),
       text: {
         format: {
           type: 'json_schema' as const,

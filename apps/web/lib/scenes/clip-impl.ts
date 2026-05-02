@@ -458,14 +458,14 @@ async function generateSceneClipImplInner(
     });
   } else {
     motionLog.info('calling gpt-4o-mini', {
-      model: process.env.OPENAI_MOTION_VISION_MODEL ?? 'gpt-4o-mini',
+      model: process.env.OPENAI_MOTION_VISION_MODEL ?? 'gpt-5.4-mini',
       isTalkingHead: routing.requiresLipSync,
       sceneType: routing.sceneGenerationType,
     });
     const motionAnalysisCallId = await recordApiCallStart({
       provider: 'openai',
       operation: 'motion_analysis',
-      model: process.env.OPENAI_MOTION_VISION_MODEL ?? 'gpt-4o-mini',
+      model: process.env.OPENAI_MOTION_VISION_MODEL ?? 'gpt-5.4-mini',
       userId,
       projectId,
       sceneId,
@@ -481,13 +481,13 @@ async function generateSceneClipImplInner(
       });
       const durationMs = Date.now() - motionAnalysisStartedAt;
       const motionAttribution = attributeOpenAiTextCost({
-        model: process.env.OPENAI_MOTION_VISION_MODEL ?? 'gpt-4o-mini',
+        model: process.env.OPENAI_MOTION_VISION_MODEL ?? 'gpt-5.4-mini',
         inputTokens: motionAnalysis.usage.inputTokens,
         outputTokens: motionAnalysis.usage.outputTokens,
       });
       await recordApiCallComplete(motionAnalysisCallId, {
         success: true,
-        model: process.env.OPENAI_MOTION_VISION_MODEL ?? 'gpt-4o-mini',
+        model: process.env.OPENAI_MOTION_VISION_MODEL ?? 'gpt-5.4-mini',
         costUsd: motionAttribution.costUsd,
         estimatedCostUsd: motionAttribution.estimatedCostUsd,
         actualCostUsd: motionAttribution.actualCostUsd,
@@ -817,15 +817,22 @@ async function generateSceneClipImplInner(
     | 'unsuitable_base_video'
     | 'face_gate_error'
     | null = null;
+  let pixverseErrorMessage: string | null = null;
 
+  // V27.10.20 — face-gate verdict + error captured here, persisted
+  // to Scene below so admin debug can show WHY a scene didn't get
+  // lipsynced. Pre-V27.10.20 the schema columns existed but were
+  // dead — that's the visibility hole that let the V27.10.16+18
+  // silent-skip bug go unnoticed.
+  let gateResult: import('@/lib/animation/face-gate').FaceGateResult | null = null;
+  let gateThrew = false;
+  let gateErrorMessage: string | null = null;
   if (needsLipSync && scene.voiceUrl) {
     // V7 face-detection gate. Before paying PixVerse for a lipsync,
     // confirm via gpt-4o-mini that the still has a clear front-facing
     // face with a visible mouth. If the gate rejects, we keep the
     // Kling clip + mux audio downstream — no PixVerse call, no
     // PixVerse credits burned.
-    let gateResult: import('@/lib/animation/face-gate').FaceGateResult | null = null;
-    let gateThrew = false;
     try {
       const { runFaceGate } = await import('@/lib/animation/face-gate');
       gateResult = await runFaceGate({ imageUrl: scene.imageUrl! });
@@ -845,8 +852,9 @@ async function generateSceneClipImplInner(
       // (unsuitable_base_video). The user shouldn't see "no face
       // detected" when the truth is the vision API itself errored.
       gateThrew = true;
+      gateErrorMessage = (err as Error).message;
       faceGateLog.warn('failed — skipping lipsync to be safe', {
-        errMsg: (err as Error).message,
+        errMsg: gateErrorMessage,
       });
     }
 
@@ -985,6 +993,8 @@ async function generateSceneClipImplInner(
                 ? 'lipsync_provider_error'
                 : 'public_url_unavailable';
         lipSyncSkipReason = reason as NonNullable<typeof lipSyncSkipReason>;
+        // V27.10.20 — capture PixVerse error so admin debug can show it.
+        pixverseErrorMessage = errMsg;
       }
     }
   } else if (!needsLipSync) {
@@ -1104,6 +1114,24 @@ async function generateSceneClipImplInner(
   // the next regen. Legacy 'kling' was kept for back-compat reads
   // earlier in the flow; on writes we always use the canonical names.
   const recordedProvider = useGrok ? 'grok' : klingModelOverride;
+  // V27.10.20 — face-gate / lipsync persistence. Pre-V27.10.20 the
+  // schema columns existed but were dead, so admin debug couldn't
+  // tell whether lipsync was skipped because no face / face-gate
+  // errored / PixVerse failed. Now we write the verdict every time
+  // lipsync was attempted.
+  const faceGateRan = needsLipSync && scene.voiceUrl != null;
+  const lipSyncStatusValue: string | null = (() => {
+    if (!needsLipSync) return null;
+    if (lipSyncSkipReason == null && lipSyncTaskId != null) return 'completed';
+    const reason: string | null = lipSyncSkipReason;
+    if (reason === 'face_gate_error') return 'skipped_face_gate_error';
+    if (reason === 'unsuitable_base_video') return 'skipped_no_face';
+    if (reason === 'lipsync_timeout') return 'failed_timeout';
+    if (reason === 'lipsync_provider_error') return 'failed_provider_error';
+    if (reason === 'lipsync_config_error') return 'failed_provider_error';
+    if (reason === 'public_url_unavailable') return 'skipped_public_url_unavailable';
+    return null;
+  })();
   await prisma.$transaction([
     prisma.scene.update({
       where: { id: sceneId },
@@ -1127,6 +1155,34 @@ async function generateSceneClipImplInner(
         status: 'clip_ready',
         lastErrorCode: null,
         lastErrorMessage: null,
+        // V27.10.20 — face-gate verdict persisted to the row so admin
+        // debug shows WHY lipsync was (or wasn't) attempted. gateResult
+        // is null when gate didn't run (no needsLipSync) or when gate
+        // threw. gateThrew implies the API failed; gateResult.shouldLipSync
+        // === false implies the model said no.
+        ...(faceGateRan
+          ? {
+              fullFaceDetected: gateResult?.fullFaceDetected ?? false,
+              mouthVisible: gateResult?.mouthVisible ?? false,
+              faceDetectionConfidence: gateResult?.faceDetectionConfidence ?? 0,
+              faceGateImageUrl: scene.imageUrl,
+              faceGateReason:
+                gateThrew && gateErrorMessage
+                  ? `gate_error: ${gateErrorMessage.slice(0, 280)}`
+                  : (gateResult?.reason ?? null),
+            }
+          : {}),
+        ...(lipSyncStatusValue != null
+          ? {
+              lipSyncStatus: lipSyncStatusValue,
+              lipSyncErrorMessage:
+                gateThrew && gateErrorMessage
+                  ? gateErrorMessage.slice(0, 500)
+                  : pixverseErrorMessage
+                    ? pixverseErrorMessage.slice(0, 500)
+                    : null,
+            }
+          : {}),
       },
     }),
     ...buildCreditMutationOps(prisma, {

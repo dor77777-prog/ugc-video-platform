@@ -14,6 +14,7 @@
 
 import OpenAI from 'openai';
 import type { ProductVisualAnalysis } from './types';
+import { isOpenAiReasoningModel } from '@/lib/llm/openai-models';
 
 export class VisualAnalysisConfigError extends Error {
   constructor(message: string) {
@@ -142,11 +143,15 @@ export async function analyzeProductVisual(
     if (secondaryUrl) {
       userContent.push({ type: 'input_image', image_url: secondaryUrl, detail: 'high' });
     }
+    // V27.10.20 — `reasoning.effort` only on reasoning-family models.
+    // OPENAI_PRODUCT_VISION_MODEL may point at gpt-4o-mini (env override),
+    // which 400s on the param. Conditionally include.
+    const supportsReasoning = isOpenAiReasoningModel(model);
     const requestPayload = {
       model,
       instructions: SYSTEM,
       input: [{ role: 'user' as const, content: userContent }],
-      reasoning: { effort: 'low' as const },
+      ...(supportsReasoning ? { reasoning: { effort: 'low' as const } } : {}),
       text: {
         format: {
           type: 'json_schema' as const,

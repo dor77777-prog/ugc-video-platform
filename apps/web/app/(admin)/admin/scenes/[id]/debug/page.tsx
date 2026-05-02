@@ -246,7 +246,10 @@ export default async function AdminSceneDebugPage({ params }: PageProps) {
       </DebugSection>
 
       {/* ── Motion analysis ──────────────────────────────────────── */}
-      <DebugSection title="ניתוח תנועה (gpt-4o-mini)" hidden={!scene.motionAnalysisJson}>
+      <DebugSection
+        title={`ניתוח תנועה (${process.env.OPENAI_MOTION_VISION_MODEL ?? 'gpt-5.4-mini'})`}
+        hidden={!scene.motionAnalysisJson}
+      >
         <PrettyJson value={scene.motionAnalysisJson} />
         {scene.motionAnalysisImageUrl && (
           <p className="mt-2 text-xs text-zinc-500">
@@ -259,6 +262,47 @@ export default async function AdminSceneDebugPage({ params }: PageProps) {
             >
               {scene.motionAnalysisImageUrl}
             </a>
+          </p>
+        )}
+      </DebugSection>
+
+      {/* ── Lipsync state (V27.10.20) ────────────────────────────── */}
+      <DebugSection
+        title={`מצב Lipsync — face-gate (${process.env.OPENAI_FACE_GATE_MODEL ?? 'gpt-5.4-mini'})`}
+        hidden={
+          scene.requiresLipSync == null &&
+          scene.lipSyncStatus == null &&
+          scene.faceGateImageUrl == null
+        }
+      >
+        <KeyValueGrid
+          rows={[
+            ['requiresLipSync', String(scene.requiresLipSync ?? '—')],
+            ['lipSyncStatus', scene.lipSyncStatus ?? '—'],
+            ['lipSyncErrorMessage', scene.lipSyncErrorMessage ?? '—'],
+            ['fullFaceDetected', String(scene.fullFaceDetected ?? '—')],
+            ['mouthVisible', String(scene.mouthVisible ?? '—')],
+            [
+              'faceDetectionConfidence',
+              scene.faceDetectionConfidence != null
+                ? scene.faceDetectionConfidence.toFixed(2)
+                : '—',
+            ],
+            ['faceGateReason', scene.faceGateReason ?? '—'],
+            ['faceGateImageUrl', scene.faceGateImageUrl ?? '—'],
+            ['pixverseVideoId', scene.pixverseVideoId ?? '—'],
+            ['audioHandling', scene.audioHandling ?? '—'],
+          ]}
+        />
+        {scene.lipSyncStatus === 'skipped_face_gate_error' && (
+          <p className="mt-3 rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900">
+            <strong>face-gate נכשל ב-API.</strong> ה-clip חזר עם קול
+            mux'd (לא lipsynced). צילום הסצנה שלם, אבל השפתיים לא
+            מסונכרנות. בדוק שה-env <code>OPENAI_FACE_GATE_MODEL</code> תואם
+            למודל שתומך ב-Responses API + reasoning params (gpt-5.4-mini /
+            gpt-5.4 / o1 / o3) — או שהקוד מוריד את ה-reasoning param אם
+            המודל הוא gpt-4o (V27.10.20). אם הסטטוס הזה חוזר על מודל gpt-5
+            פתוח את <code>lipSyncErrorMessage</code> למעלה.
           </p>
         )}
       </DebugSection>

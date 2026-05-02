@@ -24,6 +24,7 @@
 
 import OpenAI from 'openai';
 import { withRetry } from '@/lib/utils/retry';
+import { isOpenAiReasoningModel } from '@/lib/llm/openai-models';
 
 export type FaceVisibility = 'clear_front_facing' | 'partial_face' | 'profile' | 'no_face';
 
@@ -131,6 +132,12 @@ export async function runFaceGate(input: {
   // V27.10.16 — Responses API. Older OpenAI SDK typings don't yet
   // declare `reasoning` or the new input-image `detail` field, so we
   // cast at the SDK boundary while keeping the payload type-checked.
+  // V27.10.20 — `reasoning.effort` is only accepted by gpt-5.* and
+  // o-series. With OPENAI_FACE_GATE_MODEL=gpt-4o-mini set in prod
+  // (the env override), sending `reasoning` returned HTTP 400 and the
+  // outer catch silently skipped lipsync. Conditionally include the
+  // param only when the model supports it.
+  const supportsReasoning = isOpenAiReasoningModel(model);
   const requestPayload = {
     model,
     instructions: SYSTEM_PROMPT,
@@ -143,11 +150,7 @@ export async function runFaceGate(input: {
         ],
       },
     ],
-    // V27.10.19 — was 'none' for cheapest classification on gpt-5.5-mini.
-    // gpt-5.4-mini may not accept the 'none' value (it's a gpt-5.5
-    // addition); using 'low' for guaranteed compatibility. Cost and
-    // latency difference is negligible at this token volume.
-    reasoning: { effort: 'low' as const },
+    ...(supportsReasoning ? { reasoning: { effort: 'low' as const } } : {}),
     text: {
       format: {
         type: 'json_schema' as const,
