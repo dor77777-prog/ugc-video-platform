@@ -143,7 +143,11 @@ export async function runFaceGate(input: {
         ],
       },
     ],
-    reasoning: { effort: 'none' as const },
+    // V27.10.19 — was 'none' for cheapest classification on gpt-5.5-mini.
+    // gpt-5.4-mini may not accept the 'none' value (it's a gpt-5.5
+    // addition); using 'low' for guaranteed compatibility. Cost and
+    // latency difference is negligible at this token volume.
+    reasoning: { effort: 'low' as const },
     text: {
       format: {
         type: 'json_schema' as const,

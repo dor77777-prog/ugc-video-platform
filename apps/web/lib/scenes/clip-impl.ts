@@ -815,6 +815,7 @@ async function generateSceneClipImplInner(
     | 'lipsync_timeout'
     | 'lipsync_provider_error'
     | 'unsuitable_base_video'
+    | 'face_gate_error'
     | null = null;
 
   if (needsLipSync && scene.voiceUrl) {
@@ -824,6 +825,7 @@ async function generateSceneClipImplInner(
     // Kling clip + mux audio downstream — no PixVerse call, no
     // PixVerse credits burned.
     let gateResult: import('@/lib/animation/face-gate').FaceGateResult | null = null;
+    let gateThrew = false;
     try {
       const { runFaceGate } = await import('@/lib/animation/face-gate');
       gateResult = await runFaceGate({ imageUrl: scene.imageUrl! });
@@ -838,13 +840,19 @@ async function generateSceneClipImplInner(
     } catch (err) {
       // Gate failure is non-fatal — be conservative and SKIP lipsync.
       // Better to ship a non-lipsynced clip than burn PixVerse credits
-      // on an unverified face.
+      // on an unverified face. V27.10.19 — distinguish API failure
+      // (face_gate_error) from "valid call returned shouldLipSync=false"
+      // (unsuitable_base_video). The user shouldn't see "no face
+      // detected" when the truth is the vision API itself errored.
+      gateThrew = true;
       faceGateLog.warn('failed — skipping lipsync to be safe', {
         errMsg: (err as Error).message,
       });
     }
 
-    if (!gateResult || !gateResult.shouldLipSync) {
+    if (gateThrew) {
+      lipSyncSkipReason = 'face_gate_error';
+    } else if (!gateResult || !gateResult.shouldLipSync) {
       lipSyncSkipReason = 'unsuitable_base_video';
     }
   }
