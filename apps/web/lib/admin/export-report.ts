@@ -644,6 +644,273 @@ export function formatProjectDebugReport(
 }
 
 // ─────────────────────────────────────────────────────────────────
+// Scene debug report
+// ─────────────────────────────────────────────────────────────────
+
+export interface SceneExportContext {
+  scene: Scene;
+  script: { id: string; framework: string | null; angle: string; rawJson: unknown };
+  project: { id: string; productName: string | null; productData: unknown };
+  user: { email: string; plan: string };
+  apiCalls: ApiCall[];
+}
+
+export function formatSceneDebugReport(
+  ctx: SceneExportContext,
+  reportCtx: ReportContext,
+): string {
+  const lines: string[] = [];
+  lines.push(buildReportHeader(reportCtx));
+
+  const s = ctx.scene;
+
+  // ── Summary ────────────────────────────────────────────────────
+  lines.push('## Scene Summary');
+  lines.push('');
+  lines.push(`- **id:** \`${s.id}\``);
+  lines.push(`- **scriptId:** \`${s.scriptId}\``);
+  lines.push(`- **sceneOrder:** ${s.sceneOrder}`);
+  lines.push(`- **status:** ${s.status}`);
+  lines.push(`- **sceneType (legacy):** ${s.sceneType}`);
+  lines.push(`- **sceneGenerationType:** ${s.sceneGenerationType ?? '(unset)'}`);
+  lines.push(`- **sceneGoal:** ${s.sceneGoal ?? '(unset)'}`);
+  lines.push(`- **faceVisibility:** ${s.faceVisibility ?? '(unset)'}`);
+  lines.push(`- **requiresLipSync:** ${s.requiresLipSync ?? '(null)'}`);
+  lines.push(`- **primarySubject:** ${s.primarySubject ?? '(unset)'}`);
+  lines.push(`- **mustShowProduct:** ${s.mustShowProduct ?? '(null)'}`);
+  lines.push(`- **productVisibilityPriority:** ${s.productVisibilityPriority ?? '(unset)'}`);
+  lines.push(`- **cameraFocus:** ${s.cameraFocus ?? '(unset)'}`);
+  lines.push(`- **showFace:** ${s.showFace ?? '(null)'}`);
+  lines.push(`- **needsManualReview:** ${s.needsManualReview}`);
+  lines.push(`- **lastErrorCode:** ${s.lastErrorCode ?? '(none)'}`);
+  if (s.lastErrorMessage) {
+    lines.push(`- **lastErrorMessage:**`);
+    lines.push('  ```');
+    lines.push(`  ${s.lastErrorMessage}`);
+    lines.push('  ```');
+  }
+  lines.push('');
+
+  // Project context
+  lines.push('## Project Context');
+  lines.push('');
+  lines.push(`- **projectId:** \`${ctx.project.id}\``);
+  lines.push(`- **productName:** ${ctx.project.productName ?? '(none)'}`);
+  lines.push(`- **owner email:** ${ctx.user.email}`);
+  lines.push(`- **scriptId:** \`${ctx.script.id}\``);
+  lines.push(`- **framework:** ${ctx.script.framework ?? '(none)'}`);
+  lines.push('');
+
+  // Spoken text
+  lines.push('## Spoken Text');
+  lines.push('');
+  lines.push(`- **textHebrew (display):** ${s.textHebrew}`);
+  lines.push(`- **textHebrewTts (cleaned for TTS):** ${s.textHebrewTts ?? '(same as textHebrew)'}`);
+  lines.push(`- **onScreenCaptionHebrew:** ${s.onScreenCaptionHebrew ?? '(none)'}`);
+  lines.push('');
+
+  // Image
+  lines.push('## Image Generation');
+  lines.push('');
+  lines.push(`- **imageUrl:** ${s.imageUrl ?? '(not generated)'}`);
+  lines.push(`- **imageProvider:** ${s.imageProvider ?? '(unset)'}`);
+  lines.push(`- **imageGenerationCount:** ${s.imageGenerationCount}`);
+  lines.push(`- **imageRegenAttempts:** ${s.imageRegenAttempts}`);
+  lines.push(`- **imageGeneratedAt:** ${s.imageGeneratedAt?.toISOString() ?? '—'}`);
+  lines.push(`- **imageInFlightAt:** ${s.imageInFlightAt?.toISOString() ?? '—'}`);
+  lines.push('');
+
+  // Image brief
+  if (s.imageBriefJson) {
+    lines.push('### Image Brief (V11 deterministic)');
+    lines.push('');
+    lines.push('Built by `apps/web/lib/image-briefs/image-brief-builder.ts → buildImageBrief`. The full prompt sent to gpt-image-2 lives in `imagePromptUsed` below; this is the structured brief that produced it.');
+    lines.push('');
+    lines.push('```json');
+    lines.push(JSON.stringify(s.imageBriefJson, null, 2));
+    lines.push('```');
+    lines.push('');
+  }
+
+  // Image prompt used
+  if (s.imagePromptUsed) {
+    lines.push('### Final Image Prompt');
+    lines.push('');
+    lines.push('Exact text sent to gpt-image-2 (after wrapper layers: ASPECT_OPENER + SINGLE_FRAME_RULE + IDENTITY_LOCK + PRODUCT_REFERENCE_LOCK + ISRAELI_REALISM_BOILERPLATE + REALISM_CHECK + brief.finalImagePrompt).');
+    lines.push('');
+    lines.push('```');
+    lines.push(s.imagePromptUsed);
+    lines.push('```');
+    lines.push('');
+  }
+
+  // Voice
+  lines.push('## Voice Generation (ElevenLabs)');
+  lines.push('');
+  lines.push(`- **voiceUrl:** ${s.voiceUrl ?? '(not generated)'}`);
+  lines.push(`- **voiceProvider:** ${s.voiceProvider ?? '(unset)'}`);
+  lines.push(`- **voiceDurationSeconds:** ${s.voiceDurationSeconds ?? '—'}`);
+  lines.push(`- **voiceGenerationCount:** ${s.voiceGenerationCount}`);
+  lines.push(`- **voiceGeneratedAt:** ${s.voiceGeneratedAt?.toISOString() ?? '—'}`);
+  lines.push(`- **voiceInFlightAt:** ${s.voiceInFlightAt?.toISOString() ?? '—'}`);
+  lines.push('');
+
+  // Captions
+  if (s.wordTimingsJson || s.captionChunksJson) {
+    lines.push('## Captions + Word Timings');
+    lines.push('');
+    lines.push(`- **captionsGeneratedAt:** ${s.captionsGeneratedAt?.toISOString() ?? '—'}`);
+    if (Array.isArray(s.wordTimingsJson)) {
+      lines.push(`- **wordTimings count:** ${s.wordTimingsJson.length}`);
+    }
+    if (Array.isArray(s.captionChunksJson)) {
+      lines.push(`- **captionChunks count:** ${s.captionChunksJson.length}`);
+    }
+    lines.push('');
+    if (s.captionChunksJson) {
+      lines.push('### captionChunksJson');
+      lines.push('');
+      lines.push('```json');
+      lines.push(JSON.stringify(s.captionChunksJson, null, 2));
+      lines.push('```');
+      lines.push('');
+    }
+    if (s.wordTimingsJson) {
+      lines.push('### wordTimingsJson');
+      lines.push('');
+      lines.push('```json');
+      lines.push(JSON.stringify(s.wordTimingsJson, null, 2));
+      lines.push('```');
+      lines.push('');
+    }
+  }
+
+  // Clip
+  lines.push('## Clip Generation (Kling i2v + PixVerse LipSync)');
+  lines.push('');
+  lines.push(`- **clipUrl:** ${s.clipUrl ?? '(not generated)'}`);
+  lines.push(`- **clipProvider:** ${s.clipProvider ?? '(unset)'}`);
+  lines.push(`- **clipDurationSeconds:** ${s.clipDurationSeconds ?? '—'}`);
+  lines.push(`- **clipGenerationCount:** ${s.clipGenerationCount}`);
+  lines.push(`- **clipGeneratedAt:** ${s.clipGeneratedAt?.toISOString() ?? '—'}`);
+  lines.push(`- **clipInFlightAt:** ${s.clipInFlightAt?.toISOString() ?? '—'}`);
+  lines.push(`- **audioHandling:** ${s.audioHandling ?? '—'}`);
+  lines.push('');
+  lines.push('### Kling i2v cache');
+  lines.push('');
+  lines.push(`- **clipMotionTaskId:** ${s.clipMotionTaskId ?? '—'}`);
+  lines.push(`- **clipMotionImageUrl:** ${s.clipMotionImageUrl ?? '—'}`);
+  lines.push(
+    `- **cache fresh?** ${
+      s.imageUrl && s.clipMotionImageUrl
+        ? s.imageUrl === s.clipMotionImageUrl
+          ? '✅ yes (matches scene.imageUrl)'
+          : '⚠ no (will re-run i2v on next regen)'
+        : '— no cache yet —'
+    }`,
+  );
+  lines.push(`- **clipMotionGeneratedAt:** ${s.clipMotionGeneratedAt?.toISOString() ?? '—'}`);
+  lines.push('');
+  lines.push('### PixVerse LipSync (V7+ face-gate verdict)');
+  lines.push('');
+  lines.push(`- **fullFaceDetected:** ${s.fullFaceDetected ?? '—'}`);
+  lines.push(`- **mouthVisible:** ${s.mouthVisible ?? '—'}`);
+  lines.push(`- **faceDetectionConfidence:** ${s.faceDetectionConfidence ?? '—'}`);
+  lines.push(`- **faceGateImageUrl:** ${s.faceGateImageUrl ?? '—'}`);
+  lines.push(`- **faceGateReason:** ${s.faceGateReason ?? '—'}`);
+  lines.push(`- **lipSyncStatus:** ${s.lipSyncStatus ?? '—'}`);
+  lines.push(`- **lipSyncErrorMessage:** ${s.lipSyncErrorMessage ?? '—'}`);
+  lines.push(`- **pixverseVideoMediaId:** ${s.pixverseVideoMediaId ?? '—'}`);
+  lines.push(`- **pixverseAudioMediaId:** ${s.pixverseAudioMediaId ?? '—'}`);
+  lines.push(`- **pixverseVideoId:** ${s.pixverseVideoId ?? '—'}`);
+  lines.push('');
+
+  // Motion analysis
+  if (s.motionAnalysisJson) {
+    lines.push('## Motion Analysis (gpt-4o-mini vision)');
+    lines.push('');
+    lines.push(`- **motionAnalysisAt:** ${s.motionAnalysisAt?.toISOString() ?? '—'}`);
+    lines.push(`- **motionAnalysisImageUrl (cache key):** ${s.motionAnalysisImageUrl ?? '—'}`);
+    lines.push('');
+    lines.push('```json');
+    lines.push(JSON.stringify(s.motionAnalysisJson, null, 2));
+    lines.push('```');
+    lines.push('');
+  }
+
+  // Generation log buffer
+  if (Array.isArray(s.generationLogJson) && (s.generationLogJson as unknown[]).length > 0) {
+    lines.push('## Generation Log Buffer');
+    lines.push('');
+    lines.push('Per-scene structured log (V13 PR6). Capped at 200 entries. Format: { stage, level, message, data?, ts }.');
+    lines.push('');
+    lines.push('```json');
+    lines.push(JSON.stringify(s.generationLogJson, null, 2));
+    lines.push('```');
+    lines.push('');
+  }
+
+  // ApiCalls table
+  lines.push(`## API Calls scoped to this Scene (${ctx.apiCalls.length})`);
+  lines.push('');
+  if (ctx.apiCalls.length === 0) {
+    lines.push('_No ApiCalls with sceneId=this scene._');
+  } else {
+    lines.push(
+      '| When | Provider | Operation | Status | Model | Tokens (in/out) | Cost | Duration | id |',
+    );
+    lines.push('|---|---|---|---|---|---|---|---|---|');
+    for (const c of ctx.apiCalls) {
+      const tok =
+        c.inputTokens != null && c.outputTokens != null
+          ? `${c.inputTokens.toLocaleString()} / ${c.outputTokens.toLocaleString()}`
+          : '—';
+      lines.push(
+        `| ${c.createdAt.toISOString()} | ${c.provider} | ${c.operation} | ${c.status} | ${c.model ?? '—'} | ${tok} | ${fmtUSD(c.costUsd)} | ${c.durationMs != null ? `${c.durationMs}ms` : '—'} | \`${c.id}\` |`,
+      );
+    }
+    lines.push('');
+  }
+
+  // Failed ApiCalls with full metadata
+  const failed = ctx.apiCalls.filter((c) => c.status === 'failed');
+  if (failed.length > 0) {
+    lines.push(`### ⚠ Failed Calls — Full Metadata (${failed.length})`);
+    lines.push('');
+    for (const c of failed) {
+      lines.push(`#### \`${c.id}\` — ${c.provider}/${c.operation}`);
+      lines.push('');
+      lines.push(`- **createdAt:** ${c.createdAt.toISOString()}`);
+      lines.push(`- **completedAt:** ${c.completedAt?.toISOString() ?? '—'}`);
+      lines.push(`- **durationMs:** ${c.durationMs ?? '—'}`);
+      if (c.errorMessage) {
+        lines.push('- **errorMessage:**');
+        lines.push('');
+        lines.push('```');
+        lines.push(c.errorMessage);
+        lines.push('```');
+      }
+      if (c.metadata != null) {
+        lines.push('- **metadata:**');
+        lines.push('');
+        lines.push('```json');
+        lines.push(JSON.stringify(c.metadata, null, 2));
+        lines.push('```');
+      }
+      lines.push('');
+    }
+  }
+
+  // Footer
+  lines.push('---');
+  lines.push('');
+  lines.push(`Report generated by tachles admin debugger at ${reportCtx.generatedAt.toISOString()}.`);
+  lines.push('');
+
+  return lines.join('\n');
+}
+
+// ─────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────
 
