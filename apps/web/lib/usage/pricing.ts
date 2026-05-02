@@ -17,6 +17,11 @@ import {
 
 // OpenAI text models — $/1M tokens. (As of 2026-04 pricing page.)
 const OPENAI_TEXT_PRICING: Record<string, { input: number; output: number }> = {
+  // V27.10.16 — gpt-5.5 family. Adjust if/when official pricing
+  // updates land; treat as the new default for unknown ids.
+  'gpt-5.5': { input: 2.5, output: 10 },
+  'gpt-5.5-mini': { input: 0.5, output: 2 },
+  'gpt-5.5-nano': { input: 0.15, output: 0.6 },
   // gpt-5.4 family — only mini's exact prices are confirmed in the screenshot.
   'gpt-5.4-mini': { input: 0.75, output: 4.5 },
   'gpt-5.4': { input: 2.5, output: 10 },
@@ -25,13 +30,16 @@ const OPENAI_TEXT_PRICING: Record<string, { input: number; output: number }> = {
   // Older models still around for fallback.
   'gpt-4o': { input: 2.5, output: 10 },
   'gpt-4o-mini': { input: 0.15, output: 0.6 },
-  // Vision pricing matches the regular text rates (gpt-4o-mini does
-  // image inputs at the same per-token rate as text).
+  // Vision pricing matches the regular text rates (gpt-5.5-mini does
+  // image inputs at the same per-token rate as text, with the patch
+  // multiplier baked into the input-token count by the API).
 };
 
 export function priceOpenAiText(model: string, inputTokens: number, outputTokens: number): number {
   const base = stripVersionSuffix(model);
-  const p = OPENAI_TEXT_PRICING[base] ?? OPENAI_TEXT_PRICING['gpt-5.4-mini']!;
+  // V27.10.16 — fallback updated to the new default (gpt-5.5-mini) so
+  // unknown future id variants don't over-bill at gpt-5.4-mini's rate.
+  const p = OPENAI_TEXT_PRICING[base] ?? OPENAI_TEXT_PRICING['gpt-5.5-mini']!;
   return (inputTokens * p.input + outputTokens * p.output) / 1_000_000;
 }
 

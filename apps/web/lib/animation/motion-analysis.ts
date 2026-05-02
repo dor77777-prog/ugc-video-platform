@@ -1,5 +1,5 @@
 // Vision-grounded motion analysis. Before sending an image to Kling/Grok
-// i2v, we ask gpt-4o-mini to LOOK at the actual generated frame AND
+// i2v, we ask gpt-5.5-mini to LOOK at the actual generated frame AND
 // read the surrounding script, then describe what should plausibly move
 // and how that motion should serve the narrative.
 //
@@ -10,11 +10,24 @@
 // Output is structured (JSON schema, strict mode). The fields are
 // shaped so downstream renderers can compose Kling-flavored or
 // Grok-flavored prompts without re-parsing free text.
+//
+// V27.10.16 — migrated gpt-4o-mini → gpt-5.5-mini per the OpenAI
+// migration guide. Three concrete wins for this workload:
+//   1. gpt-5.5 image inputs preserve up to 2048px (`detail: 'high'`)
+//      vs gpt-4o-mini's resize-down — pixel detail directly drives
+//      the accuracy of contactAnchors / framingRisks / primaryAction.
+//   2. Stronger instruction following on the two-master constraint
+//      (pixels + narrative). The `reasoning.effort: 'low'` setting
+//      gives the model just enough headroom for the multi-master
+//      reasoning without burning tokens on overthinking.
+//   3. Responses API (vs Chat Completions) plays nicer with reasoning
+//      models and the structured-output strict mode. Same JSON shape
+//      consumed downstream, no contract change for callers.
 
 import OpenAI from 'openai';
 import { withRetry } from '@/lib/utils/retry';
 
-const MODEL = process.env.OPENAI_MOTION_VISION_MODEL ?? 'gpt-4o-mini';
+const MODEL = process.env.OPENAI_MOTION_VISION_MODEL ?? 'gpt-5.5-mini';
 const REQUEST_TIMEOUT_MS = 30_000;
 
 export class MotionAnalysisConfigError extends Error {
@@ -236,36 +249,51 @@ export async function analyzeSceneForMotion(
   const t = setTimeout(() => ac.abort(), REQUEST_TIMEOUT_MS);
   let resp;
   try {
+    // V27.10.16 — Responses API + reasoning.effort: 'low' + detail: 'high'.
+    // Older OpenAI SDK typings don't yet declare `reasoning` or the new
+    // input-image `detail` field, so we cast through unknown at the
+    // SDK boundary while keeping our payload type-checked above.
     // V26.11 — transparent retry on transient (network/5xx) failures.
+    const requestPayload = {
+      model: MODEL,
+      instructions: SYSTEM,
+      input: [
+        {
+          role: 'user' as const,
+          content: [
+            { type: 'input_text' as const, text: userText },
+            { type: 'input_image' as const, image_url: imageContent.url, detail: 'high' as const },
+          ],
+        },
+      ],
+      reasoning: { effort: 'low' as const },
+      text: {
+        format: {
+          type: 'json_schema' as const,
+          name: 'motion_analysis',
+          strict: true,
+          schema: SCHEMA as unknown as Record<string, unknown>,
+        },
+      },
+    };
+    const responsesApi = client.responses as unknown as {
+      create: (
+        args: typeof requestPayload,
+        opts?: { signal?: AbortSignal },
+      ) => Promise<{
+        output_text: string;
+        usage?: { input_tokens?: number; output_tokens?: number };
+      }>;
+    };
     resp = await withRetry(
-      () =>
-        client.chat.completions.create(
-          {
-            model: MODEL,
-            messages: [
-              { role: 'system', content: SYSTEM },
-              {
-                role: 'user',
-                content: [
-                  { type: 'text', text: userText },
-                  imageContent,
-                ],
-              },
-            ],
-            response_format: {
-              type: 'json_schema',
-              json_schema: { name: 'motion_analysis', strict: true, schema: SCHEMA },
-            },
-          },
-          { signal: ac.signal },
-        ),
+      () => responsesApi.create(requestPayload, { signal: ac.signal }),
       { label: 'openai.motion_analysis', earlyFailWindowMs: 15_000 },
     );
   } finally {
     clearTimeout(t);
   }
 
-  const raw = resp.choices?.[0]?.message?.content ?? '';
+  const raw = resp.output_text ?? '';
   let parsed: Omit<MotionAnalysis, 'usage'>;
   try {
     parsed = JSON.parse(raw) as Omit<MotionAnalysis, 'usage'>;
@@ -276,8 +304,8 @@ export async function analyzeSceneForMotion(
   return {
     ...parsed,
     usage: {
-      inputTokens: resp.usage?.prompt_tokens ?? 0,
-      outputTokens: resp.usage?.completion_tokens ?? 0,
+      inputTokens: resp.usage?.input_tokens ?? 0,
+      outputTokens: resp.usage?.output_tokens ?? 0,
     },
   };
 }
@@ -315,16 +343,18 @@ export function renderMotionAnalysisToPrompt(a: MotionAnalysis): string {
 
 /* ---------- helpers ---------- */
 
-interface ImageContentPart {
-  type: 'image_url';
-  image_url: { url: string };
+interface ImageContent {
+  /** data: or https: URL ready to feed Responses API as `image_url`. */
+  url: string;
 }
 
-async function imageToContent(imageUrl: string): Promise<ImageContentPart> {
+async function imageToContent(imageUrl: string): Promise<ImageContent> {
   // V12.1 — read-public-asset handles both disk + HTTP fallback so
   // Vercel (where public/ is excluded from the function bundle)
   // doesn't ENOENT on /avatars/*.png.
+  // V27.10.16 — Responses API takes `image_url` as a plain string, not
+  // the nested `{ url }` shape Chat Completions expected.
   const { readPublicAssetAsDataUrl } = await import('@/lib/storage/read-public-asset');
   const dataUrl = await readPublicAssetAsDataUrl(imageUrl);
-  return { type: 'image_url', image_url: { url: dataUrl } };
+  return { url: dataUrl };
 }

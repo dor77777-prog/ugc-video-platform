@@ -113,40 +113,56 @@ export async function runFaceGate(input: {
   }
 
   const openai = new OpenAI({ apiKey });
-  const model = process.env.OPENAI_FACE_GATE_MODEL ?? 'gpt-4o-mini';
+  // V27.10.16 — gpt-5.5-mini default. Face-gate is a binary
+  // classification (face suitable for lip-sync? yes/no), so we run it
+  // with `reasoning.effort: 'none'` per the OpenAI migration guide's
+  // explicit recommendation for classification tasks. `detail: 'low'`
+  // because a 512x512 view is more than enough to detect a face — no
+  // need to spend tokens on full pixel fidelity here.
+  const model = process.env.OPENAI_FACE_GATE_MODEL ?? 'gpt-5.5-mini';
 
   // Resolve local /uploads/... URLs to a data URL so the OpenAI API
   // can see them without a public host.
   const imageContent = await resolveImageForOpenAI(input.imageUrl);
 
   // V26.11 — transparent retry on transient (network/5xx) failures.
-  const response = await withRetry(
-    () =>
-      openai.chat.completions.create({
-        model,
-        messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
-          {
-            role: 'user',
-            content: [
-              { type: 'text', text: USER_PROMPT },
-              { type: 'image_url', image_url: { url: imageContent } },
-            ],
-          },
+  // V27.10.16 — Responses API. Older OpenAI SDK typings don't yet
+  // declare `reasoning` or the new input-image `detail` field, so we
+  // cast at the SDK boundary while keeping the payload type-checked.
+  const requestPayload = {
+    model,
+    instructions: SYSTEM_PROMPT,
+    input: [
+      {
+        role: 'user' as const,
+        content: [
+          { type: 'input_text' as const, text: USER_PROMPT },
+          { type: 'input_image' as const, image_url: imageContent, detail: 'low' as const },
         ],
-        response_format: {
-          type: 'json_schema',
-          json_schema: {
-            name: 'face_gate',
-            strict: true,
-            schema: FACE_GATE_SCHEMA as unknown as Record<string, unknown>,
-          },
-        },
-      }),
+      },
+    ],
+    reasoning: { effort: 'none' as const },
+    text: {
+      format: {
+        type: 'json_schema' as const,
+        name: 'face_gate',
+        strict: true,
+        schema: FACE_GATE_SCHEMA as unknown as Record<string, unknown>,
+      },
+    },
+  };
+  const responsesApi = openai.responses as unknown as {
+    create: (args: typeof requestPayload) => Promise<{
+      output_text: string;
+      usage?: { input_tokens?: number; output_tokens?: number };
+    }>;
+  };
+  const response = await withRetry(
+    () => responsesApi.create(requestPayload),
     { label: 'openai.face_gate', earlyFailWindowMs: 15_000 },
   );
 
-  const content = response.choices[0]?.message?.content;
+  const content = response.output_text;
   if (!content) {
     throw new Error('face-gate: empty model response');
   }
@@ -170,8 +186,8 @@ export async function runFaceGate(input: {
     reason: typeof parsed.reason === 'string' ? (parsed.reason as string) : '',
     rawJson: parsed,
     usage: {
-      inputTokens: response.usage?.prompt_tokens ?? 0,
-      outputTokens: response.usage?.completion_tokens ?? 0,
+      inputTokens: response.usage?.input_tokens ?? 0,
+      outputTokens: response.usage?.output_tokens ?? 0,
     },
   };
 }

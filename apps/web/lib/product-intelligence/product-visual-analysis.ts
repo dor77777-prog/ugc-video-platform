@@ -101,11 +101,17 @@ export async function analyzeProductVisual(
   if (!apiKey) throw new VisualAnalysisConfigError('OPENAI_API_KEY not set');
 
   const client = new OpenAI({ apiKey });
-  const model = process.env.OPENAI_PRODUCT_VISION_MODEL ?? 'gpt-4o-mini';
+  // V27.10.16 — gpt-5.5-mini per the OpenAI migration guide. The
+  // dossier is the foundation of every image brief downstream, so
+  // pixel detail matters: detail: 'high' keeps the product image up
+  // to 2048px (not aggressively resized), and reasoning.effort 'low'
+  // gives the model headroom for the multi-field structured analysis
+  // without burning extra tokens.
+  const model = process.env.OPENAI_PRODUCT_VISION_MODEL ?? 'gpt-5.5-mini';
 
-  const heroPart = await imageToContent(input.imageUrl);
-  const secondaryPart = input.secondaryImageUrl
-    ? await imageToContent(input.secondaryImageUrl).catch(() => null)
+  const heroUrl = await imageToDataUrl(input.imageUrl);
+  const secondaryUrl = input.secondaryImageUrl
+    ? await imageToDataUrl(input.secondaryImageUrl).catch(() => null)
     : null;
 
   const userText = [
@@ -125,32 +131,44 @@ export async function analyzeProductVisual(
   const t = setTimeout(() => ac.abort(), REQUEST_TIMEOUT_MS);
   let resp;
   try {
-    resp = await client.chat.completions.create(
-      {
-        model,
-        messages: [
-          { role: 'system', content: SYSTEM },
-          {
-            role: 'user',
-            content: [
-              { type: 'text', text: userText },
-              heroPart,
-              ...(secondaryPart ? [secondaryPart] : []),
-            ],
-          },
-        ],
-        response_format: {
-          type: 'json_schema',
-          json_schema: { name: 'product_visual_analysis', strict: true, schema: SCHEMA },
+    // V27.10.16 — Responses API. SDK type cast at the boundary because
+    // older typings lack `reasoning` and `detail`.
+    const userContent: Array<Record<string, unknown>> = [
+      { type: 'input_text', text: userText },
+      { type: 'input_image', image_url: heroUrl, detail: 'high' },
+    ];
+    if (secondaryUrl) {
+      userContent.push({ type: 'input_image', image_url: secondaryUrl, detail: 'high' });
+    }
+    const requestPayload = {
+      model,
+      instructions: SYSTEM,
+      input: [{ role: 'user' as const, content: userContent }],
+      reasoning: { effort: 'low' as const },
+      text: {
+        format: {
+          type: 'json_schema' as const,
+          name: 'product_visual_analysis',
+          strict: true,
+          schema: SCHEMA as unknown as Record<string, unknown>,
         },
       },
-      { signal: ac.signal },
-    );
+    };
+    const responsesApi = client.responses as unknown as {
+      create: (
+        args: typeof requestPayload,
+        opts?: { signal?: AbortSignal },
+      ) => Promise<{
+        output_text: string;
+        usage?: { input_tokens?: number; output_tokens?: number };
+      }>;
+    };
+    resp = await responsesApi.create(requestPayload, { signal: ac.signal });
   } finally {
     clearTimeout(t);
   }
 
-  const raw = resp.choices?.[0]?.message?.content ?? '';
+  const raw = resp.output_text ?? '';
   let parsed: ProductVisualAnalysis;
   try {
     parsed = JSON.parse(raw) as ProductVisualAnalysis;
@@ -161,20 +179,16 @@ export async function analyzeProductVisual(
   return {
     analysis: parsed,
     usage: {
-      inputTokens: resp.usage?.prompt_tokens ?? 0,
-      outputTokens: resp.usage?.completion_tokens ?? 0,
+      inputTokens: resp.usage?.input_tokens ?? 0,
+      outputTokens: resp.usage?.output_tokens ?? 0,
     },
     model,
   };
 }
 
-interface ImageContentPart {
-  type: 'image_url';
-  image_url: { url: string };
-}
-
-async function imageToContent(imageUrl: string): Promise<ImageContentPart> {
+async function imageToDataUrl(imageUrl: string): Promise<string> {
+  // V27.10.16 — Responses API takes `image_url` as a plain string,
+  // not the nested `{ url }` shape Chat Completions used.
   const { readPublicAssetAsDataUrl } = await import('@/lib/storage/read-public-asset');
-  const dataUrl = await readPublicAssetAsDataUrl(imageUrl);
-  return { type: 'image_url', image_url: { url: dataUrl } };
+  return readPublicAssetAsDataUrl(imageUrl);
 }
