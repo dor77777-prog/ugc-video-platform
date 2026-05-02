@@ -51,8 +51,11 @@ apps/web/public/uploads/
 
 # Eval run outputs (kept locally for diff'ing against baselines, not tracked).
 # Baselines themselves (.planning/eval/baselines/) ARE tracked so they can
-# anchor sub-task gates across machines.
-.planning/eval/runs/
+# anchor sub-task gates across machines. The runs/ dir contains *.json
+# outputs (gitignored) AND human-authored *.md files like issues.md
+# (tracked) — the negation pattern below restores .md files.
+.planning/eval/runs/*.json
+!.planning/eval/runs/*.md
 
 # V26.15 — internal pipeline / business / architecture docs.
 # These contain implementation details (provider names, model ids,

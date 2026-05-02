@@ -343,6 +343,9 @@ casual_markers_per_scene >= 1.0  AND  register_authenticity_score >= baseline.re
 
 ALSO regression guard: `big_idea_diversity` MUST NOT regress > 0.05 below the value captured at end of Sub-task 3.
 
+> **⚠ Interpretation rule** (added 2026-05-03 after Sub-task 2 baseline review):
+> `register_authenticity_score` is a **secondary signal**; `casual_markers_per_scene >= 1.0` is the **binding gate**. The Sonnet judge anchors on Hebrew correctness ("not translation Hebrew") more than on casual-register-marker presence specifically — at baseline it gave 7.67/10 even with 86% zero-marker scenes. If `casual_markers_per_scene >= 1.0` passes but `register_authenticity_score` fails its delta, INVESTIGATE the judge anchors before declaring regression — don't fail the sub-task on the secondary signal alone. See the same caveat documented in `apps/web/scripts/eval/metrics/register-authenticity.ts` so future eval consumers don't mis-read a register dip as a real quality drop.
+
 **Verification commands:**
 
 ```bash
@@ -485,23 +488,120 @@ npm run dev:web  # plus dev:worker if needed
 
 ---
 
-## Sub-task 6 — Framework Validators (CONDITIONAL placeholder)
+## Sub-task 6 — Framework Validators
 
-**Status:** **Expanded only if Sub-task 2 baseline shows `framework_signal_match < 0.80`.**
+**Status: REQUIRED.** Triggered by Sub-task 2 baseline `framework_signal_match = 0.778 < 0.80`. Spec expanded 2026-05-03.
 
-If skipped, this section stays as a placeholder. If green-lit, expand it before Sub-task 5 ships (in parallel) using the structure from Sub-tasks 3-4 (Scope / DoD / Verification / Commit / Rollback).
+**Requirements:** FW-01, FW-02, FW-03, FW-04
 
-Anchor sketch (do not implement until baseline data confirms need):
+**Why this sub-task is necessary (baseline evidence):**
+- concept_interactive baseline = 0.778 (78% of expanded scripts identifiable from spoken text alone)
+- legacy_full_batch baseline = 0.574 (concept-mode is already +0.20 better, but neither hits the 0.80 bar)
+- Translation: 22% of scripts read so generically that a Sonnet judge can't tell which framework they were "supposed" to be. The framework label becomes decorative — the LLM picks a framework slug but the actual narrative arc doesn't reflect it.
 
-- **FW-01:** define structural signature for each of 6 frameworks. Examples:
-  - `skeptical_testimonial`: scene 0 must contain a "doubt" beat (regex on Hebrew negation patterns + specific lexicon); last scene must contain a "vindication" beat.
-  - `problem_agitation_solution`: scene 0 = pain, scene 1-2 = agitation, last = solution.
-  - (etc. for the other 4 frameworks)
-- **FW-02:** validator runs after expand; failing scripts dropped from the 3-pick.
-- **FW-03:** if FW-02 alone doesn't reach the 0.80 gate, split the system prompt per-framework (reduces prompt entropy per call; each framework only sees its own rules).
-- **FW-04 (gate):** `framework_signal_match >= 0.80`.
+**Scope:**
 
-**Commit (when shipped):** `feat(script-engine): per-framework validators (sub-task 6, gate 0.80)` → tag SHA in STATE.md.
+```
+apps/web/lib/llm/framework-validators/         # NEW directory
+├── index.ts                                    # public API + dispatcher
+├── types.ts                                    # FrameworkValidator + FrameworkValidationResult
+├── problem-agitation-solution.ts              # 1 of 6 framework signature checkers
+├── skeptical-testimonial.ts
+├── demonstration-proof.ts
+├── price-alternative-anchor.ts
+├── relatable-israeli-moment.ts
+└── fast-direct-response.ts
+
+apps/web/lib/llm/concept-engine.ts
+  → after expand* completes, run validateExpandedScript(script, framework)
+  → on fail: see DECISION POLICY below
+
+packages/shared/src/register/markers.ts        # already extracted in Sub-task 4
+  → no change here; framework-validators reuse the casual-markers regex helper
+    via packages/shared if it needs Hebrew lexicon checks (e.g. doubt-words for
+    skeptical_testimonial). Cross-package dependency is one-way and shallow.
+
+apps/web/scripts/eval/anchors/framework-signatures.ts
+  → expanded from the V28.0.ST1 stub. Still does NOT replace the Sonnet judge —
+    the judge stays as the eval metric. Validators are PRODUCTION-SIDE; the
+    eval keeps measuring the same closed-set classification problem.
+
+apps/web/scripts/test-framework-validators.ts  # NEW — assertion test suite
+```
+
+### Structural signature spec — what each framework MUST contain
+
+Each validator returns `{ pass: boolean, missingSignals: string[], score: number }` where score is 0..1 (fraction of required signals present). A framework "passes" when score >= 0.6 (= at least 60% of its signature signals fired).
+
+| Framework | scene_0 must have | mid scenes must have | last scene must have | other |
+|---|---|---|---|---|
+| `problem_agitation_solution` | a "pain" beat: question form OR negation about a daily annoyance | "agitation" beat: intensifier + emotional tag (לא נורמלי / מטריף / קורע) | "solution" beat: causal connector (אז / ככה / לכן) + product mention | scene_goal sequence: `establish_pain` → `prove_it_works` (any order in middle) → `decision_push` |
+| `skeptical_testimonial` | a "doubt" beat: explicit skepticism markers (חשבתי שזה / הייתי בטוחה / לא האמנתי / זה נשמע מוגזם) | a "test" beat: first-person verb in past tense (ניסיתי / בדקתי / הזמנתי / נתתי צ'אנס) | a "vindication" beat: reversal connector (אבל / מסתבר ש / בסוף) + positive evaluation | first-person voice throughout (אני / הזמנתי / שלי) — no third-person narration |
+| `demonstration_proof` | a "show" beat: visual deictic (תראו / תסתכלו / הנה) OR step-1 marker (ראשית / קודם כל) | a "step-by-step" beat: ≥2 ordered actions OR sequence connectors (אחר כך / ואז / לבסוף) | an "after" beat: result-state contrast OR product-state evaluation | scene_generation_type distribution: ≥1 `product_demo` OR `hands_only` |
+| `price_alternative_anchor` | a "comparison" beat: explicit alternative price/category reference (במקום / לעומת / X שקל אחרים) | a "value" beat: number reference + frame (חיסכון / החזר / שווה כל / אצלי) | a "decision-push" beat with price reinforcement (× שקל בלבד / ב-X שקל / בלי תוספות) | at least 2 numeric tokens across scenes (price, comparison, time-saved) |
+| `relatable_israeli_moment` | an "Israeli situation" beat: location/time/cultural anchor (תל אביב / כיכר / חמסין / כשחזרתי מהמילואים / אחרי הסטודנטים) | "we all do this" beat: collective Hebrew (כולנו / כל אחת / מי לא / תכל'ס כולן) | a "this product makes it better" beat | scene_goal first → `stop_scroll`; spoken text contains ≥2 casual markers per scene avg (vs 1.0 baseline) |
+| `fast_direct_response` | a "punchy 1-line" hook: ≤7 words OR exclamation OR direct address | NO mid scenes ≥3s (every scene is short) | a "CTA" beat: explicit imperative (קני / הזמיני / לחצי / לכי) + urgency token (היום / עכשיו / מוגבל / עד) | total word count <= 30s mode's `totalSpokenWordsTarget × 0.6` (it's a SHORT-fast script even in 30s mode) |
+
+These are **deterministic regex/keyword checks on Hebrew text** plus **scene-level metadata** (`scene_goal`, `scene_generation_type`). NO LLM in the validator path — this is pure prompt-side guidance enforced in the engine. The eval (Sonnet judge) remains the independent rater.
+
+### Decision policy when a script fails its framework validator
+
+This is the load-bearing engineering choice. **Default policy (start here):**
+
+1. **First failure for a slot** → re-issue the SAME framework call ONCE with an additional system message: `"REWRITE: התסריט הזה לא קרא בבירור כ-${framework}. הסצנות חייבות לכלול ${missingSignals.join(', ')}. שמור על אותו big_idea / hook / scene_outline. החזר JSON תואם לסכמה."` Per-script retry budget = 1 (matches Sub-task 4's register-validator retry policy — same retry-cost ceiling).
+2. **Second failure (or first failure during regen)** → script is shipped to the user with `framework_validator: { pass: false, missingSignals: [...] }` annotation in the script's metadata. The script is NOT dropped from the user's pickable set — UX consistency wins over silent removal. Admin debug surfaces the failure for forensics.
+3. **Eval-only behavior** (in `script-engine-eval.ts`): a script that's still failing validation after retry is COUNTED as a `framework_signal_match = 0` for that script (matches what the Sonnet judge would do anyway — judge guesses wrong → 0). Eval and prod stay aligned.
+
+**Why "ship anyway with annotation" instead of "drop from top-3":** the user picks 1-3 concepts to expand; the wizard already shows N expanded scripts on the videos page. If we silently drop validated-out scripts the user's count expectation breaks ("I picked 3, why do I see 2?"). Annotating + admin-debug surfacing keeps the user's mental model intact while still giving us forensics.
+
+**Alternative policy (if default doesn't reach 0.80):** drop from top-3 entirely + show a "1 of 3 didn't pass framework check, retry?" inline message. More disruption, but cleaner enforcement.
+
+### FW-03 escalation: per-framework system prompt split
+
+If FW-01 + FW-02 (validators + retry policy) alone don't move `framework_signal_match >= 0.80`, escalate to per-framework prompt segmentation. Today, `concept-system-prompt.ts` describes ALL 6 frameworks in one ~6K-char block — every concept-batch call sees all 6 framework definitions. The hypothesis: the LLM's output regresses toward the mean across frameworks because it's trained on "satisfy 6 different rails simultaneously".
+
+Prompt split:
+- New: `packages/prompts/src/concept-system-prompts/per-framework/<slug>.ts` — 6 files, each ~1K-2K chars, each describing ONE framework deeply (more examples + sharper anti-patterns + signature description).
+- Concept generation switches from "1 call returning 6 cards" to "6 series calls each pinned to ONE framework with that framework's prompt only". Roughly 6× the cost (~$0.03 per concept-batch instead of $0.005) — but if it moves the gate, worth it. Note: the per-slot diversity ban-list from Sub-task 3 still applies (each call sees the prior slots' axes).
+
+If FW-03 fires, the concept-batch cost AND latency increase substantially (6 series calls vs 1). This is an explicit trade-off that the eval gate forces — only do it if FW-02 alone doesn't close the gap.
+
+**DoD (gate against baseline):**
+
+```
+framework_signal_match >= 0.80   (current baseline = 0.778; need +0.022 absolute, +2.8% relative)
+```
+
+ALSO regression guards (must hold from earlier sub-tasks):
+- `big_idea_diversity >= baseline + 0.15` (Sub-task 3, currently target ≥ 0.570)
+- `casual_markers_per_scene >= 1.0` (Sub-task 4, absolute)
+- `register_authenticity_score >= baseline + 1.5` (Sub-task 4, secondary signal — see interpretation caveat above)
+- `wall_time_total <= baseline × 0.7` (Sub-task 5)
+
+If FW-03 fires, the wall_time_total guard from Sub-task 5 is RELAXED to `baseline × 0.85` (the per-framework split costs ~+10s wall per product; we'd still net a meaningful win from PI prefetch + music consolidation + streaming + skeleton, just smaller). This is the only sub-task allowed to relax an earlier gate, and only when FW-03 fires; document the relaxation in STATE.md when it happens.
+
+**Verification commands:**
+
+```bash
+npm run typecheck
+cd apps/web && npm test -- test-concept-interactive-pr6                  # PR6 regression
+cd apps/web && npx tsx scripts/test-framework-validators.ts              # NEW — unit tests on each framework's signature
+npm run eval:script-engine -- --compare=.planning/eval/baselines/v27.11.PR6.json
+# Expect green on:  framework_signal_match >= 0.80 (absolute)
+# Expect regression guards from sub-tasks 3, 4, 5 still pass (with sub-task 5 guard relaxed if FW-03 fired)
+```
+
+**Commit:** `feat(script-engine): per-framework validators (sub-task 6, gate 0.80)`
+
+  → tag SHA in STATE.md: `Sub-task 6 SHA: <sha>`. **Rollback target:** Sub-task 5 SHA (= the SHA before this sub-task started). All earlier sub-tasks' wins (diversity, register, latency) are preserved on rollback; only the framework validator + dispatch + retry path reverts.
+
+**If gate fails:**
+- First retry (validators only): tighten the structural signatures — add 1-2 more required signals per framework based on which scripts are failing the Sonnet judge. The eval JSON's per-script reasoning is the diagnostic input.
+- Second retry: enable FW-03 (per-framework prompt split) per the spec above.
+- Third retry: combine FW-02 + FW-03 (validators on top of split prompts).
+- If all three fail: **roll back to Sub-task 5 SHA**. Sub-task 6 is the last sub-task — there's nothing after it to break. Mark `framework_signal_match` as a known baseline gap in STATE.md and ship the milestone without it. The diversity + register + latency wins still apply (the user's named pain) — framework_signal_match is more of a "polish" metric.
+
+**Why this sub-task can be skipped at the milestone level if it fails:** the user's stated pain (3 problems) doesn't include "frameworks don't read distinct". framework_signal_match is a quality metric that surfaced from the audit's open recommendation E + the Sub-task 2 baseline gap. Worth pursuing; not worth blocking the milestone close.
 
 ---
 
