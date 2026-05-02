@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { prisma } from '@/lib/db';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -44,6 +45,7 @@ export default async function AdminProjectsPage() {
                 <TableHead>תסריטים</TableHead>
                 <TableHead>רינדורים</TableHead>
                 <TableHead>נוצר</TableHead>
+                <TableHead>דיבאג</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -59,11 +61,19 @@ export default async function AdminProjectsPage() {
                   <TableCell className="text-xs text-muted-foreground">
                     {p.createdAt.toLocaleDateString('he-IL')}
                   </TableCell>
+                  <TableCell>
+                    <Link
+                      href={`/admin/projects/${p.id}/debug`}
+                      className="rounded bg-zinc-100 px-2 py-1 font-mono text-xs text-blue-700 hover:bg-zinc-200"
+                    >
+                      debug →
+                    </Link>
+                  </TableCell>
                 </TableRow>
               ))}
               {projects.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                  <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
                     אין פרויקטים עדיין
                   </TableCell>
                 </TableRow>

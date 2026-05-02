@@ -189,6 +189,13 @@ export default async function AdminSceneDebugPage({ params }: PageProps) {
           · סצנה {scene.sceneOrder + 1}/{(scene as { totalScenes?: number }).totalScenes ?? '?'}{' '}
           · scene_id <span className="font-mono">{scene.id}</span> · משתמש{' '}
           <span className="font-mono">{project.user?.email ?? '—'}</span>
+          {' · '}
+          <Link
+            href={`/admin/projects/${project.id}/debug`}
+            className="text-blue-700 hover:underline"
+          >
+            דיבאג פרויקט →
+          </Link>
         </p>
         {scene.imageUrl && (
           <Link

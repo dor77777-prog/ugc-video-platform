@@ -333,13 +333,24 @@ function RowFragment({
           )}
         </TableCell>
         <TableCell>
-          <button
-            type="button"
-            onClick={onToggle}
-            className="text-[10px] px-1.5 py-0.5 rounded border border-border hover:bg-muted"
-          >
-            {expanded ? '−' : '+'}
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={onToggle}
+              className="text-[10px] px-1.5 py-0.5 rounded border border-border hover:bg-muted"
+              title="הצג/הסתר metadata"
+            >
+              {expanded ? '−' : '+'}
+            </button>
+            {/* V27.11 — drill into per-call debug page */}
+            <a
+              href={`/admin/apicalls/${row.id}`}
+              className="text-[10px] px-1.5 py-0.5 rounded border border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100"
+              title="עמוד דיבאג מלא"
+            >
+              →
+            </a>
+          </div>
         </TableCell>
       </TableRow>
       {expanded && (
