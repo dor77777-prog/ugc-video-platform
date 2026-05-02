@@ -17,9 +17,9 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Stepper } from '@/components/wizard/stepper';
 import { ProjectHero } from '@/components/wizard/project-hero';
-import { GenerateButton, ScriptCard } from './client-bits';
-import { selectScriptAction } from './actions';
+import { GenerateButton } from './client-bits';
 import { ContinueButton } from './continue-button';
+import { StreamingScriptsGrid } from './streaming-scripts-grid';
 
 // V2: framework labels in Hebrew. Older scripts (pre-V2) won't have a `framework`
 // field — for those we fall back to the legacy angle label.
@@ -123,7 +123,6 @@ export default async function ScriptsPage({
   });
 
   const hasScripts = scripts.length > 0;
-  const isStreaming = scripts.length > 0 && scripts.length < 6;
   const selectedScriptId = project.selectedScriptId;
 
   return (
@@ -157,86 +156,34 @@ export default async function ScriptsPage({
         </Card>
       ) : (
         <>
-          {isStreaming && (
-            <div className="rounded-md border border-primary/30 bg-primary/[0.05] p-3 text-sm flex items-center gap-2">
-              <span className="animate-pulse text-lg">⏳</span>
-              <span>
-                <strong>{scripts.length} מתוך 6 תסריטים</strong> מוכנים — השאר עדיין ביצירה. הדף מתעדכן אוטומטית.
-              </span>
-            </div>
-          )}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {scripts.map((s) => {
-              const isSelected = s.id === selectedScriptId;
-              const label = s.framework
-                ? FRAMEWORK_LABEL_HEBREW[s.framework] ?? ANGLE_LABEL_HEBREW[s.angle]
-                : ANGLE_LABEL_HEBREW[s.angle];
-              const raw = (s.rawJson ?? {}) as Record<string, unknown>;
-              const strategy =
-                (raw.creativeStrategy as Record<string, unknown> | undefined) ?? null;
-              const qualityScore =
-                (raw.qualityScore as Record<string, unknown> | undefined) ?? null;
-              const hookOptions = Array.isArray(raw.hookOptions)
-                ? (raw.hookOptions as string[])
-                : [];
-              const hookReason =
-                typeof raw.hookReason === 'string' ? raw.hookReason : '';
-              return (
-                <ScriptCard
-                  key={s.id}
-                  scriptId={s.id}
-                  projectId={projectId}
-                  angleLabel={label}
-                  hook={s.hook}
-                  cta={s.cta ?? ''}
-                  estimatedDurationSeconds={s.estimatedDurationSeconds}
-                  qualityScoreOverall={s.qualityScoreOverall ?? null}
-                  hookOptions={hookOptions}
-                  hookReason={hookReason}
-                  creativeStrategy={strategy}
-                  qualityScore={qualityScore}
-                  scenes={s.scenes.map((sc) => ({
-                    id: sc.id,
-                    sceneOrder: sc.sceneOrder,
-                    sceneGoal: sc.sceneGoal ?? null,
-                    textHebrew: sc.textHebrew,
-                    onScreenCaption: sc.onScreenCaptionHebrew ?? '',
-                    cameraDirection: sc.cameraDirection ?? '',
-                    performanceNote: sc.performanceNote ?? '',
-                    durationSeconds: sc.durationSeconds,
-                  }))}
-                  isSelected={isSelected}
-                  selectAction={selectScriptAction}
-                />
-              );
-            })}
-            {isStreaming &&
-              Array.from({ length: 6 - scripts.length }).map((_, i) => (
-                // V27 — per-card pulse: each pending script breathes
-                // independently with data-ai-active="script-batch". The
-                // grid does NOT pulse as a whole; cards transition to
-                // success ring (800ms, static) when their script returns.
-                <Card
-                  key={`pending-${i}`}
-                  data-ai-active="script-batch"
-                  className="tier-elevated border-dashed motion-fade-up"
-                  style={{ animationDelay: `${i * 60}ms` }}
-                >
-                  <CardContent className="p-6 space-y-3">
-                    <div className="h-4 bg-elevated/80 rounded w-2/3 motion-shimmer" style={{
-                      backgroundImage: 'linear-gradient(90deg, hsl(var(--elevated)), hsl(var(--ai)/0.2), hsl(var(--elevated)))',
-                      backgroundSize: '200% 100%',
-                    }} />
-                    <div className="h-3 bg-elevated/80 rounded w-full" />
-                    <div className="h-3 bg-elevated/80 rounded w-5/6" />
-                    <div className="h-3 bg-elevated/80 rounded w-4/6" />
-                    <div className="text-xs text-fg-tertiary pt-2 font-mono uppercase tracking-[0.18em]">
-                      תסריט בתהליך יצירה
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-          </div>
+          {/* V27.10.10 — client-side streaming grid. Polls /api/scripts/list
+              and renders cards from local state, bypassing the
+              router.refresh() bottleneck that was blocked by the
+              in-flight Server Action. */}
+          <StreamingScriptsGrid
+            projectId={projectId}
+            initialScripts={scripts.map((s) => ({
+              id: s.id,
+              framework: s.framework ?? null,
+              angle: s.angle,
+              hook: s.hook,
+              cta: s.cta ?? null,
+              estimatedDurationSeconds: s.estimatedDurationSeconds,
+              qualityScoreOverall: s.qualityScoreOverall ?? null,
+              rawJson: (s.rawJson ?? null) as Record<string, unknown> | null,
+              scenes: s.scenes.map((sc) => ({
+                id: sc.id,
+                sceneOrder: sc.sceneOrder,
+                sceneGoal: sc.sceneGoal ?? null,
+                textHebrew: sc.textHebrew,
+                onScreenCaptionHebrew: sc.onScreenCaptionHebrew ?? null,
+                cameraDirection: sc.cameraDirection ?? null,
+                performanceNote: sc.performanceNote ?? null,
+                durationSeconds: sc.durationSeconds,
+              })),
+            }))}
+            initialSelectedScriptId={selectedScriptId}
+          />
 
           <div className="flex justify-between items-center gap-3 pt-4" dir="ltr">
             <GenerateButton projectId={projectId} regenerate />
