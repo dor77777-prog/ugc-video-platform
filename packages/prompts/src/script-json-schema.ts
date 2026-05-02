@@ -217,21 +217,32 @@ const SCENE_ITEM_SCHEMA = {
     // V5 Israeli realism + scene-purpose justification.
     'environment_type',
     'environment_style',
-    'israeli_environment_required',
-    'local_realism_notes',
-    'why_this_scene_exists',
+    // V27.11.PR3 — DROPPED 4 admin/debug-only fields:
+    //   israeli_environment_required (the deterministic image-brief-
+    //     builder always applies Israeli realism unless explicitly
+    //     told otherwise; per-scene boolean was redundant)
+    //   local_realism_notes (Israeli realism cues are emitted by
+    //     israeli-realism-rules.ts independently of this field)
+    //   why_this_scene_exists (admin/debug only; never read by any
+    //     runtime path; pure output bloat at ~30-80 chars/scene × 5
+    //     scenes × 6 frameworks = 900-2400 wasted output tokens/batch)
+    //   narrative_link_from_previous (admin/debug only; the cohesion
+    //     it tried to enforce now lives directly in spoken_text_hebrew
+    //     via the V27.11.PR3 CONTINUITY section in the system prompt —
+    //     a meta-string never reaches the viewer's ears anyway)
+    // None of the 4 was consumed by any runtime mapper, brief builder,
+    // admin debug page, or storage path. Verified with a grep across
+    // apps/web + packages. Legacy DB scripts that have these keys in
+    // rawJson keep them — schema strict-mode is only applied to NEW
+    // LLM output; existing JSON in Script.rawJson is read as-is.
     // V14 PR5 — optional Israeli setting cue ID. Maps to one of the 8
     // canonical scene presets in apps/web/lib/scene-planning/israeli-realism-rules.ts.
     'israeli_setting_cue',
-    // V27.9 — narrative coherence between scenes. Forces the LLM to
-    // commit to a 1-line link explaining how this scene continues
-    // from the previous one. Nullable for scene_order=0 and for
-    // back-compat with V14 scripts already saved in DB.
-    'narrative_link_from_previous',
     // V27.9 — frame strategy. Decouples "is the product visible?"
     // from "how prominent is it?" — answers a third question:
     // "what does this frame DO with the product?" Comparison scenes
     // need it dominant; pain scenes shouldn't have it at all.
+    // (PR4 will revisit `comparison_split` per the anti-collage audit.)
     'frame_strategy',
   ],
   properties: {
@@ -330,32 +341,22 @@ const SCENE_ITEM_SCHEMA = {
       description:
         'Specific Israeli home/lifestyle aesthetic. Modern, practical, premium, or urban — but always locally realistic. Foreign suburban or American showroom looks are forbidden.',
     },
-    israeli_environment_required: {
-      type: 'boolean',
-      description:
-        'Should be true for every scene by default. Set to false ONLY for scenes deliberately set abroad (rare). When true, the image prompt forces Israeli outlets, switches, apartment proportions, and Hebrew-friendly visible text.',
-    },
-    local_realism_notes: {
-      type: 'string',
-      description:
-        'Free-form Hebrew or English notes about local realism cues for this specific scene (e.g. "trissim shutters visible on the balcony", "Israeli outlet next to the sink", "Hebrew note on the fridge"). Empty string allowed but discouraged.',
-    },
-    why_this_scene_exists: {
-      type: 'string',
-      description:
-        '1 short Hebrew sentence — what conversion-job does this specific scene do? ("hook stops the scroll", "establishes the daily pain", "shows the product solving it in one tap"). Used by the editor + admin forensics to spot redundant scenes.',
-    },
+    // V27.11.PR3 — `israeli_environment_required` / `local_realism_notes` /
+    // `why_this_scene_exists` removed from the schema. See the note on
+    // SCENE_ITEM_SCHEMA.required[] above for rationale (admin/debug
+    // only, no runtime consumer, pure output-token bloat).
     israeli_setting_cue: {
       type: ['string', 'null'] as unknown as 'string',
       enum: [...ISRAELI_SETTING_CUES, null] as unknown as string[],
       description:
         'V14 PR5. One of the 8 canonical Israeli scene preset IDs (kitchen_with_morning_light / bathroom_morning_routine / bedroom_evening / living_room_couch / tel_aviv_street_evening / supermarket_aisle / gym_modern / outdoor_park_afternoon) or null when no preset fits. The deterministic image-brief-builder expands this into atomic Israeli realism cues.',
     },
-    narrative_link_from_previous: {
-      type: ['string', 'null'] as unknown as 'string',
-      description:
-        'V27.9 — 1-sentence Hebrew description of how this scene continues from the previous one. Examples: "ממשיך את הכאב שהוצג בסצנה 0 ומכניס את הראייה הראשונה של המוצר", "תגובה רגשית למה שעשה המוצר בסצנה 2", "עוצר את הסיפור ומציע לצופה החלטה". MUST be null only for scene_order=0 (the first scene has no previous). For every other scene this MUST be a real, specific link — not a generic "continues the script". A reader should be able to read scene N-1 then scene N and feel the bridge. If you can\'t describe the link in one sentence, the scene is a non-sequitur — rewrite it.',
-    },
+    // V27.11.PR3 — `narrative_link_from_previous` removed. The cohesion
+    // it tried to enforce now lives in spoken_text_hebrew via the
+    // V27.11.PR3 CONTINUITY section of the system prompt: scene-to-
+    // scene flow is built INTO the spoken text (lexical bridges,
+    // rhetorical questions, time/place markers) instead of described
+    // in a meta-string the viewer never hears.
     frame_strategy: {
       type: 'string',
       enum: FRAME_STRATEGIES as unknown as string[],

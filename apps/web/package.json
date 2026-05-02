@@ -11,7 +11,8 @@
     "test:v13": "tsx scripts/test-v13-all.ts",
     "test:v14": "tsx scripts/test-v14-all.ts",
     "test:anticollage": "tsx scripts/test-anticollage-pr1.ts",
-    "test:scriptperf": "tsx scripts/test-script-perf-pr2.ts"
+    "test:scriptperf": "tsx scripts/test-script-perf-pr2.ts",
+    "test:schematrim": "tsx scripts/test-schema-trim-pr3.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.92.0",
