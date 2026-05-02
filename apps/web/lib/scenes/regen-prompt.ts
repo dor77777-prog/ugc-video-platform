@@ -94,7 +94,9 @@ export async function regenerateScenePrompt(
   if (!apiKey) throw new RegenPromptConfigError('OPENAI_API_KEY not set');
 
   const client = new OpenAI({ apiKey });
-  const model = process.env.OPENAI_SCRIPT_MODEL ?? 'gpt-5.4-mini';
+  // V27.10.17 — fallback bumped 'gpt-5.4-mini' → 'gpt-5.5-mini' to
+  // stay aligned with V27.10.15's openai-script-client default.
+  const model = process.env.OPENAI_SCRIPT_MODEL ?? 'gpt-5.5-mini';
 
   const intel = input.intelligence ?? null;
   const dossier = intel?.dossier ?? null;

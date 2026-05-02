@@ -88,7 +88,7 @@ export async function inferAudience(
   if (!apiKey) throw new AudienceInferenceConfigError('OPENAI_API_KEY not set');
 
   const client = new OpenAI({ apiKey });
-  const model = process.env.OPENAI_AUDIENCE_MODEL ?? process.env.OPENAI_SCRIPT_MODEL ?? 'gpt-5.4-mini';
+  const model = process.env.OPENAI_AUDIENCE_MODEL ?? process.env.OPENAI_SCRIPT_MODEL ?? 'gpt-5.5-mini';
 
   // Send a compressed dossier (skip arrays we don't need for audience
   // reasoning to keep tokens down).
