@@ -32,6 +32,10 @@ export async function GET(
   if (!auth.ok) return auth.response;
   const { id } = await params;
 
+  // V27.11 — fetch FULL Scene rows so the embedded scene partial
+  // can render image brief + motion analysis + captions JSON +
+  // generation log + lipsync state etc. The previous narrow `select`
+  // was for the table view; the deep export needs every column.
   const project = await prisma.project.findUnique({
     where: { id },
     include: {
@@ -41,21 +45,6 @@ export async function GET(
         include: {
           scenes: {
             orderBy: { sceneOrder: 'asc' },
-            select: {
-              id: true,
-              sceneOrder: true,
-              sceneType: true,
-              sceneGoal: true,
-              sceneGenerationType: true,
-              status: true,
-              imageUrl: true,
-              voiceUrl: true,
-              clipUrl: true,
-              durationSeconds: true,
-              textHebrew: true,
-              lastErrorCode: true,
-              lastErrorMessage: true,
-            },
           },
         },
       },
@@ -71,6 +60,17 @@ export async function GET(
     orderBy: { createdAt: 'desc' },
     take: 500,
   });
+
+  // V27.11 — bucket ApiCalls by sceneId so the embedded scene
+  // partial can render full per-call detail (provider metadata
+  // included) without hitting the DB again.
+  const apiCallsByScene = new Map<string, typeof apiCalls>();
+  for (const c of apiCalls) {
+    if (!c.sceneId) continue;
+    const bucket = apiCallsByScene.get(c.sceneId);
+    if (bucket) bucket.push(c);
+    else apiCallsByScene.set(c.sceneId, [c]);
+  }
 
   const data = (project.productData as Record<string, unknown> | null) ?? {};
   const cachedIntel = (data.intelligence ?? null) as
@@ -92,6 +92,7 @@ export async function GET(
     {
       project,
       apiCalls,
+      apiCallsByScene,
       pendingConcepts,
       intelligenceFresh,
       currentHash,
