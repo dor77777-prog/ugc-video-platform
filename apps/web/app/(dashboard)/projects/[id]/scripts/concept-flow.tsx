@@ -20,7 +20,7 @@
 // streaming-scripts-grid takes over rendering and this component
 // stays out of the way.
 
-import { useState, useTransition } from 'react';
+import { useState, useTransition, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Loader2, Sparkles, Wand2, RotateCcw } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
@@ -238,17 +238,7 @@ export function ConceptFlow({
 
   // ── State 2: generating (phase 1 or regen-all in flight) ─────────
   if (status === 'generating') {
-    return (
-      <Card className="border-dashed">
-        <CardContent className="space-y-4 p-12 text-center">
-          <Loader2 className="mx-auto h-12 w-12 animate-spin text-primary" />
-          <h2 className="text-xl font-bold">מייצר כיוונים קריאייטיביים...</h2>
-          <p className="text-sm text-muted-foreground">
-            בודק זוויות, קהל יעד, הוק והוכחת מוצר. ~10-15 שניות.
-          </p>
-        </CardContent>
-      </Card>
-    );
+    return <GeneratingPanel hasIntelligence={!!initialPendingConcepts} />;
   }
 
   // ── State 3: expanding (phase 2 in flight) ────────────────────────
@@ -361,5 +351,59 @@ export function ConceptFlow({
         </div>
       )}
     </div>
+  );
+}
+
+/** V27.11.PR6 — generating-state panel with elapsed-time + honest
+ *  progress hints. The first concept-gen call on a fresh project
+ *  pays the Product Intelligence build cost (3 sequential vision
+ *  + dossier + audience LLM calls, 30-45s total). Subsequent calls
+ *  reuse cached intelligence and run ~10-15s. The user sees the
+ *  full duration in either case; the breadcrumbs tell them where
+ *  in the work we are. */
+function GeneratingPanel({ hasIntelligence }: { hasIntelligence: boolean }) {
+  const [elapsedSec, setElapsedSec] = useState(0);
+  useEffect(() => {
+    const startedAt = Date.now();
+    const id = window.setInterval(() => {
+      setElapsedSec(Math.floor((Date.now() - startedAt) / 1000));
+    }, 500);
+    return () => window.clearInterval(id);
+  }, []);
+
+  // Phase breadcrumb based on elapsed time.
+  // - When intelligence is already cached (re-gen): single phase, ~10-15s.
+  // - When not cached (first gen): 3 phases — dossier → visual → audience
+  //   → concept gen. Total ~40-60s.
+  const phases = hasIntelligence
+    ? [
+        { atSec: 0, label: 'מייצר 6 כיוונים קריאייטיביים...' },
+        { atSec: 18, label: 'עוד שניה ושתיים — לוקח קצת יותר מהצפוי...' },
+      ]
+    : [
+        { atSec: 0, label: 'בונה דוסיה של המוצר (פעם ראשונה)...' },
+        { atSec: 12, label: 'מנתח את התמונה הראשית של המוצר...' },
+        { atSec: 22, label: 'מסיק את קהל היעד הישראלי...' },
+        { atSec: 32, label: 'מייצר 6 כיוונים קריאייטיביים...' },
+        { atSec: 55, label: 'עוד שניה ושתיים — סיום קרוב...' },
+      ];
+  const currentPhase =
+    [...phases].reverse().find((p) => elapsedSec >= p.atSec) ?? phases[0];
+
+  return (
+    <Card className="border-dashed" dir="rtl">
+      <CardContent className="space-y-4 p-12 text-center">
+        <Loader2 className="mx-auto h-12 w-12 animate-spin text-primary" />
+        <h2 className="text-xl font-bold">{currentPhase!.label}</h2>
+        <div className="mx-auto max-w-md space-y-2 text-sm text-muted-foreground">
+          <p>
+            {hasIntelligence
+              ? 'בודק זוויות, קהל יעד, הוק והוכחת מוצר. ~10-15 שניות.'
+              : 'הפעם הראשונה לוקחת ~40-60 שניות כי ה-AI לומד את המוצר. הקריאות הבאות יהיו מהירות הרבה יותר (~10-15s).'}
+          </p>
+          <p className="font-mono text-xs">⏱ {elapsedSec}s</p>
+        </div>
+      </CardContent>
+    </Card>
   );
 }

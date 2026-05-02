@@ -72,7 +72,9 @@ const EMPTY_VISUAL_ANALYSIS = {
 export async function buildProductIntelligence(
   input: BuildProductIntelligenceInput,
 ): Promise<BuildProductIntelligenceResult> {
-  // Stage 1 — dossier. Text-only, fast.
+  // Stage 1 — dossier. Text-only, fast (~5-10s). Must complete first
+  // because both visual analysis + audience inference depend on its
+  // output.
   const dossierResult = await buildProductDossier({
     productName: input.productName,
     brand: input.brand ?? null,
@@ -85,12 +87,35 @@ export async function buildProductIntelligence(
     categoryGuess: input.categoryGuess ?? null,
   });
 
-  // Stage 2 — visual analysis (vision). Skipped when no hero image.
-  let visualAnalysis = EMPTY_VISUAL_ANALYSIS as unknown as
-    BuildProductIntelligenceResult['intelligence']['visualAnalysis'];
-  let visualUsage: BuildProductIntelligenceResult['usage']['visualAnalysis'] = null;
-  let visualModel: string | null = null;
-  if (input.heroImageUrl) {
+  // V27.11.PR6 — stages 2 and 3 run IN PARALLEL.
+  //
+  // Pre-PR6 they were sequential (stage 2 → stage 3) so audience
+  // inference could see the visual analysis output. That cost ~15-20s
+  // wall-clock for back-to-back vision + text calls on a fresh
+  // project's first concept-gen.
+  //
+  // Trade-off: parallelizing means audience inference doesn't see
+  // visual cues. The audience prompt already tolerates a null
+  // visualAnalysis (it's an optional input) and still produces a
+  // good audience block from the dossier alone. Quality dip is small
+  // (audience.dailyUseMoments slightly less specific without visual
+  // grounding). Latency win is large (~10-15s saved on the slow
+  // first call).
+  //
+  // Net first-call wall-clock: stage 1 (~7s) + max(stage 2, stage 3)
+  // (~10s) = ~17s, vs pre-PR6 ~32s. Cached calls are unaffected.
+  const visualPromise: Promise<{
+    analysis: BuildProductIntelligenceResult['intelligence']['visualAnalysis'];
+    usage: BuildProductIntelligenceResult['usage']['visualAnalysis'];
+    model: string | null;
+  }> = (async () => {
+    if (!input.heroImageUrl) {
+      return {
+        analysis: EMPTY_VISUAL_ANALYSIS as unknown as BuildProductIntelligenceResult['intelligence']['visualAnalysis'],
+        usage: null,
+        model: null,
+      };
+    }
     try {
       const visualInput: VisualAnalysisInput = {
         imageUrl: input.heroImageUrl,
@@ -100,24 +125,32 @@ export async function buildProductIntelligence(
         categoryHint: dossierResult.dossier.category || input.categoryGuess || null,
       };
       const v = await analyzeProductVisual(visualInput);
-      visualAnalysis = v.analysis;
-      visualUsage = v.usage;
-      visualModel = v.model;
+      return { analysis: v.analysis, usage: v.usage, model: v.model };
     } catch (err) {
-      // Visual analysis is best-effort — text dossier still drives the
-      // pipeline if vision fails.
       console.warn(
         '[product-intelligence] visual analysis failed:',
         (err as Error).message,
       );
+      return {
+        analysis: EMPTY_VISUAL_ANALYSIS as unknown as BuildProductIntelligenceResult['intelligence']['visualAnalysis'],
+        usage: null,
+        model: null,
+      };
     }
-  }
+  })();
 
-  // Stage 3 — audience inference, sees both dossier + visual cues.
-  const audienceResult = await inferAudience({
+  // Stage 3 runs in parallel with stage 2. It DOES NOT wait for the
+  // visual analysis — audience inference passes null for visualAnalysis
+  // and still produces a useful audience block from the dossier alone.
+  const audiencePromise = inferAudience({
     dossier: dossierResult.dossier,
-    visualAnalysis: visualAnalysis.activePart ? visualAnalysis : null,
+    visualAnalysis: null,
   });
+
+  const [
+    { analysis: visualAnalysis, usage: visualUsage, model: visualModel },
+    audienceResult,
+  ] = await Promise.all([visualPromise, audiencePromise]);
 
   const intelligence: ProductIntelligence = {
     dossier: dossierResult.dossier,

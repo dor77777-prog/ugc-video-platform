@@ -27,7 +27,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { ScriptCard } from './client-bits';
 import { selectScriptAction } from './actions';
 
-const EXPECTED = 6;
+const DEFAULT_EXPECTED = 6;
 
 const FRAMEWORK_ORDER = [
   'problem_agitation_solution',
@@ -130,11 +130,18 @@ export function StreamingScriptsGrid({
   projectId,
   initialScripts,
   initialSelectedScriptId,
+  expectedCount,
 }: {
   projectId: string;
   initialScripts: ScriptRowForGrid[];
   initialSelectedScriptId: string | null;
+  /** V27.11.PR6 — actual number of scripts the page expects. Defaults
+   *  to 6 for legacy_full_batch. concept_interactive passes the
+   *  number of selected concepts (1-3) so the grid stops showing
+   *  bogus skeletons for scripts that will never come. */
+  expectedCount?: number;
 }) {
+  const EXPECTED = expectedCount ?? DEFAULT_EXPECTED;
   const [scripts, setScripts] = useState<ScriptRowForGrid[]>(() => sortScripts(initialScripts));
   const [selectedScriptId, setSelectedScriptId] = useState<string | null>(initialSelectedScriptId);
   const lastSeenIdsRef = useRef(scripts.map((s) => s.id).join(','));

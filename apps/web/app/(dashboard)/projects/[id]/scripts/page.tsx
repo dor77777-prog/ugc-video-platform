@@ -217,6 +217,20 @@ export default async function ScriptsPage({
               })),
             }))}
             initialSelectedScriptId={selectedScriptId}
+            expectedCount={(() => {
+              // V27.11.PR6 — in concept_interactive mode the user
+              // expanded 1-3 concepts (not 6). Tell the grid the real
+              // count so it doesn't show 4 forever-spinning skeletons
+              // for scripts that will never come.
+              const engineMode = resolveScriptEngineMode();
+              if (engineMode !== 'concept_interactive') return 6;
+              const pending = readPendingConcepts(project.productData);
+              if (pending && pending.selectedConceptIds.length > 0) {
+                return pending.selectedConceptIds.length;
+              }
+              // Fallback: trust the row count the page found.
+              return Math.max(scripts.length, 1);
+            })()}
           />
 
           <div className="flex justify-between items-center gap-3 pt-4" dir="ltr">
