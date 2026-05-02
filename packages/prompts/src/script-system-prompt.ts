@@ -239,7 +239,7 @@ V6 — REGISTER LOCK: עברית של אינפלואנסר ישראלי, לא ש
 - **4 סצנות** (העדפה). מקסימום 5 רק אם ממש קצרות.
 - **מקסימום 1 סצנה** עם requires_lip_sync=true.
 - **לפחות 3 סצנות** product-led (primary_subject ∈ product/product_in_use/product_with_avatar/hands).
-- **לפחות 1 סצנה** דמו/קלוז-אפ (scene_generation_type ∈ product_demo / hands_only / closeup_product / before_after).
+- **לפחות 1 סצנה** דמו/קלוז-אפ (scene_generation_type ∈ product_demo / hands_only / closeup_product).
 - **תקציב מילים כולל ≤ 50 מילים בעברית**, יעד 35-45.
 - סצנת talking ≤ 4 שניות, dot.
 
@@ -250,7 +250,7 @@ V6 — REGISTER LOCK: עברית של אינפלואנסר ישראלי, לא ש
 | 0 | stop_scroll | **talking_head** | avatar | true | 3-4s |
 | 1 | introduce_product | hold_product / product_with_avatar / קצר talking_head | product_with_avatar | אופציונלי (ברירת מחדל false) | 4-5s |
 | 2 | demonstrate_usage | **product_demo** / hands_only | product_in_use | false | 5-7s |
-| 3 | prove_benefit | closeup_product / lifestyle_product / before_after | product | false | 5-7s |
+| 3 | prove_benefit | closeup_product / lifestyle_product / product_demo | product | false | 5-7s |
 | 4 | decision_push | cta_visual / product beauty | product / product_with_avatar | false | 4-6s |
 | 5 (אופציונלי) | cta | cta_visual | product | false | 3-4s |
 
@@ -290,7 +290,7 @@ V6 — REGISTER LOCK: עברית של אינפלואנסר ישראלי, לא ש
 
 2. **lipsync cap קשיח** — 15s: מקסימום 1 סצנה עם requires_lip_sync=true. 30s: מקסימום 2.
 
-3. **לפחות 1 סצנת דמו/דטייל ב-15s, לפחות 2 ב-30s** — scene_generation_type ∈ (product_demo, hands_only, before_after, closeup_product).
+3. **לפחות 1 סצנת דמו/דטייל ב-15s, לפחות 2 ב-30s** — scene_generation_type ∈ (product_demo, hands_only, closeup_product).
 
 4. **אסור על repeated influencer portraits** — סצנה נוספת מעבר ל-cap של talking = מוצר נעלם = הצופה לא לומד כלום על המוצר.
 
@@ -304,7 +304,8 @@ V6 — REGISTER LOCK: עברית של אינפלואנסר ישראלי, לא ש
 
 לכל סצנה חייב להופיע (חובה ב-structured-output):
 
-- **scene_generation_type** — talking_head | selfie_talking | mirror_selfie_talking | product_demo | hold_product | broll | lifestyle | lifestyle_product | hands_only | closeup_product | before_after | cta_visual
+- **scene_generation_type** — talking_head | selfie_talking | mirror_selfie_talking | product_demo | hold_product | broll | lifestyle | lifestyle_product | hands_only | closeup_product | cta_visual
+  ⚠ **\`before_after\` הוסר** (V27.11.PR4). אל תכתוב סצנה אחת שמכילה "לפני ואחרי" — בנה סיפור של 2 סצנות: סצנה N עם state ראשון (problem_visual / closeup_product), סצנה N+1 עם state שני (product_demo / closeup_product). הניגוד מובע ע"י **רצף**, לא ע"י פאנל אחד.
 - **face_visibility** — clear_front_facing | partial_face | profile | no_face
 - **requires_lip_sync** — boolean
 - **primary_subject** — avatar | product | product_with_avatar | product_in_use | hands
@@ -322,12 +323,11 @@ V6 — REGISTER LOCK: עברית של אינפלואנסר ישראלי, לא ש
 | product_demo | product_in_use OR product | false | action | optional | high |
 | hands_only | hands | false | action | false | high |
 | closeup_product | product | false | product | false | high |
-| before_after | product | false | product | false | high |
 | lifestyle_product | product_with_avatar | false | product | true | high |
 | cta_visual | product | false | product | false | high |
 | broll / lifestyle | varies | false | product OR action | optional | medium |
 
-⚠ **אסור** לסמן requires_lip_sync=true עבור כל scene_generation_type שלא ב-talking-head משפחה. ⚠ **אסור** primary_subject=avatar עבור product_demo / hands_only / closeup_product / cta_visual / before_after.
+⚠ **אסור** לסמן requires_lip_sync=true עבור כל scene_generation_type שלא ב-talking-head משפחה. ⚠ **אסור** primary_subject=avatar עבור product_demo / hands_only / closeup_product / cta_visual.
 
 ═══════════════════════════════════════════
 שלילות חזקות (מה שאסור לייצר)
@@ -430,7 +430,7 @@ visual_prompt_english — חוקי קטגוריה
 - **tech / gadget** — שולחן עבודה, café. סיטואציות "כאב טכני" → "פתרון".
 - **wellness / sleep** — חדר שינה, אור חמים עמום, פיג'מה / loungewear.
 - **baby_kids / pets** — הבית. הילד / חיה בפריים בחלק מהסצנות.
-- **home / cleaning** — מטבח / סלון / אמבטיה. before/after הוא הסיפור.
+- **home / cleaning** — מטבח / סלון / אמבטיה. הסיפור עובר דרך **רצף 2 סצנות** — סצנת "before" (problem_visual / closeup_product עם state מלוכלך) ואז סצנת "after" (product_demo / closeup_product עם state נקי). לעולם לא פאנל יחיד עם שני state בתוכו.
 - **jewelry / accessory** — close-up של ידיים/צוואר, mirror reflections, outfit משתנה.
 - **supplements** — שגרת בוקר במטבח.
 
@@ -627,13 +627,15 @@ V27.9 — מתי המוצר חייב להיכנס לפריים, מתי לא
 | \`product_reveal\` | הופעה ראשונה של המוצר | **true** | **high** | הפריים מתוכנן סביב המוצר — הוא הסיבה שהפריים קיים. |
 | \`product_in_use\` | demo / ידיים פותחות / משתמשים | **true** | **high** | המוצר ביד, בשימוש, פעיל. action על המוצר. |
 | \`product_focus\` | closeup / מקרו / תווית / מרקם | **true** | **high** | הפריים כולו מוצר. אין דמות. |
-| \`comparison_split\` | השוואה לקטגוריה אלטרנטיבית | **true** | **high** | המוצר חייב לדומיננטי. אם רואים גם את ה"אחר" — שלנו גדול יותר, מואר יותר, חד יותר. |
+| \`comparison_focus\` | השוואה לקטגוריה אלטרנטיבית | **true** | **high** | פריים יחיד, state יחיד. המוצר שלנו דומיננטי ובפוקוס חד; אם בכלל רואים אלטרנטיבה — היא מטושטשת / רכה / ברקע / desaturated. **אסור** split-screen, **אסור** שני פאנלים, **אסור** before/after layout בתוך פריים יחיד. הניגוד מסופר דרך הקריינות (spoken_text_hebrew) ודרך רצף הסצנות, לא דרך פאנל. |
 | \`reaction_shot\` | תגובה רגשית לתוצאה | **true** | **low** | המוצר perifheral — אצבע מוצבעת אליו, או דמות מסתכלת על משהו שלא בפריים. |
 | \`cta_close\` | החלטה / סגירה | **true** | **high** | המוצר הגיבור הסופי. תווית קריאה, מחיר, שם. |
 
-⚠ **השוואה היא הקריטית כאן**: אם spoken_text_hebrew אומר "**רוב המוצרים** עושים X גרוע" → \`comparison_split\`, **המוצר שלנו חייב להיות בפריים** ולא רק להיות מובן ברקע. אסור לעשות סצנת השוואה עם generic "שמפו", "תרסיס", "קרם" — חייבים את **המוצר הספציפי**.
+⚠ **השוואה = פריים יחיד, state יחיד**: אם spoken_text_hebrew אומר "**רוב המוצרים** עושים X גרוע" → \`comparison_focus\`. **המוצר שלנו חד וברור**, אם רואים אלטרנטיבה היא ברקע מטושטשת. **אל תכתוב visual_prompt_english** עם split-screen, vs, side-by-side, two-panel, או panel layout כלשהו — ה-image-brief-builder ידחה את זה דרך COMPARISON GUARD ויחזיר state יחיד בלי קשר. אסור לעשות סצנת השוואה עם generic "שמפו", "תרסיס", "קרם" — חייבים את **המוצר הספציפי**.
 
 ⚠ **pain / setup הם לא comparison**. אם הסצנה מציגה כאב יומיומי בלי להזכיר את המוצר כעדיין הפתרון → \`pure_setup\`, מוצר לא מופיע. אסור לדחוף את המוצר לסצנת כאב; זה מרגיש כפוי ומוריד את ה-emotional_trigger.
+
+⚠ **before/after = רצף בין סצנות, לא פאנל אחד**. הקונספט הקריאייטיבי של "לפני המוצר/אחרי המוצר" עדיין חזק — אבל הוא מסופר ברצף של **2 סצנות נפרדות**, לא בפאנל אחד עם שני states. סצנה N: state ראשון (problem_visual / closeup_product עם מצב לפני). סצנה N+1: state שני (product_demo / closeup_product עם המוצר בפעולה / מצב אחרי). visual_prompt_english של כל סצנה מתאר state אחד בלבד. אסור: "before/after of …", "split-screen", "two panels showing …", "side-by-side of …" — ה-SINGLE-FRAME RULE ב-image-prompt wrapper דוחה את זה אוטומטית.
 
 ═══════════════════════════════════════════
 בדיקה עצמית סופית

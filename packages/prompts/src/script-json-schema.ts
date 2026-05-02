@@ -44,6 +44,15 @@ const SCENE_GOALS = [
 // the runtime scene-routing module and inferred via regex on
 // cameraDirection — now they're first-class structured-output fields
 // so the LLM commits to a frame intent rather than us guessing.
+// V27.11.PR4 — `before_after` removed. The before/after creative beat
+// belongs ACROSS scenes (scene N = before-state via problem_visual /
+// closeup_product, scene N+1 = after-state via product_demo /
+// closeup_product), never inside a single frame as a multi-panel
+// layout. The PR1 bridge in image-brief-builder.ts still flags any
+// legacy DB script that has `sceneGenerationType: 'before_after'` so
+// those render single-state with the comparison-guard rule block.
+// `LlmScene.scene_generation_type` is typed as `string` at the
+// runtime mapper level (not the enum), so legacy parses fine.
 const SCENE_GENERATION_TYPES = [
   'talking_head',
   'selfie_talking',
@@ -55,7 +64,6 @@ const SCENE_GENERATION_TYPES = [
   'lifestyle_product',
   'hands_only',
   'closeup_product',
-  'before_after',
   'cta_visual',
 ] as const;
 
@@ -171,12 +179,22 @@ export const PRIMARY_SUBJECTS_LIST = PRIMARY_SUBJECTS;
 
 // V27.9 — frame strategy enum used by both the schema (above) and
 // downstream consumers (image-brief-builder, scene-rules, admin debug).
+// V27.11.PR4 — `comparison_split` renamed to `comparison_focus`. The
+// new value enforces SINGLE-STATE composition: when the script wants
+// to position the product against an alternative, the alternative is
+// out-of-focus / desaturated / in-the-background — NEVER a second
+// panel beside the hero product. Splitting the frame is the failure
+// mode the universal SINGLE_FRAME_RULE in scene-image-prompts.ts is
+// designed to refuse. Legacy DB scripts with `frame_strategy:
+// 'comparison_split'` still parse (the field is a string at the
+// runtime mapper level) and the PR1 bridge catches their visual
+// prompts via comparison-phrase detection.
 export const FRAME_STRATEGIES = [
   'pure_setup',
   'product_reveal',
   'product_in_use',
   'product_focus',
-  'comparison_split',
+  'comparison_focus',
   'reaction_shot',
   'cta_close',
 ] as const;
@@ -288,7 +306,7 @@ const SCENE_ITEM_SCHEMA = {
       type: 'string',
       enum: SCENE_GENERATION_TYPES as unknown as string[],
       description:
-        'Frame intent. talking_head/selfie_talking/mirror_selfie_talking → creator speaks to camera (face visible). product_demo/hold_product/closeup_product/hands_only/before_after/lifestyle_product/cta_visual → product is the visual hero, no speaking.',
+        'Frame intent. talking_head/selfie_talking/mirror_selfie_talking → creator speaks to camera (face visible). product_demo/hold_product/closeup_product/hands_only/lifestyle_product/cta_visual → product is the visual hero, no speaking. (V27.11.PR4: before_after removed — render before vs after as TWO scenes, never one panel-split frame.)',
     },
     face_visibility: {
       type: 'string',
@@ -316,13 +334,13 @@ const SCENE_ITEM_SCHEMA = {
       type: 'string',
       enum: PRODUCT_VISIBILITY_PRIORITY as unknown as string[],
       description:
-        'How dominant the product should be in the frame. V27.9 mapping by frame_strategy: comparison_split / product_focus / cta_close → high (product fills 40-70%); product_reveal / product_in_use → high or medium depending on whether the demo IS the product (high) or context is needed (medium); reaction_shot → low (peripheral); pure_setup → low (none). The image-brief-builder reads this directly.',
+        'How dominant the product should be in the frame. V27.11.PR4 mapping by frame_strategy: comparison_focus / product_focus / cta_close → high (product fills 40-70%); product_reveal / product_in_use → high or medium depending on whether the demo IS the product (high) or context is needed (medium); reaction_shot → low (peripheral); pure_setup → low (none). The image-brief-builder reads this directly.',
     },
     camera_focus: {
       type: 'string',
       enum: CAMERA_FOCUS as unknown as string[],
       description:
-        'Where the camera "wants the eye" to land. face for talking-head, product for closeup/lifestyle, action for demo/hands_only/before_after.',
+        'Where the camera "wants the eye" to land. face for talking-head, product for closeup/lifestyle, action for demo/hands_only.',
     },
     show_face: {
       type: 'boolean',
@@ -361,7 +379,7 @@ const SCENE_ITEM_SCHEMA = {
       type: 'string',
       enum: FRAME_STRATEGIES as unknown as string[],
       description:
-        'V27.9 — what does this frame DO with the product? Decouples "is product visible" (must_show_product) from "how prominent" (product_visibility_priority) by answering a third question. pure_setup = pain/hook before product is introduced (must_show_product=false). product_reveal = first time the product appears, frame composed around it. product_in_use = demo / hands. product_focus = closeup / detail. comparison_split = the scene compares the product to a category alternative — the product MUST be dominant in the frame, not implied. reaction_shot = creator reacting to a result; product peripheral. cta_close = final decision push; product is hero. Drives the deterministic image-brief-builder downstream.',
+        'V27.11.PR4 — what does this frame DO with the product? Decouples "is product visible" (must_show_product) from "how prominent" (product_visibility_priority) by answering a third question. pure_setup = pain/hook before product is introduced (must_show_product=false). product_reveal = first time the product appears, frame composed around it. product_in_use = demo / hands. product_focus = closeup / detail. comparison_focus = the scene positions the product against an alternative — the product is sharply lit and dominant; if any alternative appears in-frame it is desaturated / soft / in the background, NEVER a second panel beside the hero. The frame is still ONE continuous photograph — splits, side-by-sides, and before-after panels are forbidden by the universal SINGLE-FRAME RULE. reaction_shot = creator reacting to a result; product peripheral. cta_close = final decision push; product is hero. Drives the deterministic image-brief-builder downstream.',
     },
   },
 } as const;

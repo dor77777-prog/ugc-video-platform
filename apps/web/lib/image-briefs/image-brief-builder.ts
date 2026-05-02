@@ -167,14 +167,18 @@ export function isProblemSceneType(t: string): boolean {
   return PROBLEM_TYPES.has(t);
 }
 
-// V27.11 PR1 — bridge for legacy / drift-prone comparison language. The
-// upstream schema still allows sceneGenerationType='before_after' and
-// frame_strategy='comparison_split' (PR4 will deprecate them); the LLM
-// also occasionally writes "before and after", "split screen", "side by
-// side", "vs" prose into visual_prompt_english even on other scene types.
-// All of those are reliable predictors of a multi-panel gpt-image-2
-// output. This detector flags the scene; buildImageBrief then appends
-// extra mustAvoid items and a dedicated rule block so the deterministic
+// V27.11 PR1 — bridge for legacy / drift-prone comparison language.
+// V27.11.PR4 deprecated `before_after` from SCENE_GENERATION_TYPES and
+// renamed `comparison_split` → `comparison_focus` in FRAME_STRATEGIES,
+// so NEW LLM scripts never emit those values. Legacy DB scripts still
+// might (the runtime `LlmScene.scene_generation_type` is typed as
+// `string`, not the enum, so legacy data parses unchanged). The bridge
+// is the safety net for those legacy rows: if a script in DB has
+// `sceneGenerationType: 'before_after'` (legacy) OR if the LLM still
+// writes "before and after" / "split screen" / "side by side" / "vs"
+// prose into visual_prompt_english (drift even on the new enum), the
+// detector flags the scene. buildImageBrief then appends extra
+// mustAvoid items and a dedicated rule block so the deterministic
 // finalImagePrompt amplifies the universal SINGLE-FRAME RULE that
 // scene-image-prompts.ts always renders.
 //
