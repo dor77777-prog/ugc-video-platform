@@ -30,7 +30,7 @@ Sub-task 2 will quantify this across the full 9-product gold set.
 
 | # | Sub-task | Status | SHA | Gate result |
 |---|----------|--------|-----|-------------|
-| 1 | Eval Harness | shipping | (this commit) | smoke pass on cosmetics-1: big_idea_diversity=0.395, casual_markers=0/4 (foundation only — no gate) |
+| 1 | Eval Harness | complete | 5191a89 | smoke pass on cosmetics-1: big_idea_diversity=0.395, casual_markers=0/4 (foundation only — no gate) |
 | 2 | Baseline Run | pending | — | — (this is the BASELINE — no gate) |
 | 3 | Diversity Enforcement | pending | — | gate: big_idea_diversity >= baseline + 0.15 |
 | 4 | Register Hard Enforcement | pending | — | gate: casual_markers_per_scene >= 1.0 AND register_authenticity_score >= baseline + 1.5 |
