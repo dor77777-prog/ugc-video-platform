@@ -18,6 +18,17 @@ import {
   AnthropicConfigError,
   ANTHROPIC_DEFAULT_SCRIPT_MODEL,
 } from './anthropic-script-client';
+import {
+  generateConceptCards,
+  pickTopConceptsByQuality,
+  buildExpansionPromptFragment,
+  resolveScriptEngineMode,
+  resolveConceptTopN,
+  type ConceptCard,
+  type ScriptEngineMode,
+} from './concept-engine';
+
+export type { ScriptEngineMode, ConceptCard } from './concept-engine';
 
 // V27.10.12 — default flipped Anthropic Sonnet 4.6 → OpenAI gpt-5.4-mini.
 //
@@ -464,8 +475,15 @@ export async function generateScripts(
   // streaming). Restoring parallel dispatch.
   //
   // Per-call timing log preserved so future regressions surface.
-  const buildOneCall = async (framework: ScriptFrameworkSlug, index: number) => {
-      const userPrompt = buildSingleFrameworkPrompt(input, framework);
+  const buildOneCall = async (
+    framework: ScriptFrameworkSlug,
+    index: number,
+    customUserPrompt?: string,
+  ) => {
+      // V27.11.PR5 — concept-first phase-2 calls pass a customUserPrompt
+      // built from buildSingleFrameworkPrompt + buildExpansionPromptFragment.
+      // legacy_full_batch keeps using the per-framework prompt directly.
+      const userPrompt = customUserPrompt ?? buildSingleFrameworkPrompt(input, framework);
       const callStartedAt = Date.now();
       try {
         // V14 — dispatch on the env-driven provider. Same prompt +
@@ -536,11 +554,92 @@ export async function generateScripts(
       }
   };
 
-  // V27.10.1 — restored parallel dispatch. See comment block above
-  // for why the V27.10 warmup-first approach was reverted.
-  const results = await Promise.all(
-    FRAMEWORK_ORDER.map((framework, index) => buildOneCall(framework, index)),
-  );
+  // V27.11.PR5 — engine-mode dispatch.
+  //
+  // legacy_full_batch (default): 6 parallel SINGLE_SCRIPT calls,
+  // one per framework, as before.
+  //
+  // concept_first: phase 1 generates 6 lightweight concept cards in
+  // ONE call, pickTopConceptsByQuality ranks by estimated_quality
+  // (deterministic FRAMEWORK_ORDER tie-break), top N (default 3,
+  // SCRIPT_CONCEPT_TOP_N) get expanded in parallel via the same
+  // buildOneCall path with a concept-expansion userPrompt fragment.
+  // Net cost win: ~45% fewer output tokens per batch.
+  const engineMode = resolveScriptEngineMode();
+  let results: (GeneratedScript | null)[] = [];
+
+  if (engineMode === 'concept_first') {
+    const topN = resolveConceptTopN();
+    console.log(
+      `[scripts] engineMode=concept_first topN=${topN} provider=${provider} model=${model}`,
+    );
+    let concepts: ConceptCard[] = [];
+    try {
+      const conceptOutput = await generateConceptCards({
+        systemInstruction: sharedSystemInstruction,
+        userPrompt: buildConceptBatchUserPrompt(input),
+        provider,
+        model,
+      });
+      totalInputTokens += conceptOutput.usage.inputTokens;
+      totalOutputTokens += conceptOutput.usage.outputTokens;
+      concepts = conceptOutput.concepts;
+      console.log(
+        `[scripts] phase1: ${concepts.length} concept(s) generated, qualities=[${concepts
+          .map((c) => `${c.framework}=${c.estimated_quality}`)
+          .join(', ')}]`,
+      );
+    } catch (err) {
+      if (
+        err instanceof GeminiConfigError ||
+        err instanceof OpenAiConfigError ||
+        err instanceof AnthropicConfigError
+      ) {
+        throw err;
+      }
+      console.error(
+        `[scripts] phase1 concept-cards call failed:`,
+        (err as Error).message,
+      );
+      // Fail-soft: when phase 1 errors, fall back to legacy_full_batch
+      // for this single batch instead of returning zero scripts. The
+      // env flag stays set so the next batch retries phase 1.
+      console.warn('[scripts] falling back to legacy_full_batch for this batch');
+      results = await Promise.all(
+        FRAMEWORK_ORDER.map((framework, idx) => buildOneCall(framework, idx)),
+      );
+      // Skip the concept_first phase-2 block below.
+      concepts = [];
+    }
+
+    if (concepts.length > 0) {
+      const top = pickTopConceptsByQuality(concepts, topN, FRAMEWORK_ORDER);
+      console.log(
+        `[scripts] phase2: expanding top ${top.length} concept(s): ${top
+          .map((c) => `${c.framework}(q=${c.estimated_quality})`)
+          .join(', ')}`,
+      );
+      results = await Promise.all(
+        top.map((concept, index) => {
+          const framework = concept.framework as ScriptFrameworkSlug;
+          // Combine the per-framework brief (mode block, avatar gender,
+          // category, framework brief, feature focus) with the concept
+          // expansion fragment so phase 2 has both the framework rails
+          // AND the locked concept.
+          const baseUserPrompt = buildSingleFrameworkPrompt(input, framework);
+          const customUserPrompt =
+            baseUserPrompt + buildExpansionPromptFragment(concept);
+          return buildOneCall(framework, index, customUserPrompt);
+        }),
+      );
+    }
+  } else {
+    // V27.10.1 — restored parallel dispatch. See comment block above
+    // for why the V27.10 warmup-first approach was reverted.
+    results = await Promise.all(
+      FRAMEWORK_ORDER.map((framework, index) => buildOneCall(framework, index)),
+    );
+  }
 
   // V27.10.11 — single-shot retry of any framework that returned null
   // in the first batch. Live observation: roughly 1 of 6 Anthropic
@@ -549,32 +648,44 @@ export async function generateScripts(
   // first 15s — a slow framework that errors at 60s gets no retry.
   // Here we re-issue ONLY the failed indexes; runs in parallel; one
   // round, no recursive retries (avoids tail-latency runaway).
-  const failedIndexes = results
-    .map((r, i) => (r === null ? i : -1))
-    .filter((i) => i !== -1);
-  if (failedIndexes.length > 0 && failedIndexes.length < FRAMEWORK_ORDER.length) {
-    console.warn(
-      `[scripts] ${failedIndexes.length}/${FRAMEWORK_ORDER.length} frameworks failed in first batch, retrying once: ${failedIndexes
-        .map((i) => FRAMEWORK_ORDER[i])
-        .join(', ')}`,
-    );
-    const retryResults = await Promise.all(
-      failedIndexes.map((i) => {
-        const fw = FRAMEWORK_ORDER[i];
-        return fw ? buildOneCall(fw, i) : Promise.resolve(null);
-      }),
-    );
-    for (let r = 0; r < failedIndexes.length; r++) {
-      const idx = failedIndexes[r];
-      if (idx !== undefined && retryResults[r] !== null && retryResults[r] !== undefined) {
-        results[idx] = retryResults[r] ?? null;
+  //
+  // V27.11.PR5 — only retry in legacy_full_batch mode. concept_first
+  // mode has a smaller N (default 3) and the failure recovery would
+  // need access to the original ConceptCard list, which is scoped to
+  // the if-branch above. If a concept expansion fails in concept_first
+  // mode, we just return fewer scripts. The user can re-run.
+  if (engineMode === 'legacy_full_batch') {
+    const failedIndexes = results
+      .map((r, i) => (r === null ? i : -1))
+      .filter((i) => i !== -1);
+    if (failedIndexes.length > 0 && failedIndexes.length < FRAMEWORK_ORDER.length) {
+      console.warn(
+        `[scripts] ${failedIndexes.length}/${FRAMEWORK_ORDER.length} frameworks failed in first batch, retrying once: ${failedIndexes
+          .map((i) => FRAMEWORK_ORDER[i])
+          .join(', ')}`,
+      );
+      const retryResults = await Promise.all(
+        failedIndexes.map((i) => {
+          const fw = FRAMEWORK_ORDER[i];
+          return fw ? buildOneCall(fw, i) : Promise.resolve(null);
+        }),
+      );
+      for (let r = 0; r < failedIndexes.length; r++) {
+        const idx = failedIndexes[r];
+        if (idx !== undefined && retryResults[r] !== null && retryResults[r] !== undefined) {
+          results[idx] = retryResults[r] ?? null;
+        }
       }
     }
   }
 
   const successful = results.filter((r): r is GeneratedScript => r !== null);
   if (successful.length === 0) {
-    throw new Error('All 6 framework generations failed — check the LLM logs for details.');
+    throw new Error(
+      engineMode === 'concept_first'
+        ? 'All concept expansions failed — check the LLM logs for details.'
+        : 'All 6 framework generations failed — check the LLM logs for details.',
+    );
   }
 
   const durationMs = Date.now() - startedAt;
@@ -615,6 +726,80 @@ const FRAMEWORK_BRIEF_HEBREW: Record<ScriptFrameworkSlug, string> = {
   fast_direct_response:
     'קצר, חד, בנוי לביצועים במטא/טיקטוק. 18-22 שניות. Hook חזק → תועלת אחת → CTA. ללא סיפור.',
 };
+
+// V27.11.PR5 — phase-1 user prompt for concept_first mode. Carries
+// product context + mode constraints + avatar lock + feature focus,
+// but tells the LLM to produce 6 lightweight CONCEPT CARDS (one per
+// framework) instead of one full script. The concept system prompt
+// (CONCEPT_SYSTEM_PROMPT) handles the per-framework brief + the
+// concept-card schema rules; this user prompt is just the project-
+// specific data.
+//
+// The PI block is NOT included here — it's already in the shared
+// systemInstruction passed via generateConceptCards(), which strips
+// SCRIPT_SYSTEM_PROMPT and prepends CONCEPT_SYSTEM_PROMPT instead.
+function buildConceptBatchUserPrompt(p: ProductInput): string {
+  const mode = resolveVideoMode(p.durationSeconds);
+  const modeBlock = [
+    `אורך הסרטון הסופי: ${mode.targetTotalDurationMs / 1000} שניות (mode = ${mode.mode}).`,
+    `יעד סצנות: ${mode.preferredSceneCount} (מקסימום ${mode.maxSceneCount}).`,
+  ].join('\n');
+
+  const featureFocusBlock =
+    p.selectedFeatures && p.selectedFeatures.length > 0
+      ? [
+          '═══════════════════════════════════════════',
+          '🎯 FEATURE FOCUS — חוק קשיח (HARD RULE)',
+          '═══════════════════════════════════════════',
+          'המשתמש בחר את התכונות הבאות. **כל 6 הקונספטים חייבים להיות מעוגנים רק בהן.** אל תזכיר תכונות אחרות מהתיאור גם אם הן נראות אטרקטיביות.',
+          '',
+          ...p.selectedFeatures.map(
+            (f, i) =>
+              `${i + 1}. **${f.title}**${f.hook ? `\n   זווית/הוק: ${f.hook}` : ''}`,
+          ),
+          '',
+          'דרישות אכיפה לכל קונספט:',
+          '• ה-selected_hook חייב לצטט במפורש לפחות אחת מהתכונות (במילים שלך).',
+          '• ה-big_idea חייב להבהיר איזו תכונה מבין הנבחרות מובילה את הקונספט הזה.',
+          '• אסור לכתוב קונספטים שמדברים על "מוצר באופן כללי" / "פתרון מהפכני".',
+          '═══════════════════════════════════════════',
+          '',
+        ].join('\n')
+      : null;
+
+  const lines: (string | null)[] = [
+    featureFocusBlock,
+    `שם המוצר: ${p.productName}`,
+    p.brand ? `מותג: ${p.brand}` : null,
+    p.targetAudience ? `קהל יעד עיקרי: ${p.targetAudience}` : null,
+    p.price ? `מחיר: ${p.price}${p.currency ? ' ' + p.currency : ''}` : null,
+    modeBlock,
+    '',
+    'תיאור המוצר:',
+    p.description,
+    '',
+    p.categoryLabel || p.categoryGuidance
+      ? [
+          `קטגוריה: ${p.categoryLabel ?? p.categoryId ?? 'unknown'}`,
+          p.categoryGuidance ? `הנחיות per-category: ${p.categoryGuidance}` : null,
+          '',
+        ]
+          .filter(Boolean)
+          .join('\n')
+      : null,
+    p.avatarDescription
+      ? [
+          `דמות הקריינות שכבר נבחרה: ${p.avatarDescription}.`,
+          p.avatarGender === 'male'
+            ? '⚠ **מגדר הקריין: זכר**. selected_hook + big_idea חייבים להיכתב ב-spoken Hebrew של זכר.'
+            : '⚠ **מגדר הקריינית: נקבה**. selected_hook + big_idea חייבים להיכתב ב-spoken Hebrew של נקבה.',
+          '',
+        ].join('\n')
+      : null,
+    'הפק עכשיו 6 כרטיסי קונספט בפורמט { "concepts": [...] } תואם לסכמה. כל אחד עם framework שונה (בסדר FRAMEWORK_ORDER). כל אחד עם estimated_quality כן.',
+  ];
+  return lines.filter((l): l is string => l !== null).join('\n');
+}
 
 function buildSingleFrameworkPrompt(
   p: ProductInput,
