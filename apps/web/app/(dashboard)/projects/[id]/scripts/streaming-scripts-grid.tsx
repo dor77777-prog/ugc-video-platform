@@ -255,6 +255,7 @@ export function StreamingScriptsGrid({
               }))}
               isSelected={isSelected}
               selectAction={selectScriptAction}
+              onSelect={(scriptId) => setSelectedScriptId(scriptId)}
             />
           );
         })}

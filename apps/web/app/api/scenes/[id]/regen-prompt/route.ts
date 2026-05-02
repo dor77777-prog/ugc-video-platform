@@ -13,7 +13,7 @@ import { prisma } from '@/lib/db';
 import { getOrCreateAppUser } from '@/lib/auth/sync-user';
 import { regenerateScenePrompt, RegenPromptConfigError } from '@/lib/scenes/regen-prompt';
 import { recordApiCallStart, recordApiCallComplete } from '@/lib/usage/log';
-import { priceOpenAiText } from '@/lib/usage/pricing';
+import { attributeOpenAiTextCost } from '@/lib/usage/cost-attribution';
 import type { ProductIntelligence } from '@/lib/product-intelligence';
 
 export async function POST(
@@ -70,13 +70,25 @@ export async function POST(
       productName: scene.script.project.productName ?? null,
     });
 
+    // V27.10.14 — go through attributeOpenAiTextCost so the row carries
+    // actualCostUsd / estimatedCostUsd / source provenance / metadata,
+    // not just the bare costUsd. Matches every other LLM-backed call
+    // path in the codebase.
+    const attribution = attributeOpenAiTextCost({
+      model: result.model,
+      inputTokens: result.usage.inputTokens,
+      outputTokens: result.usage.outputTokens,
+    });
     await recordApiCallComplete(callId, {
       success: true,
       model: result.model,
-      costUsd: priceOpenAiText(result.model, result.usage.inputTokens, result.usage.outputTokens),
+      costUsd: attribution.costUsd,
+      estimatedCostUsd: attribution.estimatedCostUsd,
+      actualCostUsd: attribution.actualCostUsd,
       inputTokens: result.usage.inputTokens,
       outputTokens: result.usage.outputTokens,
       durationMs: Date.now() - startedAt,
+      metadata: attribution.metadata,
     });
 
     // Persist the new prompt so the next image regen picks it up.

@@ -244,6 +244,14 @@ interface ScriptCardProps {
   scenes: ScriptCardScene[];
   isSelected: boolean;
   selectAction: (formData: FormData) => Promise<void>;
+  /** V27.10.14 — optimistic local-state update. Called BEFORE the
+   *  Server Action fires so the parent client component can flip
+   *  `isSelected` immediately. Fixes the "click another script
+   *  doesn't change selection" bug that surfaced once polling
+   *  stopped (V27.10.10's StreamingScriptsGrid cools down at
+   *  count=6+5s, so server-driven `selectedScriptId` updates were
+   *  invisible). */
+  onSelect?: (scriptId: string) => void;
 }
 
 const SCENE_GOAL_LABEL: Record<string, string> = {
@@ -575,7 +583,17 @@ export function ScriptCard(props: ScriptCardProps) {
                 </button>
               </div>
 
-              <form action={props.selectAction}>
+              <form
+                action={async (formData) => {
+                  // V27.10.14 — optimistic local-state flip BEFORE the
+                  // Server Action runs so the "✓ נבחר" badge appears
+                  // instantly (don't wait for the action's revalidate
+                  // round-trip, which is also blocked while polling
+                  // has stopped).
+                  if (props.onSelect) props.onSelect(props.scriptId);
+                  await props.selectAction(formData);
+                }}
+              >
                 <input type="hidden" name="projectId" value={props.projectId} />
                 <input type="hidden" name="scriptId" value={props.scriptId} />
                 <Button
