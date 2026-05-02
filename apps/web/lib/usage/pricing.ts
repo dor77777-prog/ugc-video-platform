@@ -421,6 +421,12 @@ export const PROVIDER_CATALOG: ProviderInfo[] = [
 ];
 
 function stripVersionSuffix(model: string): string {
-  // "gpt-5.4-mini-2026-03-17" → "gpt-5.4-mini"
-  return model.replace(/-\d{4}-\d{2}-\d{2}$/, '');
+  // OpenAI date format: "gpt-5.4-mini-2026-03-17" → "gpt-5.4-mini"
+  // Anthropic date format: "claude-haiku-4-5-20251001" → "claude-haiku-4-5"
+  // Without the YYYYMMDD branch, Anthropic ids fall through to the
+  // Sonnet fallback in priceAnthropicText and bill 3x the real Haiku
+  // cost ($3/$15 per MTok instead of $1/$5).
+  return model
+    .replace(/-\d{4}-\d{2}-\d{2}$/, '')
+    .replace(/-\d{8}$/, '');
 }
