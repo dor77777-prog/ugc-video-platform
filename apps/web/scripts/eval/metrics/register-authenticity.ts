@@ -148,6 +148,11 @@ export async function measureRegisterAuthenticity(
           score: null,
           reasoning: `judge failed: ${(err as Error).message}`,
         });
+        // LOUD: surface the first judge failure (see same comment in
+        // framework-signal.ts) so a config error doesn't return silent 0s.
+        console.warn(
+          `[register-authenticity] judge call failed for "${script.framework}" scene ${scene.scene_order}: ${(err as Error).message}`,
+        );
       }
     }
     perScript.push({

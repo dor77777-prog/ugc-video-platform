@@ -1,0 +1,294 @@
+{
+  "fixture": {
+    "id": "food-2",
+    "category": "food",
+    "productData": {
+      "productName": "קוביות תה לימון-זנגביל בכוסיות",
+      "brand": "Tea Pop",
+      "description": "קוביות תה תמציתיות במכלים יחידים. ממיסים בכוס מים חמים וקיבלת תה לימון-זנגביל מוכן. ללא תוספת סוכר, מתוק טבעי מסטיביה. אריזה של 12 כוסיות.",
+      "features": [
+        {
+          "id": "f1",
+          "title": "מוכן ב-15 שניות",
+          "hook": "בלי לטחון, בלי לבחוש",
+          "source": "llm"
+        },
+        {
+          "id": "f2",
+          "title": "מתוק טבעי מסטיביה",
+          "hook": "בלי קלוריות, בלי סוכר",
+          "source": "llm"
+        }
+      ],
+      "price": "24",
+      "currency": "שקלים",
+      "sourceUrl": null,
+      "userNotes": null,
+      "categoryGuess": "food",
+      "heroImageUrl": null,
+      "secondaryImageUrl": null
+    },
+    "scriptInput": {
+      "targetAudience": "גילאי 30-55 שאוהבים תה ביום עמוס",
+      "durationSeconds": 15,
+      "avatarDescription": "early-thirties Israeli woman, Petah Tikva office worker",
+      "avatarGender": "female",
+      "categoryId": "food",
+      "categoryLabel": "food",
+      "categoryGuidance": "משרד open-space, מטבח, כוס שקופה."
+    }
+  },
+  "intelligence": {
+    "dossier": {
+      "productName": "קוביות תה לימון-זנגביל בכוסיות",
+      "brand": "Tea Pop",
+      "category": "food",
+      "subcategory": "instant tea",
+      "productType": "single-serve tea cubes",
+      "targetAudiencePrimary": [
+        "Adults in Israel who want a quick hot drink at home or at work",
+        "People who like lemon-ginger tea flavors",
+        "Consumers looking for a sweet-tasting beverage without added sugar"
+      ],
+      "targetAudienceSecondary": [
+        "Office workers",
+        "Students",
+        "People who want a convenient alternative to tea bags or brewing",
+        "Shoppers who buy small affordable treats or pantry items"
+      ],
+      "audienceHypotheses": [
+        "May appeal to viewers who want a warm soothing drink in seconds",
+        "May appeal to people who avoid added sugar but still want sweetness",
+        "May appeal to buyers who like novelty formats and easy portion control"
+      ],
+      "painPoints": [
+        "Making tea takes too long",
+        "Tea can be messy or require preparation",
+        "Need for a quick single cup without opening a full box or using loose ingredients",
+        "Want sweetness without adding sugar",
+        "Want a hot drink option that feels simple and controlled"
+      ],
+      "desiredOutcomes": [
+        "A ready cup of lemon-ginger tea in seconds",
+        "Convenient single-serve preparation",
+        "Sweet taste from stevia without added sugar",
+        "A small affordable purchase that feels useful",
+        "Minimal mess and no complicated brewing"
+      ],
+      "purchaseTriggers": [
+        "Only 15 seconds to prepare",
+        "Single-use cups for exact portioning",
+        "No added sugar",
+        "Sweetened naturally with stevia",
+        "Low price point at 24 NIS",
+        "Lemon-ginger flavor"
+      ],
+      "productMechanism": "A concentrated tea cube sits inside a single-serve cup; when hot water is poured in, the cube dissolves and disperses tea flavor, lemon-ginger notes, and stevia sweetness into the water, creating a ready-to-drink hot beverage without brewing tea leaves or measuring ingredients.",
+      "keyClaims": [
+        "Ready in 15 seconds",
+        "No added sugar",
+        "Naturally sweetened with stevia",
+        "Lemon-ginger flavor",
+        "12 single-serve cups per pack"
+      ],
+      "proofPoints": [
+        "Product page states ready in 15 seconds",
+        "Product page states no added sugar",
+        "Product page states sweetened naturally with stevia",
+        "Product page states 12 cups in the pack",
+        "Product name and description identify lemon-ginger tea cubes in cups"
+      ],
+      "mainObjections": [
+        "Will it actually dissolve fully in hot water?",
+        "Will it taste sweet enough without sugar?",
+        "Is the flavor strong enough from a cube format?",
+        "Is this just a gimmick compared to regular tea?",
+        "Is one pack enough value for the price?"
+      ],
+      "ingredientsOrMaterials": [
+        "Tea extract/concentrate",
+        "Lemon flavor",
+        "Ginger flavor",
+        "Stevia",
+        "Water-soluble tea cube base"
+      ],
+      "applicationMethod": "Open one individual cup, add hot water, wait briefly until the cube dissolves, then drink.",
+      "usageSteps": [
+        "Take one single-serve cup",
+        "Pour in hot water",
+        "Wait for the cube to dissolve",
+        "Stir if needed",
+        "Drink"
+      ],
+      "applicatorType": "Single-serve cup/container",
+      "packagingType": "Multipack of 12 single-use cups",
+      "textureType": "Solid cube/tablet before use; dissolving in liquid after use",
+      "outputSubstance": "Hot lemon-ginger tea beverage",
+      "mustShowVisuals": [
+        "A hand holding one individual cup from the pack",
+        "Hot water being poured directly into the cup",
+        "The cube visibly dissolving in the cup",
+        "Steam rising from the finished drink",
+        "A simple finished mug or cup of amber-colored tea",
+        "The 12-cup pack shown clearly as a multipack",
+        "A realistic kitchen counter or office kitchenette setup"
+      ],
+      "mustAvoidVisuals": [
+        "Loose tea leaves or tea bags if they are not part of the product",
+        "Powders spilled on the counter",
+        "Milk, cream, or froth unless explicitly added by the user in the scene",
+        "Sugar being added to the cup",
+        "Large fancy café setups",
+        "Overly medicinal imagery",
+        "Fruit slices floating in the tea unless shown as actual ingredient or serving idea by source data",
+        "Blue, neon, or artificial-looking beverage colors"
+      ],
+      "likelyUseEnvironments": [
+        "Home kitchen",
+        "Israeli apartment kitchenette",
+        "Office break room",
+        "Work desk with kettle nearby",
+        "Morning routine scene in a small urban apartment"
+      ],
+      "israeliRealismCues": [
+        "Compact modern Israeli kitchen with standard proportions",
+        "White or neutral tile backsplash",
+        "Common Israeli kettle and ceramic mug",
+        "Hebrew on-screen text or neutral typography",
+        "Everyday apartment lighting, not luxury staging",
+        "Typical Israeli countertop clutter kept minimal and realistic",
+        "Small sink, not oversized American-style kitchen",
+        "Local-looking outlet/switch details"
+      ],
+      "productParts": [
+        "Outer pack of 12",
+        "Individual single-serve cups",
+        "Tea cube/tablet inside each cup",
+        "Cup lid or protective cover if present"
+      ],
+      "visualFailureModes": [
+        "Showing a powder sachet instead of a solid cube cup",
+        "Tea cube floating outside the cup",
+        "Water poured but cube still completely intact with no change",
+        "Overly dark, muddy, or opaque liquid with no believable dissolution stage",
+        "Generic mug shot with no visible product packaging",
+        "Hands holding an empty cup with no product inside",
+        "Fruit garnish imagery that implies fresh ingredient chunks not supported by the source",
+        "Western oversized kitchen set that does not feel Israeli"
+      ],
+      "visualEvidenceRequirements": [
+        "The viewer must see the one-cup format to understand portion control and convenience",
+        "The viewer must see the cube dissolve in hot water to believe the 'ready in 15 seconds' claim",
+        "The viewer must see the finished tea color and steam to believe it is a hot drink",
+        "The viewer must see the pack contains 12 cups to understand quantity",
+        "The viewer must be able to infer sweetness without sugar from the product and pack messaging"
+      ],
+      "creativeOpportunities": [
+        "Fast-cut transformation from single cup to finished tea in one beat",
+        "ASMR pour and dissolve moment",
+        "Comparison framing: 'before coffee maker / after one cup' without claiming superiority",
+        "Morning or office break reset angle",
+        "Hebrew UGC style with a casual presenter and quick demo"
+      ],
+      "conservativeAssumptions": [
+        "The exact cube composition is not specified beyond tea concentrate and stevia; ingredient details should not be expanded",
+        "The cup/container is assumed to be single-use and pre-portioned because the description says 'בכוסיות' and 'מכלים יחידים'",
+        "The product is assumed to require hot water because the description explicitly says dissolving in a cup of hot water",
+        "No medical, calming, digestive, or warming health effects are assumed from lemon-ginger flavor",
+        "The exact taste intensity and dissolving speed are not independently verified beyond the source claim of 15 seconds"
+      ]
+    },
+    "visualAnalysis": {
+      "objectDescription": "",
+      "visibleParts": [],
+      "activePart": "",
+      "howToHold": "",
+      "howToUseVisually": "",
+      "contactPoint": "",
+      "substanceVisualType": "",
+      "textureAndMaterial": "",
+      "scaleRelativeToHand": "",
+      "bestDemoAngles": [],
+      "mustShowForDemo": [],
+      "mustAvoidForDemo": [],
+      "likelyModelMistakes": [],
+      "productAccuracyNotes": []
+    },
+    "audience": {
+      "category": "food",
+      "subcategory": "instant tea",
+      "primaryAudience": [
+        "נשים עובדות בנות 25–45 שמחפשות משהו חם ומהיר בבוקר",
+        "אמהות עסוקות עם ילדים קטנים שרוצות רגע שקט עם כוס תה",
+        "גברים ונשים במשרדים בישראל שמחזיקים קומקום בעמדת העבודה",
+        "סטודנטים וצעירים בדירות קטנות שרוצים שתייה חמה בלי בלאגן"
+      ],
+      "secondaryAudience": [
+        "נשים שמקפידות על פחות סוכר ומחפשות מתיקות עם סטיביה",
+        "אנשים שאוהבים תה ג׳ינג׳ר-לימון כשמרגישים תחילת צינון",
+        "עובדים במשמרות שחוזרים הביתה ורוצים משהו חם ומהיר",
+        "זוגות צעירים בדירה עירונית עם מטבח קטן"
+      ],
+      "dailyUseMoments": [
+        "בבוקר לפני היציאה לעבודה",
+        "ב-10:00 במטבחון של המשרד",
+        "אחרי חזרה הביתה בערב",
+        "כשמרגישים גרון יבש או תחילת צינון",
+        "בין בישולים או סידורים בבית",
+        "ליד הקומקום לפני שמתחילים לעבוד מהבית"
+      ],
+      "problemContext": [
+        "אין זמן להרתיח תה כמו שצריך",
+        "לא רוצים ללכלך עוד כוסות או מסננת",
+        "צריך מנה אחת מדויקת ולא קופסה פתוחה",
+        "רוצים משהו מתוק בלי להוסיף סוכר",
+        "מחפשים פתרון חם ופשוט בלי התעסקות"
+      ],
+      "emotionalTriggers": [
+        "רצון לשלוט בכמות הסוכר",
+        "תחושת הקלה כשיש פתרון מוכן תוך שניות",
+        "תסכול ממוצרים מסובכים או מלכלכים",
+        "צורך בפינוק קטן וזול שמרגיש שימושי",
+        "נחמה ממשקה חם כשעייפים או מצוננים"
+      ],
+      "purchaseObjections": [
+        "האם הקובייה באמת נמסה לגמרי במים חמים",
+        "האם זה יהיה מספיק מתוק בלי סוכר",
+        "האם הטעם חזק או שזה מרגיש טריק",
+        "למה לשלם 24 ש״ח על משהו קטן",
+        "האם זה באמת עדיף על תה רגיל"
+      ],
+      "realisticIsraeliSettings": [
+        "מטבח קטן בדירת גג בתל אביב",
+        "מטבחון במשרד הייטק",
+        "מטבח ביתי סטנדרטי עם קומקום חשמלי",
+        "פינת קפה בחדר צוות",
+        "דירה שכורה עם שיש פשוט וכיור קטן",
+        "מטבח משפחתי בשעת בוקר לפני בית ספר"
+      ],
+      "bestAdFrameworks": [
+        "product_demo_proof",
+        "objection_handling",
+        "fast_direct_response",
+        "relatable_israeli_moment",
+        "wish_i_knew_earlier"
+      ],
+      "toneRecommendation": "קול ישראלי יומיומי, קצת עייף אבל אמין וחם, בלי תחושת פרסומת מלוטשת.",
+      "visualStrategyRecommendation": "להישאר צמודים לפעולת ההכנה והמסה של הקובייה בכוס; להראות קומקום, מזיגה ואדים מקרוב, בלי שוטים רחבים מדי של מטבח."
+    },
+    "generatedAt": "2026-05-02T22:39:44.879Z",
+    "schemaVersion": 1,
+    "models": {
+      "dossier": "gpt-5.4-mini",
+      "visualAnalysis": "(skipped)",
+      "audience": "gpt-5.4-mini"
+    },
+    "sourceHash": "c52d1c5835f95a0af4dcfad4ef50d965c890f6cf"
+  },
+  "bootstrappedAt": "2026-05-02T22:39:44.879Z",
+  "models": {
+    "dossier": "gpt-5.4-mini",
+    "visualAnalysis": "(skipped)",
+    "audience": "gpt-5.4-mini"
+  }
+}

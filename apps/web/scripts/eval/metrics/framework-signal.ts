@@ -92,6 +92,14 @@ export async function measureFrameworkSignalMatch(
       reasoning = r.parsed.reasoning;
     } catch (err) {
       reasoning = `judge failed: ${(err as Error).message}`;
+      // LOUD: surface the first judge failure to the orchestrator log.
+      // Silent failure was the bug that broke the first baseline run —
+      // every product silently scored 0 because metrics defaulted on
+      // judge errors. We still continue (so the eval finishes and the
+      // user sees how widespread the failure is) but warn loudly.
+      console.warn(
+        `[framework-signal] judge call failed for "${script.framework}": ${(err as Error).message}`,
+      );
     }
 
     perScript.push({

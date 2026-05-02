@@ -1,0 +1,165 @@
+{
+  "ranAt": "2026-05-02T23:04:39.466Z",
+  "engineMode": "legacy_full_batch",
+  "providerModel": "openai:gpt-5.4-mini",
+  "gitSha": "571fd6ca132f",
+  "productCount": 9,
+  "metrics": {
+    "big_idea_diversity": 0.43172273201985867,
+    "casual_markers_per_scene": 0.19753086419753088,
+    "framework_signal_match": 0.5740740740740741,
+    "register_authenticity_score": 7.317064506962205
+  },
+  "timings": {
+    "pi_duration_ms": 9,
+    "concept_batch_duration_ms": 0,
+    "concept_expand_duration_ms": 134612.30345900008,
+    "wall_time_total": 882165.00375
+  },
+  "perProduct": [
+    {
+      "productId": "cosmetics-1",
+      "category": "cosmetics",
+      "metrics": {
+        "big_idea_diversity": 0.468949952158878,
+        "casual_markers_per_scene": 0.25,
+        "framework_signal_match": 0.5,
+        "register_authenticity_score": 6.666666666666667
+      },
+      "timings": {
+        "pi_duration_ms": 1,
+        "concept_batch_duration_ms": 0,
+        "concept_expand_duration_ms": 15929.838708999998
+      },
+      "notes": []
+    },
+    {
+      "productId": "cosmetics-2",
+      "category": "cosmetics",
+      "metrics": {
+        "big_idea_diversity": 0.26600460746961574,
+        "casual_markers_per_scene": 0.125,
+        "framework_signal_match": 0.5,
+        "register_authenticity_score": 6.583333333333333
+      },
+      "timings": {
+        "pi_duration_ms": 1,
+        "concept_batch_duration_ms": 0,
+        "concept_expand_duration_ms": 14696.476083000001
+      },
+      "notes": []
+    },
+    {
+      "productId": "cosmetics-3",
+      "category": "cosmetics",
+      "metrics": {
+        "big_idea_diversity": 0.48201242270621236,
+        "casual_markers_per_scene": 0.2777777777777778,
+        "framework_signal_match": 0.3333333333333333,
+        "register_authenticity_score": 7.166666666666667
+      },
+      "timings": {
+        "pi_duration_ms": 1,
+        "concept_batch_duration_ms": 0,
+        "concept_expand_duration_ms": 12415.539500000014
+      },
+      "notes": []
+    },
+    {
+      "productId": "electronics-1",
+      "category": "electronics",
+      "metrics": {
+        "big_idea_diversity": 0.465592104096365,
+        "casual_markers_per_scene": 0.20833333333333334,
+        "framework_signal_match": 0.6666666666666666,
+        "register_authenticity_score": 7.956521739130435
+      },
+      "timings": {
+        "pi_duration_ms": 1,
+        "concept_batch_duration_ms": 0,
+        "concept_expand_duration_ms": 16019.603250000044
+      },
+      "notes": []
+    },
+    {
+      "productId": "electronics-2",
+      "category": "electronics",
+      "metrics": {
+        "big_idea_diversity": 0.44525281383559656,
+        "casual_markers_per_scene": 0.3888888888888889,
+        "framework_signal_match": 0.3333333333333333,
+        "register_authenticity_score": 7.647058823529412
+      },
+      "timings": {
+        "pi_duration_ms": 1,
+        "concept_batch_duration_ms": 0,
+        "concept_expand_duration_ms": 16719.118624999945
+      },
+      "notes": []
+    },
+    {
+      "productId": "electronics-3",
+      "category": "electronics",
+      "metrics": {
+        "big_idea_diversity": 0.4955229921180079,
+        "casual_markers_per_scene": 0.041666666666666664,
+        "framework_signal_match": 0.6666666666666666,
+        "register_authenticity_score": 7.666666666666667
+      },
+      "timings": {
+        "pi_duration_ms": 1,
+        "concept_batch_duration_ms": 0,
+        "concept_expand_duration_ms": 15949.267250000034
+      },
+      "notes": []
+    },
+    {
+      "productId": "food-1",
+      "category": "food",
+      "metrics": {
+        "big_idea_diversity": 0.3535656288529859,
+        "casual_markers_per_scene": 0.05555555555555555,
+        "framework_signal_match": 0.8333333333333334,
+        "register_authenticity_score": 7
+      },
+      "timings": {
+        "pi_duration_ms": 1,
+        "concept_batch_duration_ms": 0,
+        "concept_expand_duration_ms": 13031.421124999993
+      },
+      "notes": []
+    },
+    {
+      "productId": "food-2",
+      "category": "food",
+      "metrics": {
+        "big_idea_diversity": 0.42510339328550695,
+        "casual_markers_per_scene": 0.2222222222222222,
+        "framework_signal_match": 0.5,
+        "register_authenticity_score": 7.333333333333333
+      },
+      "timings": {
+        "pi_duration_ms": 1,
+        "concept_batch_duration_ms": 0,
+        "concept_expand_duration_ms": 14378.401500000036
+      },
+      "notes": []
+    },
+    {
+      "productId": "food-3",
+      "category": "food",
+      "metrics": {
+        "big_idea_diversity": 0.4835006736555594,
+        "casual_markers_per_scene": 0.20833333333333334,
+        "framework_signal_match": 0.8333333333333334,
+        "register_authenticity_score": 7.833333333333333
+      },
+      "timings": {
+        "pi_duration_ms": 1,
+        "concept_batch_duration_ms": 0,
+        "concept_expand_duration_ms": 15472.63741700002
+      },
+      "notes": []
+    }
+  ]
+}

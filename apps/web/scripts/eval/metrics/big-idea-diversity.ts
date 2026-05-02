@@ -5,7 +5,6 @@
 // Target post-Sub-task-3: baseline + 0.15.
 
 import { embedBatch, pairwiseCosine, meanOffDiagonal } from '../lib/embeddings';
-import type { RawConceptCard } from '../../../lib/llm/concept-engine';
 
 export interface BigIdeaDiversityResult {
   /** 1 - mean(off-diagonal cosine similarity). Higher = more diverse. */
@@ -16,13 +15,16 @@ export interface BigIdeaDiversityResult {
   pairwise: number[][];
 }
 
+/** Measures pairwise diversity across N strings. For concept_interactive
+ *  these are the 6 RawConceptCard.big_idea values. For legacy_full_batch
+ *  these are the 6 GeneratedScript.creative_strategy.core_insight values
+ *  (the closest legacy analog to a "big idea"). */
 export async function measureBigIdeaDiversity(
-  cards: RawConceptCard[],
+  texts: string[],
 ): Promise<BigIdeaDiversityResult> {
-  if (cards.length < 2) {
+  if (texts.length < 2) {
     return { score: 0, meanSimilarity: 1, pairwise: [] };
   }
-  const texts = cards.map((c) => c.big_idea);
   const vectors = await embedBatch(texts);
   const matrix = pairwiseCosine(vectors);
   const meanSim = meanOffDiagonal(matrix);
