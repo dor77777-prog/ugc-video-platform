@@ -73,7 +73,32 @@ Hebrew-first AI platform for Israeli UGC product video ads. Paste a product URL,
 
 <!-- Filled by /gsd-new-milestone for current milestone scope. -->
 
-(Pending — `/gsd-new-milestone "Script Engine Quality v2"` will populate this section on the next run.)
+## Current Milestone: v28.0 Script Engine Quality v2
+
+**Goal:** Make the script engine produce *diverse* concepts with *spoken Hebrew*, faster — and prove every fix with a measurable eval, not vibes.
+
+**Three concrete problems being solved (from production usage):**
+
+1. **Generic / non-distinct concepts** — 4 of 6 cards share the same `big_idea`. Frameworks are labels, not enforcement.
+2. **Hebrew is written, not spoken** — REGISTER LOCK in the prompt is not enforced in output: תכל'ס / וואלה / סבבה appear ~0 times. Sentences read as direct translation from English ("אף אחד לא אומר כמה זה מבלבל" = "nobody tells you how confusing it is").
+3. **~2 minutes per product** — measured from logs: machine ~63s, wall ~125s including user waits. Breakdown: 30s PI + 16s concept batch + 13.5s expand + dead transitions with no feedback. Adds up to hours per week of personal use.
+
+**Target features (one phase, six sub-tasks, executed in one session):**
+
+- Eval harness with 4 metrics + gold set (8–10 projects across 3 categories)
+- Baseline run on V27.11.PR6 captured to `.planning/eval/baselines/`
+- Diversity enforcement (`big_idea_axis` enum + ban-list + diversity-based picker; drop self-rated `quality_score`)
+- Register hard enforcement (`casual_markers_used` schema field + post-gen regex check + retry pass + anti-examples in prompt)
+- Latency reduction (PI prefetch in background, music_profile consolidated to one post-call, streaming concept generation, skeleton placeholders)
+- Framework validators (conditional — only if baseline `framework_signal_match < 80%`)
+
+**Key context / constraints (load-bearing):**
+
+- Eval is **integral** to the phase, not a separate gate that waits — the same session that builds the eval runs it as the baseline.
+- V27.11.PR6 (concept-interactive UX) is the production starting point. The PR6 branch merge / UAT is **out of scope** for this milestone (it's release management, not engine quality).
+- Bottleneck #5 from the audit (Anthropic schema cache split + cache_read attribution) is **deferred** — it's cost optimization at ~10–15%, and the user's pain is quality + latency, not cost.
+- Per-framework prompt split (audit recommendation E) is **conditional on eval evidence** — only if baseline `framework_signal_match < 80%`.
+- Single phase, six sub-tasks, sequential within session. No multi-phase split — this is AI tuning + observability, not parallelizable infra work.
 
 ### Out of Scope
 
@@ -168,4 +193,4 @@ Hebrew-first AI platform for Israeli UGC product video ads. Paste a product URL,
 | Update STATUS.md / CLAUDE.md / README.md in same commit | User preference for free-context-on-next-session | ✓ House rule |
 
 ---
-*Last updated: 2026-05-03 — bootstrapped from CLAUDE.md (root + .claude/), README.md, STATUS.md, .planning/codebase/, .planning/debug/v27-script-quality-audit.md via `/gsd-ingest-docs` ahead of `/gsd-new-milestone "Script Engine Quality v2"`.*
+*Last updated: 2026-05-03 — milestone v28.0 "Script Engine Quality v2" initialized via `/gsd-new-milestone`. Anchored to `.planning/debug/v27-script-quality-audit.md` for what's IN scope (diversity / register / latency) and what's OUT (PR6 rollout, Bottleneck #5, per-framework split unless eval demands it).*
