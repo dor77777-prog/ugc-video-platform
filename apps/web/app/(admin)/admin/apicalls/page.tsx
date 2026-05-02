@@ -20,6 +20,8 @@ interface SearchParams {
     provider?: string;
     operation?: string;
     status?: string;
+    from?: string;
+    to?: string;
     take?: string;
   }>;
 }
@@ -45,12 +47,23 @@ export default async function AdminApiCallsListPage({
   const provider = sp.provider?.trim() || undefined;
   const operation = sp.operation?.trim() || undefined;
   const status = sp.status?.trim() || undefined;
+  const fromStr = sp.from?.trim() || undefined;
+  const toStr = sp.to?.trim() || undefined;
   const take = Math.min(Math.max(parseInt(sp.take ?? '100', 10) || 100, 10), 500);
+
+  const from = fromStr ? new Date(fromStr) : undefined;
+  const to = toStr ? new Date(toStr) : undefined;
 
   const where: Record<string, unknown> = {};
   if (provider) where.provider = provider;
   if (operation) where.operation = operation;
   if (status) where.status = status;
+  if (from || to) {
+    const range: Record<string, unknown> = {};
+    if (from && !Number.isNaN(from.getTime())) range.gte = from;
+    if (to && !Number.isNaN(to.getTime())) range.lte = to;
+    if (Object.keys(range).length > 0) where.createdAt = range;
+  }
 
   const calls = await prisma.apiCall.findMany({
     where: where as Record<string, never>,
@@ -77,9 +90,9 @@ export default async function AdminApiCallsListPage({
         </p>
       </div>
 
-      {/* Filters */}
+      {/* Filters + export */}
       <Card className="tier-surface">
-        <CardContent className="p-4">
+        <CardContent className="p-4 space-y-3">
           <form className="flex flex-wrap items-end gap-3 text-sm" method="GET">
             <label className="space-y-1">
               <div className="kicker-muted font-mono text-[10px] uppercase">Provider</div>
@@ -125,6 +138,24 @@ export default async function AdminApiCallsListPage({
               </select>
             </label>
             <label className="space-y-1">
+              <div className="kicker-muted font-mono text-[10px] uppercase">From (UTC)</div>
+              <input
+                type="datetime-local"
+                name="from"
+                defaultValue={fromStr ? fromStr.replace('Z', '').slice(0, 16) : ''}
+                className="rounded border px-2 py-1 font-mono text-xs"
+              />
+            </label>
+            <label className="space-y-1">
+              <div className="kicker-muted font-mono text-[10px] uppercase">To (UTC)</div>
+              <input
+                type="datetime-local"
+                name="to"
+                defaultValue={toStr ? toStr.replace('Z', '').slice(0, 16) : ''}
+                className="rounded border px-2 py-1 font-mono text-xs"
+              />
+            </label>
+            <label className="space-y-1">
               <div className="kicker-muted font-mono text-[10px] uppercase">Take</div>
               <input
                 type="number"
@@ -145,6 +176,31 @@ export default async function AdminApiCallsListPage({
               {calls.length} שורות · {fmtUSD(totalCost)}
             </span>
           </form>
+          {/* V27.11 — Export current filtered view as Markdown.
+              The export endpoint accepts the same query params; we
+              rebuild them here so the user gets exactly what they
+              see in the table. take is bumped to up to 2000 in the
+              export route. */}
+          <div className="flex flex-wrap items-center gap-2 border-t pt-3 text-xs">
+            <span className="kicker-muted font-mono text-[10px] uppercase">דוח</span>
+            <a
+              href={`/api/admin/apicalls/export?${new URLSearchParams({
+                ...(provider ? { provider } : {}),
+                ...(operation ? { operation } : {}),
+                ...(status ? { status } : {}),
+                ...(fromStr ? { from: fromStr } : {}),
+                ...(toStr ? { to: toStr } : {}),
+                take: '2000',
+              }).toString()}`}
+              className="rounded border border-blue-300 bg-blue-50 px-2 py-1 font-mono text-blue-700 hover:bg-blue-100"
+              download
+            >
+              📥 ייצוא Markdown לכל הקריאות לפי הפילטרים
+            </a>
+            <span className="text-muted-foreground">
+              דוח Markdown מלא — מכיל env snapshot, aggregate stats, פירוט כשלים, וטבלת פירוט. קריא ל־Claude Code / כלי AI אחרים לדיבאג.
+            </span>
+          </div>
         </CardContent>
       </Card>
 

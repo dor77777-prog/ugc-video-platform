@@ -1,0 +1,666 @@
+// V27.11 — Markdown report builders for the admin debugger.
+//
+// Output format is a single self-contained Markdown file optimized
+// for both human reading AND AI tools like Claude Code.
+//
+// Conventions:
+//   - Top of report: pinned context (system version, env, when).
+//     Tools should grep this first to understand state.
+//   - Each major entity (project / scene / apicall) gets its own
+//     `## Section` heading so an AI can navigate by anchor.
+//   - JSON blobs are wrapped in fenced code blocks so they
+//     parse cleanly when fed to a model.
+//   - Tables for tabular data; bullet lists for free-form notes.
+//   - Errors get their own `### ⚠ Error` callout above details.
+//
+// All helpers are PURE — no DB access, no filesystem. Caller passes
+// pre-loaded data. Easier to test + reuse.
+
+import type { ApiCall, Project, Script, Scene, RenderJob, User } from '@prisma/client';
+
+// ─────────────────────────────────────────────────────────────────
+// Common header — pinned at the top of every export
+// ─────────────────────────────────────────────────────────────────
+
+export interface ReportContext {
+  reportTitle: string;
+  generatedAt: Date;
+  systemVersion: string;
+  envSnapshot: Record<string, string | undefined>;
+}
+
+export function buildReportHeader(ctx: ReportContext): string {
+  const lines: string[] = [];
+  lines.push(`# ${ctx.reportTitle}`);
+  lines.push('');
+  lines.push(`> **Generated at:** ${ctx.generatedAt.toISOString()}`);
+  lines.push(`> **System version:** ${ctx.systemVersion}`);
+  lines.push(`> **Format:** This report is designed for both human review and AI tools (Claude Code, etc.). Each section is anchored; JSON blobs are fenced.`);
+  lines.push('');
+  lines.push('## Active Configuration Snapshot');
+  lines.push('');
+  lines.push('Environment values that affect script generation. Useful when reproducing or interpreting failures.');
+  lines.push('');
+  lines.push('```');
+  for (const [k, v] of Object.entries(ctx.envSnapshot)) {
+    lines.push(`${k} = ${v ?? '(unset)'}`);
+  }
+  lines.push('```');
+  lines.push('');
+  return lines.join('\n');
+}
+
+export function captureEnvSnapshot(): Record<string, string | undefined> {
+  return {
+    SCRIPT_ENGINE_MODE: process.env.SCRIPT_ENGINE_MODE,
+    SCRIPT_QUALITY_MODE: process.env.SCRIPT_QUALITY_MODE,
+    LLM_SCRIPT_PROVIDER: process.env.LLM_SCRIPT_PROVIDER,
+    OPENAI_SCRIPT_MODEL: process.env.OPENAI_SCRIPT_MODEL,
+    ANTHROPIC_SCRIPT_MODEL: process.env.ANTHROPIC_SCRIPT_MODEL,
+    GEMINI_SCRIPT_MODEL: process.env.GEMINI_SCRIPT_MODEL,
+    OPENAI_REASONING_EFFORT: process.env.OPENAI_REASONING_EFFORT,
+    OPENAI_VERBOSITY: process.env.OPENAI_VERBOSITY,
+    SCRIPT_CONCEPT_TOP_N: process.env.SCRIPT_CONCEPT_TOP_N,
+    OPENAI_FACE_GATE_MODEL: process.env.OPENAI_FACE_GATE_MODEL,
+    OPENAI_MOTION_VISION_MODEL: process.env.OPENAI_MOTION_VISION_MODEL,
+    OPENAI_IMAGE_MODEL: process.env.OPENAI_IMAGE_MODEL,
+    NODE_ENV: process.env.NODE_ENV,
+    VERCEL_ENV: process.env.VERCEL_ENV,
+    VERCEL_REGION: process.env.VERCEL_REGION,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Single ApiCall report
+// ─────────────────────────────────────────────────────────────────
+
+export interface ApiCallContext {
+  call: ApiCall;
+  user?: { id: string; email: string; plan: string } | null;
+  project?: {
+    id: string;
+    productName: string | null;
+    status: string;
+  } | null;
+  scene?: {
+    id: string;
+    sceneOrder: number;
+    sceneGenerationType: string | null;
+    status: string | null;
+    scriptId: string;
+  } | null;
+  renderJob?: { id: string; status: string; progressPercent: number } | null;
+  relatedCalls?: Array<
+    Pick<
+      ApiCall,
+      'id' | 'status' | 'costUsd' | 'durationMs' | 'createdAt' | 'inputTokens' | 'outputTokens'
+    >
+  >;
+}
+
+export function formatApiCallReport(
+  ctx: ApiCallContext,
+  reportCtx: ReportContext,
+): string {
+  const lines: string[] = [];
+  lines.push(buildReportHeader(reportCtx));
+
+  const c = ctx.call;
+  lines.push('## Summary');
+  lines.push('');
+  lines.push(`- **id:** \`${c.id}\``);
+  lines.push(`- **provider:** ${c.provider}`);
+  lines.push(`- **operation:** ${c.operation}`);
+  lines.push(`- **model:** ${c.model ?? '(none)'}`);
+  lines.push(`- **status:** ${c.status}${c.success ? '' : ' (success=false)'}`);
+  lines.push(`- **createdAt:** ${c.createdAt.toISOString()}`);
+  if (c.completedAt) lines.push(`- **completedAt:** ${c.completedAt.toISOString()}`);
+  if (c.durationMs != null) lines.push(`- **durationMs:** ${c.durationMs}`);
+  if (c.units != null) lines.push(`- **units:** ${c.units}`);
+  if (c.inputTokens != null && c.outputTokens != null) {
+    lines.push(`- **tokens (in/out):** ${c.inputTokens.toLocaleString()} / ${c.outputTokens.toLocaleString()}`);
+  }
+  lines.push(`- **costUsd (final):** ${fmtUSD(c.costUsd)}`);
+  if (c.estimatedCostUsd != null) lines.push(`- **estimatedCostUsd:** ${fmtUSD(c.estimatedCostUsd)}`);
+  if (c.actualCostUsd != null) lines.push(`- **actualCostUsd:** ${fmtUSD(c.actualCostUsd)}`);
+  lines.push('');
+
+  // Error callout
+  if (c.errorMessage || c.status === 'failed') {
+    lines.push('## ⚠ Error');
+    lines.push('');
+    if (c.errorMessage) {
+      lines.push('```');
+      lines.push(c.errorMessage);
+      lines.push('```');
+    } else {
+      lines.push('Status `failed` but no errorMessage was persisted.');
+    }
+    lines.push('');
+  }
+
+  // Linked entities
+  if (ctx.user || ctx.project || ctx.scene || ctx.renderJob) {
+    lines.push('## Linked Entities');
+    lines.push('');
+    if (ctx.user) {
+      lines.push(`- **User:** \`${ctx.user.id}\` · ${ctx.user.email} (plan: ${ctx.user.plan})`);
+    }
+    if (ctx.project) {
+      lines.push(
+        `- **Project:** \`${ctx.project.id}\` · ${ctx.project.productName ?? '(no name)'} · status: ${ctx.project.status}`,
+      );
+    }
+    if (ctx.scene) {
+      lines.push(
+        `- **Scene:** \`${ctx.scene.id}\` · #${ctx.scene.sceneOrder} · ${ctx.scene.sceneGenerationType ?? 'unknown type'} · status: ${ctx.scene.status ?? 'pending'} · scriptId: \`${ctx.scene.scriptId}\``,
+      );
+    }
+    if (ctx.renderJob) {
+      lines.push(
+        `- **RenderJob:** \`${ctx.renderJob.id}\` · status: ${ctx.renderJob.status} · ${ctx.renderJob.progressPercent}%`,
+      );
+    }
+    lines.push('');
+  }
+
+  // Provider metadata (the heavy JSON blob)
+  lines.push('## Provider Metadata');
+  lines.push('');
+  lines.push('Raw `metadata` field — contains provider-specific request/response context (OpenAI usage payload, Anthropic cache_read tokens, Kling task ids, etc.).');
+  lines.push('');
+  lines.push('```json');
+  lines.push(JSON.stringify(c.metadata ?? null, null, 2));
+  lines.push('```');
+  lines.push('');
+
+  // Related calls
+  if (ctx.relatedCalls && ctx.relatedCalls.length > 0) {
+    lines.push('## Related Calls (same operation by same user, last hour)');
+    lines.push('');
+    lines.push('Useful for spotting batches and retries.');
+    lines.push('');
+    lines.push('| When | Status | Tokens (in/out) | Cost | Duration | id |');
+    lines.push('|---|---|---|---|---|---|');
+    for (const rc of ctx.relatedCalls) {
+      lines.push(
+        `| ${rc.createdAt.toISOString()} | ${rc.status} | ${rc.inputTokens?.toLocaleString() ?? '—'} / ${rc.outputTokens?.toLocaleString() ?? '—'} | ${fmtUSD(rc.costUsd)} | ${rc.durationMs != null ? `${rc.durationMs}ms` : '—'} | \`${rc.id}\` |`,
+      );
+    }
+    lines.push('');
+  }
+
+  // Footer
+  lines.push('---');
+  lines.push('');
+  lines.push(`Report generated by tachles admin debugger at ${reportCtx.generatedAt.toISOString()}.`);
+  lines.push('');
+
+  return lines.join('\n');
+}
+
+// ─────────────────────────────────────────────────────────────────
+// ApiCalls list report (filtered, with stats)
+// ─────────────────────────────────────────────────────────────────
+
+export interface ApiCallsListContext {
+  filters: {
+    provider?: string;
+    operation?: string;
+    status?: string;
+    from?: Date;
+    to?: Date;
+    take: number;
+  };
+  calls: Array<
+    ApiCall & {
+      user?: { email: string } | null;
+      project?: { id: string; productName: string | null } | null;
+    }
+  >;
+}
+
+export function formatApiCallsListReport(
+  ctx: ApiCallsListContext,
+  reportCtx: ReportContext,
+): string {
+  const lines: string[] = [];
+  lines.push(buildReportHeader(reportCtx));
+
+  // Filter summary
+  lines.push('## Filters Applied');
+  lines.push('');
+  lines.push(`- **provider:** ${ctx.filters.provider ?? '(any)'}`);
+  lines.push(`- **operation:** ${ctx.filters.operation ?? '(any)'}`);
+  lines.push(`- **status:** ${ctx.filters.status ?? '(any)'}`);
+  lines.push(`- **from:** ${ctx.filters.from?.toISOString() ?? '(any)'}`);
+  lines.push(`- **to:** ${ctx.filters.to?.toISOString() ?? '(any)'}`);
+  lines.push(`- **take:** ${ctx.filters.take}`);
+  lines.push(`- **rows returned:** ${ctx.calls.length}`);
+  lines.push('');
+
+  // Aggregate stats
+  const totalCost = ctx.calls.reduce((acc, c) => acc + (c.costUsd ?? 0), 0);
+  const successCount = ctx.calls.filter((c) => c.status === 'success').length;
+  const failCount = ctx.calls.filter((c) => c.status === 'failed').length;
+  const inflightCount = ctx.calls.filter((c) => c.status === 'in_progress').length;
+  const totalInputTokens = ctx.calls.reduce(
+    (acc, c) => acc + (c.inputTokens ?? 0),
+    0,
+  );
+  const totalOutputTokens = ctx.calls.reduce(
+    (acc, c) => acc + (c.outputTokens ?? 0),
+    0,
+  );
+  const avgDuration =
+    ctx.calls.length > 0
+      ? Math.round(
+          ctx.calls.reduce((acc, c) => acc + (c.durationMs ?? 0), 0) /
+            ctx.calls.length,
+        )
+      : 0;
+
+  lines.push('## Aggregate Stats');
+  lines.push('');
+  lines.push(`- **total cost:** ${fmtUSD(totalCost)}`);
+  lines.push(`- **success:** ${successCount} (${pct(successCount, ctx.calls.length)})`);
+  lines.push(`- **failed:** ${failCount} (${pct(failCount, ctx.calls.length)})`);
+  lines.push(`- **in-flight:** ${inflightCount} (${pct(inflightCount, ctx.calls.length)})`);
+  lines.push(`- **total tokens (in):** ${totalInputTokens.toLocaleString()}`);
+  lines.push(`- **total tokens (out):** ${totalOutputTokens.toLocaleString()}`);
+  lines.push(`- **avg duration:** ${avgDuration}ms`);
+  lines.push('');
+
+  // Per-operation breakdown
+  const byOp = new Map<string, { count: number; cost: number; failed: number }>();
+  for (const c of ctx.calls) {
+    const k = c.operation;
+    const cur = byOp.get(k) ?? { count: 0, cost: 0, failed: 0 };
+    cur.count++;
+    cur.cost += c.costUsd ?? 0;
+    if (c.status === 'failed') cur.failed++;
+    byOp.set(k, cur);
+  }
+  if (byOp.size > 0) {
+    lines.push('## Breakdown by Operation');
+    lines.push('');
+    lines.push('| Operation | Count | Cost | Failed |');
+    lines.push('|---|---|---|---|');
+    for (const [op, stats] of [...byOp.entries()].sort((a, b) => b[1].count - a[1].count)) {
+      lines.push(
+        `| \`${op}\` | ${stats.count} | ${fmtUSD(stats.cost)} | ${stats.failed} |`,
+      );
+    }
+    lines.push('');
+  }
+
+  // Per-provider breakdown
+  const byProvider = new Map<string, { count: number; cost: number; failed: number }>();
+  for (const c of ctx.calls) {
+    const k = c.provider;
+    const cur = byProvider.get(k) ?? { count: 0, cost: 0, failed: 0 };
+    cur.count++;
+    cur.cost += c.costUsd ?? 0;
+    if (c.status === 'failed') cur.failed++;
+    byProvider.set(k, cur);
+  }
+  if (byProvider.size > 0) {
+    lines.push('## Breakdown by Provider');
+    lines.push('');
+    lines.push('| Provider | Count | Cost | Failed |');
+    lines.push('|---|---|---|---|');
+    for (const [p, stats] of [...byProvider.entries()].sort((a, b) => b[1].cost - a[1].cost)) {
+      lines.push(`| ${p} | ${stats.count} | ${fmtUSD(stats.cost)} | ${stats.failed} |`);
+    }
+    lines.push('');
+  }
+
+  // Failures section (highlighted)
+  const failures = ctx.calls.filter((c) => c.status === 'failed');
+  if (failures.length > 0) {
+    lines.push('## ⚠ Failures');
+    lines.push('');
+    lines.push(`${failures.length} failed call(s) in this window. Each row below has its own \`id\` you can fetch via \`/admin/apicalls/{id}/export\` for full context.`);
+    lines.push('');
+    lines.push('| id | When | Provider | Operation | Error |');
+    lines.push('|---|---|---|---|---|');
+    for (const f of failures) {
+      const err = (f.errorMessage ?? '').replace(/\|/g, '\\|').slice(0, 200);
+      lines.push(
+        `| \`${f.id}\` | ${f.createdAt.toISOString()} | ${f.provider} | ${f.operation} | ${err || '(no errorMessage)'} |`,
+      );
+    }
+    lines.push('');
+  }
+
+  // Detailed table — every call in the result set
+  lines.push('## Detailed Calls');
+  lines.push('');
+  lines.push(`${ctx.calls.length} call(s), most recent first.`);
+  lines.push('');
+  lines.push(
+    '| When | Provider | Operation | Status | Model | Tokens (in/out) | Cost | Duration | Project | Email | id |',
+  );
+  lines.push('|---|---|---|---|---|---|---|---|---|---|---|');
+  for (const c of ctx.calls) {
+    const tok =
+      c.inputTokens != null && c.outputTokens != null
+        ? `${c.inputTokens.toLocaleString()} / ${c.outputTokens.toLocaleString()}`
+        : '—';
+    const proj = c.project
+      ? `${(c.project.productName ?? 'unnamed').slice(0, 30)}`
+      : '—';
+    lines.push(
+      `| ${c.createdAt.toISOString()} | ${c.provider} | ${c.operation} | ${c.status} | ${c.model ?? '—'} | ${tok} | ${fmtUSD(c.costUsd)} | ${c.durationMs != null ? `${c.durationMs}ms` : '—'} | ${proj} | ${c.user?.email ?? '—'} | \`${c.id}\` |`,
+    );
+  }
+  lines.push('');
+
+  // Footer
+  lines.push('---');
+  lines.push('');
+  lines.push(`Report generated by tachles admin debugger at ${reportCtx.generatedAt.toISOString()}.`);
+  lines.push(`To pull a single failure with full metadata, GET /api/admin/apicalls/{id}/export.md.`);
+  lines.push('');
+
+  return lines.join('\n');
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Project debug report
+// ─────────────────────────────────────────────────────────────────
+
+export interface ProjectExportContext {
+  project: Project & {
+    user: User;
+    scripts: Array<
+      Script & {
+        scenes: Pick<
+          Scene,
+          | 'id'
+          | 'sceneOrder'
+          | 'sceneType'
+          | 'sceneGoal'
+          | 'sceneGenerationType'
+          | 'status'
+          | 'imageUrl'
+          | 'voiceUrl'
+          | 'clipUrl'
+          | 'durationSeconds'
+          | 'textHebrew'
+          | 'lastErrorCode'
+          | 'lastErrorMessage'
+        >[];
+      }
+    >;
+    renderJobs: RenderJob[];
+  };
+  apiCalls: ApiCall[];
+  pendingConcepts: unknown;
+  intelligenceFresh: boolean;
+  currentHash: string;
+}
+
+export function formatProjectDebugReport(
+  ctx: ProjectExportContext,
+  reportCtx: ReportContext,
+): string {
+  const lines: string[] = [];
+  lines.push(buildReportHeader(reportCtx));
+
+  const p = ctx.project;
+  const data = (p.productData as Record<string, unknown> | null) ?? {};
+
+  // ── Summary ────────────────────────────────────────────────────
+  lines.push('## Project Summary');
+  lines.push('');
+  lines.push(`- **id:** \`${p.id}\``);
+  lines.push(`- **productName:** ${p.productName ?? '(none)'}`);
+  lines.push(`- **productUrl:** ${p.productUrl ?? '(none)'}`);
+  lines.push(`- **status:** ${p.status}`);
+  lines.push(`- **selectedScriptId:** ${p.selectedScriptId ?? '(none)'}`);
+  lines.push(`- **createdAt:** ${p.createdAt.toISOString()}`);
+  lines.push(`- **updatedAt:** ${p.updatedAt.toISOString()}`);
+  lines.push(`- **owner:** \`${p.user.id}\` · ${p.user.email} (plan: ${p.user.plan}, credits: ${p.user.creditsBalance})`);
+  lines.push('');
+
+  // ── Step-1 product data ───────────────────────────────────────
+  lines.push('## Step 1 — Product Data');
+  lines.push('');
+  lines.push('Form values the user submitted on /projects/new (after URL extract + edits).');
+  lines.push('');
+  lines.push('```json');
+  lines.push(
+    JSON.stringify(
+      {
+        description: data.description,
+        brand: data.brand,
+        targetAudience: data.targetAudience,
+        category: data.category,
+        durationSeconds: data.durationSeconds,
+        aspectRatio: data.aspectRatio,
+        heroImageUrl: data.heroImageUrl,
+        captions: data.captions,
+        backgroundMusic: data.backgroundMusic,
+      },
+      null,
+      2,
+    ),
+  );
+  lines.push('```');
+  lines.push('');
+
+  // ── Avatar / voice ────────────────────────────────────────────
+  lines.push('## Avatar + Voice');
+  lines.push('');
+  lines.push(`- **selectedAvatarId:** ${data.selectedAvatarId ?? '(none)'}`);
+  lines.push(`- **voiceId:** ${data.voiceId ?? '(none)'}`);
+  lines.push(`- **lockedOutfit:** ${data.lockedOutfit ?? '(none)'}`);
+  lines.push('');
+
+  // ── Selected features ────────────────────────────────────────
+  lines.push('## Selected Features (FEATURE FOCUS)');
+  lines.push('');
+  if (Array.isArray(data.selectedFeatures) && (data.selectedFeatures as unknown[]).length > 0) {
+    const features = data.selectedFeatures as Array<{
+      id: string;
+      title: string;
+      hook: string;
+      source: string;
+    }>;
+    lines.push('```json');
+    lines.push(JSON.stringify(features, null, 2));
+    lines.push('```');
+  } else {
+    lines.push('_No features selected._');
+  }
+  lines.push('');
+
+  // ── Product Intelligence ─────────────────────────────────────
+  const intel = (data.intelligence ?? null) as
+    | import('@/lib/product-intelligence').ProductIntelligence
+    | null;
+  lines.push('## Product Intelligence (V11)');
+  lines.push('');
+  lines.push(`- **fresh?** ${intel ? (ctx.intelligenceFresh ? '✅ YES' : '⚠ STALE') : '❌ MISSING'}`);
+  if (intel) {
+    lines.push(`- **generatedAt:** ${intel.generatedAt}`);
+    lines.push(`- **schemaVersion:** ${intel.schemaVersion}`);
+    lines.push(`- **sourceHash (cached):** ${intel.sourceHash ?? '(pre-PR6, no hash)'}`);
+    lines.push(`- **sourceHash (current):** ${ctx.currentHash}`);
+    lines.push(`- **models.dossier:** ${intel.models.dossier}`);
+    lines.push(`- **models.visualAnalysis:** ${intel.models.visualAnalysis}`);
+    lines.push(`- **models.audience:** ${intel.models.audience}`);
+    lines.push('');
+    lines.push('### Dossier');
+    lines.push('');
+    lines.push('```json');
+    lines.push(JSON.stringify(intel.dossier, null, 2));
+    lines.push('```');
+    lines.push('');
+    lines.push('### Visual Analysis');
+    lines.push('');
+    lines.push('```json');
+    lines.push(JSON.stringify(intel.visualAnalysis, null, 2));
+    lines.push('```');
+    lines.push('');
+    lines.push('### Audience Inference');
+    lines.push('');
+    lines.push('```json');
+    lines.push(JSON.stringify(intel.audience, null, 2));
+    lines.push('```');
+  }
+  lines.push('');
+
+  // ── Pending concepts (PR6) ────────────────────────────────────
+  if (ctx.pendingConcepts) {
+    lines.push('## Pending Concept Cards (V27.11.PR6 concept_interactive)');
+    lines.push('');
+    lines.push('```json');
+    lines.push(JSON.stringify(ctx.pendingConcepts, null, 2));
+    lines.push('```');
+    lines.push('');
+  }
+
+  // ── Generated scripts ─────────────────────────────────────────
+  lines.push(`## Generated Scripts (${p.scripts.length})`);
+  lines.push('');
+  if (p.scripts.length === 0) {
+    lines.push('_No scripts generated yet._');
+  } else {
+    for (const s of p.scripts) {
+      const isSelected = s.id === p.selectedScriptId;
+      lines.push(`### Script: ${s.framework ?? s.angle}${isSelected ? ' · **SELECTED**' : ''}`);
+      lines.push('');
+      lines.push(`- **id:** \`${s.id}\``);
+      lines.push(`- **framework:** ${s.framework ?? '—'}`);
+      lines.push(`- **angle (legacy):** ${s.angle}`);
+      lines.push(`- **hook:** "${s.hook}"`);
+      lines.push(`- **hookReason:** ${s.selectedHookReason ?? '—'}`);
+      lines.push(`- **cta:** ${s.cta ?? '—'}`);
+      lines.push(`- **targetAudience:** ${s.targetAudience}`);
+      lines.push(`- **estimatedDurationSeconds:** ${s.estimatedDurationSeconds}`);
+      lines.push(`- **qualityScoreOverall:** ${s.qualityScoreOverall ?? '—'}`);
+      lines.push(`- **createdAt:** ${s.createdAt.toISOString()}`);
+      lines.push('');
+      lines.push('#### Scenes');
+      lines.push('');
+      lines.push('| # | Type | Status | Duration | Has image | Has voice | Has clip | Error |');
+      lines.push('|---|---|---|---|---|---|---|---|');
+      for (const sc of s.scenes) {
+        lines.push(
+          `| ${sc.sceneOrder} | ${sc.sceneGenerationType ?? sc.sceneType} | ${sc.status ?? 'pending'} | ${sc.durationSeconds}s | ${sc.imageUrl ? '✅' : '—'} | ${sc.voiceUrl ? '✅' : '—'} | ${sc.clipUrl ? '✅' : '—'} | ${sc.lastErrorCode ?? '—'} |`,
+        );
+      }
+      lines.push('');
+      lines.push('#### Raw rawJson');
+      lines.push('');
+      lines.push('```json');
+      lines.push(JSON.stringify(s.rawJson, null, 2));
+      lines.push('```');
+      lines.push('');
+    }
+  }
+
+  // ── Render jobs ────────────────────────────────────────────────
+  if (p.renderJobs.length > 0) {
+    lines.push('## Render Jobs');
+    lines.push('');
+    lines.push('| id | Status | Progress | finalVideoUrl | Error | Created |');
+    lines.push('|---|---|---|---|---|---|');
+    for (const rj of p.renderJobs) {
+      lines.push(
+        `| \`${rj.id}\` | ${rj.status} | ${rj.progressPercent}% | ${rj.finalVideoUrl ?? '—'} | ${rj.errorMessage ?? '—'} | ${rj.createdAt.toISOString()} |`,
+      );
+    }
+    lines.push('');
+  }
+
+  // ── ApiCalls timeline ──────────────────────────────────────────
+  lines.push(`## API Calls (${ctx.apiCalls.length})`);
+  lines.push('');
+  lines.push('Most recent first.');
+  lines.push('');
+  lines.push('| When | Provider | Operation | Status | Model | Tokens (in/out) | Cost | Duration | id |');
+  lines.push('|---|---|---|---|---|---|---|---|---|');
+  for (const c of ctx.apiCalls) {
+    const tok =
+      c.inputTokens != null && c.outputTokens != null
+        ? `${c.inputTokens.toLocaleString()} / ${c.outputTokens.toLocaleString()}`
+        : '—';
+    lines.push(
+      `| ${c.createdAt.toISOString()} | ${c.provider} | ${c.operation} | ${c.status} | ${c.model ?? '—'} | ${tok} | ${fmtUSD(c.costUsd)} | ${c.durationMs != null ? `${c.durationMs}ms` : '—'} | \`${c.id}\` |`,
+    );
+  }
+  lines.push('');
+
+  // ── Failed ApiCalls with full context ─────────────────────────
+  const failedCalls = ctx.apiCalls.filter((c) => c.status === 'failed');
+  if (failedCalls.length > 0) {
+    lines.push(`## ⚠ Failed Calls (${failedCalls.length}) — Full Detail`);
+    lines.push('');
+    for (const c of failedCalls) {
+      lines.push(`### \`${c.id}\` — ${c.provider}/${c.operation}`);
+      lines.push('');
+      lines.push(`- **createdAt:** ${c.createdAt.toISOString()}`);
+      lines.push(`- **completedAt:** ${c.completedAt?.toISOString() ?? '—'}`);
+      lines.push(`- **durationMs:** ${c.durationMs ?? '—'}`);
+      lines.push(`- **model:** ${c.model ?? '—'}`);
+      if (c.errorMessage) {
+        lines.push('- **errorMessage:**');
+        lines.push('');
+        lines.push('```');
+        lines.push(c.errorMessage);
+        lines.push('```');
+      }
+      if (c.metadata != null) {
+        lines.push('- **metadata:**');
+        lines.push('');
+        lines.push('```json');
+        lines.push(JSON.stringify(c.metadata, null, 2));
+        lines.push('```');
+      }
+      lines.push('');
+    }
+  }
+
+  // ── Raw productData (last resort) ─────────────────────────────
+  lines.push('## Raw productData');
+  lines.push('');
+  lines.push('Everything not surfaced above. Last-resort debugging payload.');
+  lines.push('');
+  lines.push('```json');
+  lines.push(JSON.stringify(data, null, 2));
+  lines.push('```');
+  lines.push('');
+
+  // Footer
+  lines.push('---');
+  lines.push('');
+  lines.push(`Report generated by tachles admin debugger at ${reportCtx.generatedAt.toISOString()}.`);
+  lines.push('');
+
+  return lines.join('\n');
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────────────────────────
+
+function fmtUSD(usd: number | null | undefined): string {
+  if (usd == null) return '—';
+  return `$${usd.toFixed(6)}`;
+}
+
+function pct(part: number, total: number): string {
+  if (total === 0) return '0%';
+  return `${((100 * part) / total).toFixed(1)}%`;
+}
+
+/** V27.11 — generate a safe, slug-style filename for downloads. */
+export function safeFilename(parts: ReadonlyArray<string | number | undefined>): string {
+  return parts
+    .filter((p) => p !== undefined && p !== '')
+    .map((p) => String(p).replace(/[^a-zA-Z0-9_.-]/g, '_'))
+    .join('-');
+}

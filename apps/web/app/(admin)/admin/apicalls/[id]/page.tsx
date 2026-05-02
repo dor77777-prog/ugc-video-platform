@@ -108,6 +108,14 @@ export default async function AdminApiCallDebugPage({ params }: PageProps) {
           >
             {call.status}
           </StatusPill>
+          <a
+            href={`/api/admin/apicalls/${call.id}/export`}
+            className="rounded border border-blue-300 bg-blue-50 px-2 py-1 text-xs font-mono text-blue-700 hover:bg-blue-100"
+            download
+            title="הורד דוח Markdown מלא של הקריאה — קריא ל-Claude Code"
+          >
+            📥 ייצוא דוח
+          </a>
         </div>
         <p className="text-sm text-zinc-600">
           {call.provider} · {call.operation} · {call.model ?? 'no model'}
@@ -115,7 +123,23 @@ export default async function AdminApiCallDebugPage({ params }: PageProps) {
       </header>
 
       {/* ── Core fields ──────────────────────────────────────────── */}
-      <DebugSection title="פרטי הקריאה">
+      <DebugSection
+        title="פרטי הקריאה"
+        info={{
+          whatItIs:
+            'השדות הבסיסיים של ה-ApiCall row: מי הספק, איזה operation, באיזה מודל, סטטוס (in_progress/success/failed), tokens (input/output), עלויות (estimated/actual/final), משך הקריאה, הודעת שגיאה. status=in_progress פירושו ש-recordApiCallStart נכתב אבל recordApiCallComplete עדיין לא — או שהקריאה תקועה או שהיא רצה כעת.',
+          pipelineStage: 'נוצר ב-recordApiCallStart לפני שליחת הקריאה לספק; מתעדכן ב-recordApiCallComplete אחריה.',
+          sourceFiles: [
+            'apps/web/lib/usage/log.ts → recordApiCallStart, recordApiCallComplete',
+            'prisma/schema.prisma → model ApiCall',
+          ],
+          notes: [
+            'durationMs ניטרלי לכל ספק — נמדד ב-Date.now() דלתא',
+            'cost = costUsd (final) = actualCostUsd ?? estimatedCostUsd ?? 0',
+            'success הוא legacy boolean (V12 ומאז, status הוא ה-source of truth)',
+          ],
+        }}
+      >
         <KeyValueGrid
           rows={[
             ['id', <code key="id">{call.id}</code>],
@@ -142,6 +166,21 @@ export default async function AdminApiCallDebugPage({ params }: PageProps) {
       <DebugSection
         title="provider metadata"
         description="ה־JSON blob שמכיל את ה־payload הספציפי לכל ספק (OpenAI usage, Anthropic cache_read tokens, Kling task ids וכו')"
+        info={{
+          whatItIs:
+            'ה-metadata field של ApiCall — JSON unsanctioned-shape שלכל operation מחליטה מה להכניס. דוגמאות: OpenAI Responses → usage.input_tokens / output_tokens; Anthropic → cache_read_input_tokens / cache_creation_input_tokens; Kling i2v → task_id + state; PixVerse → request_id + face-gate verdict; concept_concept_regenerate_selected → replacedConceptIds + keptConceptIds. שימושי במיוחד לדיבאג של "למה לא עבד?".',
+          pipelineStage: 'נכתב ב-recordApiCallStart (initial metadata) ו/או ב-recordApiCallComplete (post-call metadata).',
+          sourceFiles: [
+            'apps/web/app/(dashboard)/projects/[id]/scripts/concept-actions.ts (writes concept regen metadata)',
+            'apps/web/lib/animation/* (writes Kling/PixVerse metadata)',
+            'apps/web/lib/scenes/clip-impl.ts (writes face-gate verdict + lipsync status)',
+          ],
+          notes: [
+            'אם הקריאה נכשלה — חפש כאן את השגיאה (לפעמים מפורטת יותר מ-errorMessage)',
+            'בחקירת איכות: tokens.input ניתן להשוות ל-tokens.output כדי להבין כמה compute הלך לפלט',
+            'בחקירת cache (Anthropic): cache_read_input_tokens / cache_creation_input_tokens מראים אם prompt-cache עבד',
+          ],
+        }}
       >
         <PrettyJson value={call.metadata} maxHeight="max-h-[600px]" />
       </DebugSection>

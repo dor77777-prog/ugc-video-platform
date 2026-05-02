@@ -4,16 +4,41 @@
 
 import { Card, CardContent } from '@/components/ui/card';
 
+/** V27.11 — rich metadata for each debug section so an admin can
+ *  understand exactly what the section represents, when its data
+ *  was built, and which code wrote it.
+ *
+ *  Surfaced as a collapsible "ℹ הסבר" panel under the section title.
+ *  Optional — sections without `info` render exactly like before. */
+export interface SectionInfo {
+  /** One-line explanation of what this section represents. */
+  whatItIs: string;
+  /** Pipeline stage label, e.g. "שלב 1 — URL extract", "שלב 4 — concept_interactive phase 1". */
+  pipelineStage?: string;
+  /** Files / functions that read or write this data. Helps when
+   *  jumping into the codebase. */
+  sourceFiles?: string[];
+  /** Env vars that affect this section's behavior. */
+  envVars?: string[];
+  /** When this data is updated — e.g. "on URL extract submit",
+   *  "on every concept-gen call", "after expansion". */
+  updatedWhen?: string;
+  /** Common failure modes / interpretation tips. */
+  notes?: string[];
+}
+
 export function DebugSection({
   title,
   children,
   hidden,
   description,
+  info,
 }: {
   title: string;
   children: React.ReactNode;
   hidden?: boolean;
   description?: string;
+  info?: SectionInfo;
 }) {
   if (hidden) return null;
   return (
@@ -24,10 +49,67 @@ export function DebugSection({
           {description && (
             <p className="text-xs text-zinc-500">{description}</p>
           )}
+          {info && <SectionInfoPanel info={info} />}
         </div>
         <div className="text-sm">{children}</div>
       </CardContent>
     </Card>
+  );
+}
+
+function SectionInfoPanel({ info }: { info: SectionInfo }) {
+  return (
+    <details className="rounded border border-blue-200 bg-blue-50/50 p-2 text-xs">
+      <summary className="cursor-pointer font-mono text-[11px] uppercase tracking-wide text-blue-800">
+        ℹ הסבר על המקטע
+      </summary>
+      <div className="mt-2 space-y-2 text-blue-900">
+        <p>
+          <strong>מה זה: </strong>
+          {info.whatItIs}
+        </p>
+        {info.pipelineStage && (
+          <p>
+            <strong>שלב ב-pipeline: </strong>
+            {info.pipelineStage}
+          </p>
+        )}
+        {info.updatedWhen && (
+          <p>
+            <strong>נכתב מחדש: </strong>
+            {info.updatedWhen}
+          </p>
+        )}
+        {info.sourceFiles && info.sourceFiles.length > 0 && (
+          <div>
+            <strong>קוד אחראי:</strong>
+            <ul className="mt-1 list-disc pr-5 font-mono text-[10px]">
+              {info.sourceFiles.map((f) => (
+                <li key={f}>{f}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {info.envVars && info.envVars.length > 0 && (
+          <div>
+            <strong>Env vars רלוונטיים:</strong>{' '}
+            <span className="font-mono text-[10px]">
+              {info.envVars.join(', ')}
+            </span>
+          </div>
+        )}
+        {info.notes && info.notes.length > 0 && (
+          <div>
+            <strong>הערות לקריאה:</strong>
+            <ul className="mt-1 list-disc pr-5">
+              {info.notes.map((n, i) => (
+                <li key={i}>{n}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+    </details>
   );
 }
 
