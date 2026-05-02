@@ -17,15 +17,19 @@ import {
 import { OPENAI_DEFAULT_SCRIPT_MODEL } from '@/lib/llm/openai-script-client';
 import { ANTHROPIC_DEFAULT_SCRIPT_MODEL } from '@/lib/llm/anthropic-script-client';
 
-// V14 — script-gen provider switch. Default Anthropic (Claude Sonnet
-// 4.6); flip with LLM_SCRIPT_PROVIDER=openai|gemini. MUST stay in sync
-// with resolveScriptProvider() in lib/llm/scripts.ts — otherwise the
-// admin /admin/costs UI shows the wrong supplier name on the row.
+// V27.10.13 — keep in sync with resolveScriptProvider() in
+// lib/llm/scripts.ts. V27.10.12 flipped the default openai but this
+// duplicate stayed pointed at anthropic, so /admin/costs labelled
+// gpt-5.4-mini calls as `anthropic / claude-sonnet-4-6`. The actual
+// generation runs through scripts.ts (correct), but the ApiCall row
+// is logged from here (wrong supplier name until this fix).
+//
+// MUST stay in sync with resolveScriptProvider() in lib/llm/scripts.ts.
 function resolveScriptProvider(): 'anthropic' | 'openai' | 'gemini' {
   const raw = process.env.LLM_SCRIPT_PROVIDER?.trim().toLowerCase();
-  if (raw === 'openai') return 'openai';
+  if (raw === 'anthropic') return 'anthropic';
   if (raw === 'gemini') return 'gemini';
-  return 'anthropic';
+  return 'openai';
 }
 import { GEMINI_DEFAULT_MODEL } from '@/lib/llm/gemini-client';
 import { checkRateLimit, RateLimitedError } from '@/lib/usage/rate-limit';
