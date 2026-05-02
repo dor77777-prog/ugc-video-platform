@@ -27,7 +27,10 @@
 import OpenAI from 'openai';
 import { withRetry } from '@/lib/utils/retry';
 
-const MODEL = process.env.OPENAI_MOTION_VISION_MODEL ?? 'gpt-5.5-mini';
+// V27.10.18 — `gpt-5.5-mini` returns 400 model_not_found region-wide;
+// fell back to gpt-5.4-mini which supports the same Responses-API
+// params (reasoning.effort, text.verbosity, image detail).
+const MODEL = process.env.OPENAI_MOTION_VISION_MODEL ?? 'gpt-5.4-mini';
 const REQUEST_TIMEOUT_MS = 30_000;
 
 export class MotionAnalysisConfigError extends Error {

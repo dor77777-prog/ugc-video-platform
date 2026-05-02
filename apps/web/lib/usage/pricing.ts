@@ -37,9 +37,10 @@ const OPENAI_TEXT_PRICING: Record<string, { input: number; output: number }> = {
 
 export function priceOpenAiText(model: string, inputTokens: number, outputTokens: number): number {
   const base = stripVersionSuffix(model);
-  // V27.10.16 — fallback updated to the new default (gpt-5.5-mini) so
-  // unknown future id variants don't over-bill at gpt-5.4-mini's rate.
-  const p = OPENAI_TEXT_PRICING[base] ?? OPENAI_TEXT_PRICING['gpt-5.5-mini']!;
+  // V27.10.18 — fallback reverted to gpt-5.4-mini after live testing
+  // confirmed gpt-5.5 family isn't yet rolled out in our region.
+  // gpt-5.5 entries above are kept for when access lands.
+  const p = OPENAI_TEXT_PRICING[base] ?? OPENAI_TEXT_PRICING['gpt-5.4-mini']!;
   return (inputTokens * p.input + outputTokens * p.output) / 1_000_000;
 }
 

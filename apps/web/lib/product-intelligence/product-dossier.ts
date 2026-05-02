@@ -138,7 +138,7 @@ export async function buildProductDossier(input: DossierInput): Promise<DossierR
   if (!apiKey) throw new DossierConfigError('OPENAI_API_KEY not set');
 
   const client = new OpenAI({ apiKey });
-  const model = process.env.OPENAI_DOSSIER_MODEL ?? process.env.OPENAI_SCRIPT_MODEL ?? 'gpt-5.5-mini';
+  const model = process.env.OPENAI_DOSSIER_MODEL ?? process.env.OPENAI_SCRIPT_MODEL ?? 'gpt-5.4-mini';
 
   const userText = [
     `Product page facts:`,

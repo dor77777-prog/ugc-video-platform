@@ -87,7 +87,7 @@ export async function generateQuickSuggestions(
   }
 
   const client = new OpenAI({ apiKey });
-  const model = process.env.OPENAI_QUICK_SUGGEST_MODEL ?? process.env.OPENAI_SCRIPT_MODEL ?? 'gpt-5.5-mini';
+  const model = process.env.OPENAI_QUICK_SUGGEST_MODEL ?? process.env.OPENAI_SCRIPT_MODEL ?? 'gpt-5.4-mini';
 
   const userText = [
     `Product name: ${name}`,

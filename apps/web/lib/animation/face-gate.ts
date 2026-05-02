@@ -119,7 +119,9 @@ export async function runFaceGate(input: {
   // explicit recommendation for classification tasks. `detail: 'low'`
   // because a 512x512 view is more than enough to detect a face — no
   // need to spend tokens on full pixel fidelity here.
-  const model = process.env.OPENAI_FACE_GATE_MODEL ?? 'gpt-5.5-mini';
+  // V27.10.18 — `gpt-5.5-mini` not yet available; fell back to
+  // gpt-5.4-mini (same Responses-API support, same effort/detail tunings).
+  const model = process.env.OPENAI_FACE_GATE_MODEL ?? 'gpt-5.4-mini';
 
   // Resolve local /uploads/... URLs to a data URL so the OpenAI API
   // can see them without a public host.

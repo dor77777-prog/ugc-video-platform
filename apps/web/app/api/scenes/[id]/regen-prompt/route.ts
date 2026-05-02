@@ -47,7 +47,7 @@ export async function POST(
   const callId = await recordApiCallStart({
     provider: 'openai',
     operation: 'prompt_regen',
-    model: process.env.OPENAI_SCRIPT_MODEL ?? 'gpt-5.5-mini',
+    model: process.env.OPENAI_SCRIPT_MODEL ?? 'gpt-5.4-mini',
     userId: dbUser.id,
     projectId: scene.script.project.id,
   });

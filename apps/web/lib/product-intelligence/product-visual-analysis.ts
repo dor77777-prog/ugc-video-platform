@@ -107,7 +107,9 @@ export async function analyzeProductVisual(
   // to 2048px (not aggressively resized), and reasoning.effort 'low'
   // gives the model headroom for the multi-field structured analysis
   // without burning extra tokens.
-  const model = process.env.OPENAI_PRODUCT_VISION_MODEL ?? 'gpt-5.5-mini';
+  // V27.10.18 — `gpt-5.5-mini` not yet available; fell back to
+  // gpt-5.4-mini (same Responses-API features).
+  const model = process.env.OPENAI_PRODUCT_VISION_MODEL ?? 'gpt-5.4-mini';
 
   const heroUrl = await imageToDataUrl(input.imageUrl);
   const secondaryUrl = input.secondaryImageUrl

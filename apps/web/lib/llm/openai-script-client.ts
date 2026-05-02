@@ -28,10 +28,19 @@
 import OpenAI from 'openai';
 import { withRetry } from '@/lib/utils/retry';
 
-// V27.10.15 — gpt-5.5-mini per migration guide. If the model id is not
-// yet available in the user's account/region, set
-// OPENAI_SCRIPT_MODEL=gpt-5.5 (full) or fall back to 'gpt-5.4-mini'.
-const DEFAULT_MODEL = 'gpt-5.5-mini';
+// V27.10.18 — gpt-5.4 (full) is the default. V27.10.15 set
+// 'gpt-5.5-mini' per the migration guide, but that id returns 400
+// model_not_found in the user's account — gpt-5.5 family isn't yet
+// rolled out region-wide. The user explicitly asked for the full
+// gpt-5.4 (not the mini) for higher script-gen quality. The new
+// Responses-API params we added (reasoning.effort, text.verbosity)
+// all work on gpt-5.4 too — same shape, slightly less aggressive
+// concision on `verbosity: 'low'` per the migration guide.
+//
+// Cost: gpt-5.4 is ~3x more expensive than gpt-5.4-mini ($2.5/$10
+// vs $0.75/$4.5 per MTok). A 6-script batch lands ~$0.30 instead of
+// ~$0.10. Quality lift comes from larger model + better Hebrew nuance.
+const DEFAULT_MODEL = 'gpt-5.4';
 
 type ReasoningEffort = 'none' | 'low' | 'medium' | 'high' | 'xhigh';
 type Verbosity = 'low' | 'medium' | 'high';
