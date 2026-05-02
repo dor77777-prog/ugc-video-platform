@@ -154,11 +154,36 @@ async function loadProjectContext(projectId: string, userId: string): Promise<
     | null;
   const category = findCategory(categoryId);
 
-  // Build / fetch intelligence (same logic as the legacy path).
+  // V27.11.PR6 — staleness check. The eager prebuild on createProject
+  // persisted intelligence at step 1 with a sourceHash of the input
+  // fields. If the user has edited description / features / category /
+  // heroImageUrl since (e.g. via /edit step), the cached intelligence
+  // is stale and we rebuild lazily here — same pipeline as the
+  // missing-intelligence branch below.
   const cachedIntel = (data.intelligence ?? null) as
     | import('@/lib/product-intelligence').ProductIntelligence
     | null;
-  let intelligence = cachedIntel;
+  const {
+    isIntelligenceFresh,
+    intelligenceSourceHash,
+    extractIntelligenceSourceFields,
+  } = await import('@/lib/product-intelligence/source-hash');
+  const currentHash = intelligenceSourceHash(
+    extractIntelligenceSourceFields({
+      productName: project.productName ?? 'מוצר ללא שם',
+      productData: data,
+    }),
+  );
+  const cacheIsFresh = isIntelligenceFresh({
+    intelligence: cachedIntel,
+    currentHash,
+  });
+  if (cachedIntel && !cacheIsFresh) {
+    console.log(
+      `[concept-actions] intelligence stale (cached=${cachedIntel.sourceHash?.slice(0, 8) ?? 'no-hash'} vs current=${currentHash.slice(0, 8)}) — rebuilding`,
+    );
+  }
+  let intelligence: typeof cachedIntel = cacheIsFresh ? cachedIntel : null;
   let resolvedCategoryId: ProductCategoryId | null = categoryId;
   let resolvedCategory = category;
   if (!intelligence) {

@@ -1,10 +1,12 @@
 'use server';
 
 import { redirect } from 'next/navigation';
+import { after } from 'next/server';
 import { z } from 'zod';
 import { ProjectStatus } from '@prisma/client';
 import { prisma } from '@/lib/db';
 import { getOrCreateAppUser } from '@/lib/auth/sync-user';
+import { findCategory } from '@/lib/categories';
 
 const inputSchema = z.object({
   productUrl: z.string().url().optional().or(z.literal('')),
@@ -87,5 +89,69 @@ export async function createProjectAction(
     },
   });
 
-  redirect(`/projects/${project.id}/avatar`);
+  // V27.11.PR6 — eager Product Intelligence prebuild via Next.js
+  // unstable_after. Runs AFTER the redirect response is sent to the
+  // user, so step 1 → step 2 navigation is unaffected. By the time
+  // the user reaches step 4 (concepts) — typically 30-180s of
+  // avatar+features picking later — intelligence is already cached
+  // in productData.intelligence.
+  //
+  // Quality safeguard: the persisted intelligence carries a
+  // sourceHash of the input fields (description / features /
+  // brand / category / heroImageUrl). If the user edits any of
+  // those between step 1 and step 4, concept-actions.ts detects
+  // the hash mismatch via isIntelligenceFresh() and rebuilds
+  // lazily — so eager prebuild never serves stale intelligence
+  // to the script engine.
+  //
+  // Errors are non-fatal: the lazy fallback in concept-actions
+  // catches any failure here. We log loudly so production
+  // observability can surface chronic failures.
+  const projectId = project.id;
+  const productCategory = findCategory(d.category);
+  after(async () => {
+    try {
+      console.log(`[after] eager intelligence prebuild starting for project ${projectId}`);
+      const startedAt = Date.now();
+      const { buildProductIntelligence } = await import('@/lib/product-intelligence');
+      const built = await buildProductIntelligence({
+        productName: d.productName,
+        description: d.description ?? null,
+        brand: d.brand ?? null,
+        features: [],
+        price: null,
+        currency: null,
+        sourceUrl: d.productUrl || null,
+        userNotes: null,
+        categoryGuess: productCategory?.labelEnglish ?? d.category ?? null,
+        heroImageUrl: d.heroImageUrl || null,
+      });
+
+      // Re-read productData so a concurrent user edit isn't clobbered.
+      const fresh = await prisma.project.findUnique({
+        where: { id: projectId },
+        select: { productData: true },
+      });
+      const merged = {
+        ...((fresh?.productData as Record<string, unknown>) ?? {}),
+        intelligence: built.intelligence,
+      };
+      await prisma.project.update({
+        where: { id: projectId },
+        data: { productData: merged as object },
+      });
+      console.log(
+        `[after] intelligence prebuild for project ${projectId} done in ${Date.now() - startedAt}ms`,
+      );
+    } catch (err) {
+      console.error(
+        `[after] eager intelligence prebuild for project ${projectId} failed:`,
+        (err as Error).message,
+      );
+      // Lazy fallback in concept-actions will rebuild on next
+      // generateConceptsAction call.
+    }
+  });
+
+  redirect(`/projects/${projectId}/avatar`);
 }

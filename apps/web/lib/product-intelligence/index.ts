@@ -13,6 +13,7 @@
 // "shallow scraped text → script" pipeline that produced generic
 // scripts and weak image briefs.
 
+import { intelligenceSourceHash } from './source-hash';
 import { buildProductDossier, type DossierInput } from './product-dossier';
 import {
   analyzeProductVisual,
@@ -26,6 +27,13 @@ export type {
   AudienceInference,
   ProductIntelligence,
 } from './types';
+
+export {
+  intelligenceSourceHash,
+  isIntelligenceFresh,
+  extractIntelligenceSourceFields,
+} from './source-hash';
+export type { IntelligenceSourceFields } from './source-hash';
 
 export {
   buildProductDossier,
@@ -152,6 +160,20 @@ export async function buildProductIntelligence(
     audienceResult,
   ] = await Promise.all([visualPromise, audiencePromise]);
 
+  // V27.11.PR6 — sourceHash for staleness detection downstream.
+  const sourceHash = intelligenceSourceHash({
+    productName: input.productName,
+    description: input.description ?? null,
+    brand: input.brand ?? null,
+    features: input.features ?? null,
+    price: input.price ?? null,
+    currency: input.currency ?? null,
+    sourceUrl: input.sourceUrl ?? null,
+    userNotes: input.userNotes ?? null,
+    category: input.categoryGuess ?? null,
+    heroImageUrl: input.heroImageUrl ?? null,
+  });
+
   const intelligence: ProductIntelligence = {
     dossier: dossierResult.dossier,
     visualAnalysis,
@@ -163,6 +185,7 @@ export async function buildProductIntelligence(
       visualAnalysis: visualModel ?? '(skipped)',
       audience: audienceResult.model,
     },
+    sourceHash,
   };
 
   return {

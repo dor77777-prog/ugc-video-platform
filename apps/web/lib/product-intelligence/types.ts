@@ -94,4 +94,11 @@ export interface ProductIntelligence {
     visualAnalysis: string;
     audience: string;
   };
+  /** V27.11.PR6 — deterministic hash of the source product data the
+   *  intelligence was built from. Used by concept-actions.ts to
+   *  detect staleness when the user has edited description /
+   *  features / category / hero image since the eager prebuild ran.
+   *  Optional for back-compat with intelligence persisted before
+   *  this field landed; missing → treat as stale (rebuild). */
+  sourceHash?: string;
 }
