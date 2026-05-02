@@ -19,23 +19,31 @@ import {
   ANTHROPIC_DEFAULT_SCRIPT_MODEL,
 } from './anthropic-script-client';
 
-// V14 — provider switch, now defaults to Anthropic Claude Sonnet 4.6.
-// Live use of gpt-5.4-mini surfaced subtle Hebrew quality issues that
-// 600 lines of system-prompt rules can't fix: calques from English
-// ("אני כבר מפחדת" — "I'm already scared") and verb-noun collocation
-// errors ("לקחתי לתיק" instead of "הכנסתי / שמתי בתיק"). Sonnet 4.6 is
-// significantly more fluent in Hebrew nuance. Cost is ~3-4× per
-// generation, partly offset by prompt caching on the 603-line system
-// prompt. Operator can flip via env without redeploy:
-//   LLM_SCRIPT_PROVIDER=anthropic  (default — V14)
-//   LLM_SCRIPT_PROVIDER=openai     (V26.8 path, kept as fallback)
+// V27.10.12 — default flipped Anthropic Sonnet 4.6 → OpenAI gpt-5.4-mini.
+//
+// Why: live measurement on Sonnet was 90-100s per call (5000 output
+// tokens at ~50 tok/s decode), pushing the 6-parallel batch to 100-
+// 200s when retry-once fired. Architecture-level math wins this:
+//   gpt-5.4-mini: ~200-300 tok/s, ~25s per call, ~25s wall clock
+//   Sonnet 4.6:   ~50 tok/s,      ~100s per call, ~100s wall clock
+//
+// V14's calque concern ("אני כבר מפחדת" pattern) was mitigated by
+// V27.9's 7 Hebrew QA gates + register lock + V27.10.11's HARD-RULE
+// FEATURE FOCUS block. The prompt rails do most of the lift now.
+//
+// Cost win compounds: gpt-5.4-mini is $0.15 / $0.60 per MTok vs
+// Sonnet's $3 / $15. ~20x cheaper at the same workload.
+//
+// Operator overrides (no redeploy):
+//   LLM_SCRIPT_PROVIDER=anthropic  (V14 path, kept for quality A/B)
+//   LLM_SCRIPT_PROVIDER=openai     (default — V27.10.12)
 //   LLM_SCRIPT_PROVIDER=gemini     (V25-V26.7 path, kept for experiments)
 type ScriptProvider = 'anthropic' | 'openai' | 'gemini';
 function resolveScriptProvider(): ScriptProvider {
   const raw = process.env.LLM_SCRIPT_PROVIDER?.trim().toLowerCase();
-  if (raw === 'openai') return 'openai';
+  if (raw === 'anthropic') return 'anthropic';
   if (raw === 'gemini') return 'gemini';
-  return 'anthropic';
+  return 'openai';
 }
 
 // Script Engine V2 — wrapper.
