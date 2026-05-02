@@ -96,6 +96,10 @@ export interface ProductInput {
 }
 
 // Snake_case shapes returned by the LLM (match the JSON schemas).
+// V27.10.9 — `assumptions` removed from creative_strategy (output trim).
+// V27.10.9 — quality_score's 12 dimension scores removed; only
+// `overall` + `weakness_note` remain. Old fields kept optional so
+// scripts persisted before the trim still parse.
 interface LlmCreativeStrategy {
   core_insight: string;
   audience_pain: string;
@@ -108,19 +112,22 @@ interface LlmCreativeStrategy {
   hook_type: string;
   script_promise: string;
   conversion_goal: string;
-  assumptions: string[];
+  /** V27.10.9 — removed from schema. Kept optional for back-compat. */
+  assumptions?: string[];
 }
 interface LlmQualityScore {
-  hook_strength: number;
-  specificity: number;
-  israeli_authenticity: number;
-  emotional_pull: number;
-  visual_clarity: number;
-  conversion_potential: number;
-  tts_naturalness: number;
-  no_generic_cliches: number;
   overall: number;
   weakness_note: string;
+  /** V27.10.9 — 12 sub-scores no longer requested from the model.
+   *  Kept optional so scripts saved before the trim still parse. */
+  hook_strength?: number;
+  specificity?: number;
+  israeli_authenticity?: number;
+  emotional_pull?: number;
+  visual_clarity?: number;
+  conversion_potential?: number;
+  tts_naturalness?: number;
+  no_generic_cliches?: number;
 }
 interface LlmScene {
   scene_order: number;
@@ -669,7 +676,9 @@ function toGenerated(s: LlmScript, regenerated: boolean): GeneratedScript {
       hookType: s.creative_strategy.hook_type,
       scriptPromise: s.creative_strategy.script_promise,
       conversionGoal: s.creative_strategy.conversion_goal,
-      assumptions: s.creative_strategy.assumptions,
+      // V27.10.9 — assumptions removed from schema. Defaulted to []
+      // so the GeneratedCreativeStrategy shape stays stable for the UI.
+      assumptions: s.creative_strategy.assumptions ?? [],
     },
     hookOptions: s.hook_options,
     selectedHook: s.selected_hook,
@@ -707,14 +716,18 @@ function toGenerated(s: LlmScript, regenerated: boolean): GeneratedScript {
       }))
       .sort((a, b) => a.sceneOrder - b.sceneOrder),
     qualityScore: {
-      hookStrength: s.quality_score.hook_strength,
-      specificity: s.quality_score.specificity,
-      israeliAuthenticity: s.quality_score.israeli_authenticity,
-      emotionalPull: s.quality_score.emotional_pull,
-      visualClarity: s.quality_score.visual_clarity,
-      conversionPotential: s.quality_score.conversion_potential,
-      ttsNaturalness: s.quality_score.tts_naturalness,
-      noGenericCliches: s.quality_score.no_generic_cliches,
+      // V27.10.9 — only overall + weakness_note are now requested from
+      // the LLM (the 12 sub-scores were dead weight, never UI-consumed).
+      // Sub-scores default to 0 so the GeneratedQualityScore shape stays
+      // stable for the dashboard / DB writers.
+      hookStrength: s.quality_score.hook_strength ?? 0,
+      specificity: s.quality_score.specificity ?? 0,
+      israeliAuthenticity: s.quality_score.israeli_authenticity ?? 0,
+      emotionalPull: s.quality_score.emotional_pull ?? 0,
+      visualClarity: s.quality_score.visual_clarity ?? 0,
+      conversionPotential: s.quality_score.conversion_potential ?? 0,
+      ttsNaturalness: s.quality_score.tts_naturalness ?? 0,
+      noGenericCliches: s.quality_score.no_generic_cliches ?? 0,
       overall: s.quality_score.overall,
       weaknessNote: s.quality_score.weakness_note,
     },

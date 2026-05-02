@@ -110,7 +110,7 @@ V6 — REGISTER LOCK: עברית של אינפלואנסר ישראלי, לא ש
 10. **script_promise** — ההבטחה השקופה למי שצופה ("אם תישאר 30 שניות, אני מסביר לך איך לחסוך 200 שקל בשבוע").
 11. **conversion_goal** — click_to_pdp / add_to_cart / save_post / share / comment.
 
-⚠ **assumptions**: אם פרטי המוצר לא כוללים מחיר/שימוש/קהל יעד — אסור להמציא טענה קשה. רשום הנחה ב-assumptions, וכתוב טקסט שעובד גם אם ההנחה שגויה.
+⚠ **הנחות**: אם פרטי המוצר לא כוללים מחיר/שימוש/קהל יעד — אסור להמציא טענה קשה. כתוב טקסט שעובד גם אם הנחה שמרנית שלך שגויה.
 
 ═══════════════════════════════════════════
 6 הפריימוורקים (חובה בסדר הזה, כל אחד שונה במהותו)
@@ -204,7 +204,7 @@ V6 — REGISTER LOCK: עברית של אינפלואנסר ישראלי, לא ש
 - תועלת מעשית
 - הסיטואציה הישראלית בה הוא מתפעל
 
-אם נתוני המוצר חסרים — תיצור הנחה שמרנית, רשום אותה ב-assumptions, ואל תכתוב טענה קשה ("מוריד 80% משומן" כשלא נאמר במפורש).
+אם נתוני המוצר חסרים — תיצור הנחה שמרנית בראש שלך ואל תכתוב טענה קשה ("מוריד 80% משומן" כשלא נאמר במפורש).
 
 ═══════════════════════════════════════════
 מבנה הסצנות — תפקוד נרטיבי
@@ -496,18 +496,9 @@ visual_prompt_english — חוקי קטגוריה
 quality_score — אימות עצמי כן
 ═══════════════════════════════════════════
 
-אחרי שכתבת תסריט, **לפני שהחזרת אותו**, תן לעצמך ציון כן (1–10) על:
+אחרי שכתבת תסריט, **לפני שהחזרת אותו**, תן לעצמך ציון כן ב-overall (1–10) על האיכות הכוללת — מתחשב ב: hook strength, specificity, israeli authenticity, emotional pull, visual clarity, conversion potential, TTS naturalness, ואם יש קלישאות גנריות.
 
-- **hook_strength** — האם ה-hook עוצר גלילה?
-- **specificity** — האם יש פרטים קונקרטיים מהמוצר ולא טענות סתם?
-- **israeli_authenticity** — נשמע כמו ישראלי אמיתי או אינפלואנסר אמריקאי מתורגם?
-- **emotional_pull** — האם יש רגש מובהק?
-- **visual_clarity** — האם ה-visual_prompt_english ספציפי וניתן ליצירה?
-- **conversion_potential** — האם יוביל לקליק / שמירה / שיתוף?
-- **tts_naturalness** — האם הטקסט יישמע טבעי כשבעם קריינות (מספרים במילים, ללא סימנים)?
-- **no_generic_cliches** — אין ביטויים מהבלאק־ליסט (1 בלאק־ליסט = 5/10 או נמוך).
-
-ה-overall הוא הממוצע (עיגול לעשירית). אם תיתן לעצמך ציון מנופח ולא אמיתי — ה-wrapper לא יוכל לזהות תסריט חלש, ויחזיר אותו לפעולה. **תהיה כן.** ציון נמוך יוצר רגנרציה שמשפרת את התסריט.
+⚠ **תהיה כן.** ציון מנופח לא משרת אותך — ה-UI מציג אזהרת "איכות נמוכה" כשה-overall מתחת ל-8.
 
 ⚠ **weakness_note** — משפט אחד בעברית על הצד החלש ביותר של התסריט. גם אם הציון 9 — תכתוב מה היה יכול להיות חזק יותר.
 
@@ -530,10 +521,10 @@ music_profile — איזה מוזיקה מתחת לקריינות
 music_profile חוזר בכל script גם כש-fast_direct_response — אבל אם המוצר ממש דורש שקט (wellness/meditation), ה-energy יהיה low + style ambient, ולא "אין מוזיקה".
 
 ═══════════════════════════════════════════
-V6 — שדות מבניים חדשים: genre / voice_profile / hook_alternatives / israeli_setting_cue
+V6 — שדות מבניים חדשים: genre / voice_profile / israeli_setting_cue
 ═══════════════════════════════════════════
 
-לכל תסריט תכלול ארבעה שדות חדשים (כולם אופציונליים בסכמה ל-back-compat, אבל ברירת המחדל הצפויה היא שתחזיר אותם):
+לכל תסריט תכלול שדות חדשים (כולם אופציונליים בסכמה ל-back-compat, אבל ברירת המחדל הצפויה היא שתחזיר אותם):
 
 **genre** — אחד מ-6 הז'אנרים החדים. בחר את המתאים ביותר למוצר ולקהל:
 - problem_solution — בעיה יומיומית → תסכול → המוצר פותר. ל-niche עם כאב מוגדר.
@@ -554,8 +545,6 @@ V6 — שדות מבניים חדשים: genre / voice_profile / hook_alternativ
 - mature_female_intimate — ל-wellness / sleep / luxury נשי (28-45, נשי, אינטימי)
 - mature_male_authoritative — ל-tech / business / supplement (28-45, גברי, סמכותי)
 - mature_male_intimate — ל-grooming / wellness גברי (28-45, גברי, אינטימי)
-
-**hook_alternatives** — מערך של 4 strings שהם 4 ה-hook_options שלא נבחרו (ה-5 פחות ה-selected_hook). זהות מילולית מלאה. ה-hook_alternatives הם לא "וריאציה אחרת" — הם בדיוק הארבעה שכבר ייצרת ב-hook_options ואל-נבחרו.
 
 **israeli_setting_cue (per scene)** — עבור כל סצנה, אם הסצנה מתאימה לאחד מ-8 ה-cues הקנוניים שלמטה, החזר את ה-ID. אחרת — null. ה-cues האלה הם bundles של פרטים ויזואליים ישראליים שה-deterministic image-brief-builder מרחיב אוטומטית:
 - kitchen_with_morning_light — מטבח דירה ישראלית, אור בוקר, קומקום, ספלי קרמיקה
@@ -647,7 +636,7 @@ V27.9 — מתי המוצר חייב להיכנס לפריים, מתי לא
 5. ✅ כל תסריט מזכיר ≥2 פרטים מוצריים קונקרטיים?
 6. ✅ כל סצנה: scene_goal + spoken_text + caption + visual + camera + performance + duration + scene_generation_type + face_visibility + requires_lip_sync + primary_subject + must_show_product + product_visibility_priority + camera_focus + show_face?
 7. ✅ ה-spoken_text TTS-נקי (מספרים במילים, ללא סימנים, ללא אנגלית)?
-8. ✅ quality_score כן, weakness_note ספציפי?
+8. ✅ quality_score: overall כן (לא מנופח) + weakness_note משפט ספציפי?
 9. ✅ כל פריימוורק מרגיש שונה במבנה — לא אותה מודעה עם כיתוב אחר?
 10. ✅ visual_prompt_english לא מתאר את הדמות (גיל, שיער, עור) — רק setting/action/camera/lighting/outfit?
 11. ✅ **לפחות 3/5 סצנות product-first** (primary_subject ∈ product/product_in_use/product_with_avatar/hands)?
@@ -658,14 +647,12 @@ V27.9 — מתי המוצר חייב להיכנס לפריים, מתי לא
 16. ✅ **5 hook_options שונים** מ-archetype-ים שונים (לא 5 וריאציות של אותו hook)?
 17. ✅ **לכל סצנה: environment_type + environment_style + israeli_environment_required + local_realism_notes + why_this_scene_exists**?
 18. ✅ **creative_strategy.big_idea / specific_situation / product_role / proof_moment / why_this_is_different_from_other_scripts** ספציפיים — לא גנריים?
-19. ✅ **diversity_notes** ברמת ה-script — מסביר מה שונה בתסריט הזה מהאחרים ב-batch?
-20. ✅ **quality_score**: כל 12 הציונים, כולל creative_originality / product_visibility / israeli_visual_realism / duration_fit?
+19. ✅ creative_strategy.why_this_is_different_from_other_scripts — מסביר מה שונה בתסריט הזה מהאחרים ב-batch?
 21. ✅ ה-visual_prompt_english מזכיר במפורש Israeli interior cues (Israeli outlets, apartment proportions, Hebrew/neutral text, modern OR practical Israeli home)?
 22. ✅ **V6 register lock** — אם תקריא את spoken_text_hebrew ל-3 ישראליות, האם הן יאמינו שהן עצמן כותבות ככה? אם לא — rewrite.
 23. ✅ **V6 genre** — בחרת אחד מ-6 הז'אנרים והוא תואם ל-framework?
 24. ✅ **V6 voice_profile** — בחרת אחד מ-8 פרופילי קול שמתאים למין/גיל/טון?
-25. ✅ **V6 hook_alternatives** — מערך של 4 hooks שלא נבחרו (זהות מילולית ל-hook_options)?
-26. ✅ **V6 israeli_setting_cue per scene** — לכל סצנה, אחד מ-8 הקנוניים או null?
+25. ✅ **V6 israeli_setting_cue per scene** — לכל סצנה, אחד מ-8 הקנוניים או null?
 27. ✅ **V27.9 narrative_link_from_previous** — לכל סצנה חוץ מ-scene_order=0, משפט אחד ספציפי שמסביר איך הסצנה ממשיכה / מגיבה / משלמת את הקודמת? לא גנרי? לא null שלא בסצנה הראשונה?
 28. ✅ **V27.9 קריאה ברצף** — קראת את spoken_text_hebrew של כל הסצנות אחת אחרי השנייה ברצף? במקום שעצרת או הרגשת "non-sequitur" — תכתוב מחדש את הסצנה?
 29. ✅ **V27.9 תקינות עברית** — לכל spoken_text_hebrew: התאמה דקדוקית (נושא+פועל+תיאור באותו מין/מספר), מילות חיבור תקינות (אין "כי ש" כפולים, אין "אבל ש" שבור), ה' הידיעה עקבית, אין שבר־מחשבה? קראת בקול ולא עצרת?

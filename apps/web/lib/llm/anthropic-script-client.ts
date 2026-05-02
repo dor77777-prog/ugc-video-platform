@@ -148,8 +148,12 @@ export interface AnthropicStructuredCallOptions {
   userPrompt: string;
   responseSchema: unknown;
   model?: string;
-  /** max_tokens for the response. 8192 is enough for one full script
-   *  payload (creative_strategy + 5 scenes + quality_score). */
+  /** max_tokens for the response. V27.10.9 — lowered 8192 → 6500.
+   *  After the V27.10.9 schema trim (12 quality dim scores + hook_
+   *  alternatives + diversity_notes + creative_strategy.assumptions
+   *  removed), a typical full payload runs ~4500-5500 output tokens.
+   *  6500 leaves headroom for the longest scripts and caps any
+   *  long-tail call that would otherwise burn extra decode time. */
   maxTokens?: number;
   /** Override env-resolved effort. */
   effort?: AnthropicEffort;
@@ -166,7 +170,7 @@ export async function anthropicStructuredCall<T>({
   userPrompt,
   responseSchema,
   model: modelId = DEFAULT_MODEL,
-  maxTokens = 8192,
+  maxTokens = 6500,
   effort,
 }: AnthropicStructuredCallOptions): Promise<AnthropicStructuredCallResult<T>> {
   const resolvedEffort = effort ?? resolveEffort();

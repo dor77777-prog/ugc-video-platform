@@ -379,13 +379,13 @@ const SCRIPT_ITEM_SCHEMA = {
     'estimated_duration_seconds',
     'scenes',
     'quality_score',
-    'diversity_notes',
     'music_profile',
     // V14 PR5 — new top-level metadata. All nullable for back-compat
     // with V5 scripts already saved in DB.
     'genre',
     'voice_profile',
-    'hook_alternatives',
+    // V27.10.9 — `hook_alternatives` and `diversity_notes` removed
+    // from required/properties (output-bloat trim, never user-facing).
   ],
   properties: {
     framework: {
@@ -411,7 +411,8 @@ const SCRIPT_ITEM_SCHEMA = {
         'hook_type',
         'script_promise',
         'conversion_goal',
-        'assumptions',
+        // V27.10.9 — `assumptions` removed (internal LLM bookkeeping,
+        // never displayed in UI).
         // V5 fields — force the model to commit to a real ad concept
         // before writing any scene text.
         'big_idea',
@@ -432,7 +433,6 @@ const SCRIPT_ITEM_SCHEMA = {
         hook_type: { type: 'string' },
         script_promise: { type: 'string' },
         conversion_goal: { type: 'string' },
-        assumptions: { type: 'array', items: { type: 'string' } },
         big_idea: {
           type: 'string',
           description:
@@ -486,17 +486,10 @@ const SCRIPT_ITEM_SCHEMA = {
       description:
         'V14 PR5. One of 8 voice archetypes — drives downstream voice selection (gender × age × tone). Pick to match the script\'s persona / age / tone. Optional for back-compat.',
     },
-    hook_alternatives: {
-      type: 'array',
-      items: { type: 'string' },
-      description:
-        'V14 PR5. The 4 hook_options that were NOT selected (the script\'s hook_options minus selected_hook). For future A/B testing surfaces. Length should be 4 when hook_options has 5; OK to be empty for back-compat.',
-    },
-    diversity_notes: {
-      type: 'string',
-      description:
-        '1 short Hebrew sentence — what makes this script feel DIFFERENT from the other 5 scripts in the batch (different hook archetype, different emotional trigger, different proof angle, different scene rhythm). Used by the regen step to spot duplicates.',
-    },
+    // V27.10.9 — `hook_alternatives` and `diversity_notes` removed.
+    // hook_alternatives was V14 PR5's "for future A/B" with no consumer
+    // beyond the admin/debug count. diversity_notes was used by V5/V6
+    // regen which was removed in V6+. Both pure output bloat now.
     cta: {
       type: 'string',
       description:
@@ -520,56 +513,13 @@ const SCRIPT_ITEM_SCHEMA = {
       type: 'object',
       additionalProperties: false,
       description:
-        'Honest self-evaluation of this script (1–10 each). The wrapper regenerates any script whose `overall` is below 8. Do not inflate scores.',
-      required: [
-        'hook_strength',
-        'specificity',
-        'israeli_authenticity',
-        'emotional_pull',
-        'visual_clarity',
-        'conversion_potential',
-        'tts_naturalness',
-        'no_generic_cliches',
-        // V5 quality dimensions.
-        'creative_originality',
-        'product_visibility',
-        'israeli_visual_realism',
-        'duration_fit',
-        'overall',
-        'weakness_note',
-      ],
+        'Honest self-evaluation of this script. V27.10.9 — trimmed from 12 sub-scores to {overall, weakness_note} only. The 12 dimension scores were used by V5/V6 auto-regen which was removed in V6+; nothing on the user-facing UI consumed them. Keeping the structure as an object for back-compat with persisted scripts.',
+      required: ['overall', 'weakness_note'],
       properties: {
-        hook_strength: { type: 'integer', description: '1–10' },
-        specificity: { type: 'integer', description: '1–10' },
-        israeli_authenticity: { type: 'integer', description: '1–10' },
-        emotional_pull: { type: 'integer', description: '1–10' },
-        visual_clarity: { type: 'integer', description: '1–10' },
-        conversion_potential: { type: 'integer', description: '1–10' },
-        tts_naturalness: { type: 'integer', description: '1–10' },
-        no_generic_cliches: { type: 'integer', description: '1–10' },
-        creative_originality: {
-          type: 'integer',
-          description:
-            '1–10. How fresh is the angle? Is this a NEW idea vs. one of the other 5 scripts in the batch? <8 means too similar to siblings — regen.',
-        },
-        product_visibility: {
-          type: 'integer',
-          description:
-            '1–10. Is the product the visual hero in most scenes? Does it appear by Scene 2? <8 means avatar-dominant — regen.',
-        },
-        israeli_visual_realism: {
-          type: 'integer',
-          description:
-            '1–10. Do the visual_prompt_english + environment_type fields commit to a believable Israeli setting? Foreign suburban / showroom interiors = <5.',
-        },
-        duration_fit: {
-          type: 'integer',
-          description:
-            '1–10. Does the scene count + scene durations + spoken word total match the selected video_duration_mode? 30s pacing on a 15s ad = <5.',
-        },
         overall: {
           type: 'number',
-          description: 'Average of the 12 sub-scores. The wrapper regenerates if < 8.',
+          description:
+            '1–10 self-rating of the whole script. UI shows a "low quality" warning when below 8.',
         },
         weakness_note: {
           type: 'string',
