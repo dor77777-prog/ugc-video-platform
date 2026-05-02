@@ -79,6 +79,15 @@ export interface ImageBrief {
         { distinct: number; total: number }
       >
     | null;
+  /** V27.11 PR1 — true when the brief detected legacy comparison signals
+   *  (sceneGenerationType === 'before_after' OR comparison language in
+   *  the raw visual brief). The brief amplifies the single-frame contract
+   *  with extra mustAvoid items and a dedicated rule block so legacy
+   *  scripts already in the DB still render single-state. */
+  comparisonGuardApplied: boolean;
+  /** V27.11 PR1 — the specific signals that fired, surfaced for telemetry.
+   *  Empty array when comparisonGuardApplied=false. */
+  comparisonGuardReasons: string[];
   negativeConstraints: string[];
   finalImagePrompt: string;
 }
@@ -157,6 +166,91 @@ const PROBLEM_TYPES = new Set([
 export function isProblemSceneType(t: string): boolean {
   return PROBLEM_TYPES.has(t);
 }
+
+// V27.11 PR1 — bridge for legacy / drift-prone comparison language. The
+// upstream schema still allows sceneGenerationType='before_after' and
+// frame_strategy='comparison_split' (PR4 will deprecate them); the LLM
+// also occasionally writes "before and after", "split screen", "side by
+// side", "vs" prose into visual_prompt_english even on other scene types.
+// All of those are reliable predictors of a multi-panel gpt-image-2
+// output. This detector flags the scene; buildImageBrief then appends
+// extra mustAvoid items and a dedicated rule block so the deterministic
+// finalImagePrompt amplifies the universal SINGLE-FRAME RULE that
+// scene-image-prompts.ts always renders.
+//
+// Pattern set kept small + tightly scoped to the failure mode. Word-
+// boundary anchored where possible to avoid false positives like
+// "wash" matching "washington".
+const COMPARISON_PHRASE_PATTERNS: ReadonlyArray<{
+  pattern: RegExp;
+  reason: string;
+}> = [
+  { pattern: /\bbefore\s*(?:and|&|\/|-)\s*after\b/i, reason: 'before-and-after phrase' },
+  { pattern: /\bbefore\s*\/\s*after\b/i, reason: 'before/after phrase' },
+  { pattern: /\bsplit[\s-]?screen\b/i, reason: 'split-screen phrase' },
+  { pattern: /\bside[\s-]?by[\s-]?side\b/i, reason: 'side-by-side phrase' },
+  { pattern: /\b(?:vs|versus)\b\.?/i, reason: 'vs / versus phrase' },
+  { pattern: /\bcompared\s+to\b/i, reason: 'compared-to phrase' },
+  { pattern: /\bcompare\s+(?:with|to)\b/i, reason: 'compare-with phrase' },
+  { pattern: /\b(?:two|2)[\s-]?panel\b/i, reason: 'two-panel phrase' },
+  { pattern: /\bmulti[\s-]?panel\b/i, reason: 'multi-panel phrase' },
+  { pattern: /\bdiptych\b/i, reason: 'diptych phrase' },
+  { pattern: /\bcomic\s+strip\b/i, reason: 'comic strip phrase' },
+  { pattern: /\bcontact\s+sheet\b/i, reason: 'contact sheet phrase' },
+  { pattern: /\bstoryboard\b/i, reason: 'storyboard phrase' },
+  { pattern: /\b(?:photo\s+)?collage\b/i, reason: 'collage phrase' },
+  { pattern: /\bmosaic\b/i, reason: 'mosaic phrase' },
+];
+
+const LEGACY_COMPARISON_SCENE_TYPES = new Set(['before_after']);
+
+export interface ComparisonGuardFinding {
+  applied: boolean;
+  reasons: string[];
+}
+
+/** V27.11 PR1 — pure detector. Used by buildImageBrief; exported so the
+ *  PR1 verification script and admin debug can call it directly. */
+export function detectComparisonGuard(input: {
+  sceneGenerationType: string;
+  rawVisualBrief: string;
+}): ComparisonGuardFinding {
+  const reasons: string[] = [];
+  if (LEGACY_COMPARISON_SCENE_TYPES.has(input.sceneGenerationType)) {
+    reasons.push(`legacy sceneGenerationType=${input.sceneGenerationType}`);
+  }
+  const brief = input.rawVisualBrief ?? '';
+  if (brief.length > 0) {
+    for (const { pattern, reason } of COMPARISON_PHRASE_PATTERNS) {
+      if (pattern.test(brief)) reasons.push(reason);
+    }
+  }
+  return { applied: reasons.length > 0, reasons };
+}
+
+const COMPARISON_GUARD_RULE_BLOCK = [
+  'COMPARISON GUARD (this scene\'s upstream brief contains comparison / before-after / vs language — the SINGLE-FRAME RULE above wins):',
+  '- Render only ONE state in this single image. Pick the after / improved / proof / target state and show it cleanly with no visual reference to the other state in the same frame.',
+  '- Do NOT split the frame. Do NOT show two states side-by-side, top-and-bottom, left-and-right, or in any panel arrangement.',
+  '- Do NOT add an inset, overlay, thumbnail, ghost image, or "before" callout to compare against. The contrast with the other state is told by a different scene in the ad — not by this image.',
+  '- If the brief uses words like "before and after", "split", "vs", "comparison", "two states", treat them as a narrative cue across scenes and ignore them as a layout instruction for this single frame.',
+].join('\n');
+
+const COMPARISON_GUARD_NEGATIVES: ReadonlyArray<string> = [
+  'split-screen layout',
+  'before-and-after panel composition',
+  'side-by-side comparison frame',
+  'two-panel layout',
+  'diptych composition',
+  'inset thumbnail comparison',
+  'ghost overlay of a "before" state',
+  'multi-panel grid',
+  'comic-strip arrangement',
+  'contact-sheet arrangement',
+  'storyboard layout',
+  'photo collage',
+  'photo mosaic',
+];
 
 export function buildImageBrief(input: BuildImageBriefInput): ImageBrief {
   const intel = input.intelligence;
@@ -399,6 +493,28 @@ export function buildImageBrief(input: BuildImageBriefInput): ImageBrief {
     ? input.variationLedger.summary()
     : null;
 
+  // ── V27.11 PR1 — Comparison guard (legacy bridge) ──────────────────────
+  // The universal SINGLE-FRAME RULE in scene-image-prompts.ts already
+  // tells gpt-image-2 not to produce panels. This bridge runs additionally
+  // for scripts whose schema-level fields or prose explicitly invite a
+  // comparison layout: scene-level reinforcement so even older saved
+  // scripts in the DB render single-state.
+  const comparisonGuard = detectComparisonGuard({
+    sceneGenerationType: input.sceneGenerationType,
+    rawVisualBrief: input.rawVisualBrief,
+  });
+  if (comparisonGuard.applied) {
+    ruleBlocks.push(COMPARISON_GUARD_RULE_BLOCK);
+    for (const neg of COMPARISON_GUARD_NEGATIVES) {
+      mustAvoid.push(neg);
+      // negativeConstraints is initialized earlier in this function as a
+      // snapshot of mustAvoid; we push to both so the comparison-guard
+      // negatives also land in the rendered "MUST NOT SHOW" line of the
+      // final prompt, not just in the returned ImageBrief.mustAvoid.
+      negativeConstraints.push(neg);
+    }
+  }
+
   // ── Visual priority ───────────────────────────────────────────────────
   const visualPriorityOrder = (() => {
     if (isProblem) return ['the problem itself', 'environment that grounds the problem', 'subject\'s reaction'];
@@ -451,6 +567,8 @@ export function buildImageBrief(input: BuildImageBriefInput): ImageBrief {
     scrollStopperApplied,
     scrollStopperReason,
     variationDiversity,
+    comparisonGuardApplied: comparisonGuard.applied,
+    comparisonGuardReasons: comparisonGuard.reasons,
     negativeConstraints: dedupeKeepOrder(negativeConstraints),
     finalImagePrompt,
   };

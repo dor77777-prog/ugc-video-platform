@@ -186,6 +186,30 @@ const PRODUCT_REFERENCE_LOCK = [
   '- The active part of the product (whichever end is used) must physically touch the intended surface exactly as the brief describes — not float above it, not hover beside it.',
 ].join('\n');
 
+// V27.11 PR1 — Universal Single-Frame Rule. Applied to EVERY gpt-image-2
+// prompt regardless of scene type. Stops the most common collage failure
+// mode end-to-end: gpt-image-2 will happily render a "before and after"
+// or "comparison" beat as a multi-panel layout (split-screen, side-by-
+// side, contact sheet, comic strip, diptych, two-panel grid) when the
+// upstream brief mentions either. The V14 frame-technique snippets target
+// orthogonal failure modes (mirror physics, anatomical grip, same-person
+// consistency) — none of them say "single frame, one rectangle, no
+// panels". This block does, and is placed BEFORE the scene brief so the
+// rule is anchored before the model reads any comparison language the
+// brief may carry. If the brief talks about before/after, the model is
+// instructed to render only ONE state in this frame; the cross-scene
+// narrative (story arc) carries the contrast — never one image with two
+// panels. Sweep matches: collage / split-screen / multi-panel / comic /
+// contact sheet / storyboard / grid / mosaic / side-by-side / diptych /
+// before-and-after panel / inset image-within-image / photo collage.
+const SINGLE_FRAME_RULE = [
+  'SINGLE-FRAME RULE (mandatory, applies to every frame):',
+  '- This is ONE continuous photograph — a single moment captured by a single camera, one rectangle of one instant.',
+  '- ABSOLUTELY NO multi-panel layout, NO split-screen, NO before-and-after panels, NO side-by-side comparison frames, NO comic strip, NO contact sheet, NO storyboard, NO grid layout, NO collage, NO photo mosaic, NO diptych or triptych, NO two-panel layout, NO inset image-within-image, NO picture-in-picture.',
+  '- If the scene brief or any field below uses words like "before and after", "comparison", "vs", "versus", "compared to", "split", or "two states", render only ONE state in this single frame — pick the after / improved / proof state and show it cleanly. The contrast between two states belongs to TWO separate scenes in the ad, not to two panels inside one image.',
+  '- The whole frame depicts one continuous space, one moment in time, one perspective.',
+].join('\n');
+
 // Israeli visual realism — applied to EVERY scene by default, regardless
 // of scene type. The product is for the Israeli market, the creator is
 // Israeli, the home is Israeli — but gpt-image-2's default for "kitchen
@@ -246,6 +270,11 @@ export function buildScenePrompt(input: SceneImagePromptInput): string {
     return [
       subjectOpener,
       ``,
+      // V27.11 PR1 — anchor the single-frame contract BEFORE the brief so
+      // any "before/after / comparison / vs" language inside the brief is
+      // already constrained to a single-state render.
+      SINGLE_FRAME_RULE,
+      ``,
       input.sceneVisualBrief,
       ``,
       framingHint ?? '',
@@ -283,6 +312,9 @@ export function buildScenePrompt(input: SceneImagePromptInput): string {
   // No avatar — describe the scene fully and let the model design the person.
   return [
     `${opener} showing this scene:`,
+    ``,
+    // V27.11 PR1 — same single-frame anchor as the avatarPresent path.
+    SINGLE_FRAME_RULE,
     ``,
     input.sceneVisualBrief,
     ``,
