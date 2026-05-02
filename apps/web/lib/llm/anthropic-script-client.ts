@@ -34,40 +34,40 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { withRetry } from '@/lib/utils/retry';
 
-// V27.10.6 — flipped back Haiku 4.5 → Sonnet 4.6.
+// V27.10.7 — back to Haiku 4.5 with a conditional drop of
+// `output_config.effort` (Haiku doesn't accept it).
 //
-// Why: Haiku 4.5 returns 400 invalid_request_error on the
-// `output_config.effort` parameter that this wrapper sends — the param
-// is reasoning-capable models only (Sonnet 4.6, Opus 4.7). V27.10.2's
-// switch to Haiku regressed the script-gen path because the wrapper
-// kept emitting effort, and 6 parallel calls all 400'd → "All 6
-// framework generations failed". Diag at /api/admin/diag/anthropic
-// reproduced it deterministically.
+// Story:
+//   V14            Sonnet 4.6 default. ~2m+ per call (decode-bound on
+//                  6-7k output tokens at ~50 tok/s).
+//   V27.10.2       Flipped Sonnet → Haiku for 3-4x faster decode.
+//                  Forgot to drop output_config.effort → 400.
+//   V27.10.3-5b    Diag work proved the 400 was effort-only.
+//   V27.10.6       Flipped back to Sonnet to "fix" the 400. Live: 1m 39s
+//                  per call observed in admin/costs in-flight panel.
+//                  Confirmed Sonnet's decode is the bottleneck —
+//                  cache_control / effort:low / thinking:disabled are
+//                  already optimal for Sonnet.
+//   V27.10.7       Haiku 4.5 + conditional drop of effort. 6000 output
+//                  tokens at ~175 tok/s ≈ 35s per call, 6 in parallel
+//                  ≈ 35-40s wall clock. Quality is sustained by V27.9's
+//                  Hebrew QA gates / narrative through-line / frame_
+//                  strategy locked in the 700-line system prompt — no
+//                  "subtle calque catching" headroom needed from a
+//                  bigger model when prompt-engineering rails are this
+//                  tight.
 //
-// Two ways out:
-//   (a) keep Haiku, conditionally drop effort + thinking when model is
-//       Haiku → fastest decode, no reasoning lever
-//   (b) move back to Sonnet 4.6 → effort:low + thinking:disabled is the
-//       documented "fast" config; ~2-3x slower than Haiku per call but
-//       supports effort and emits the doc-recommended fast path
+// Cost recap: Haiku 4.5 = $1/$5 per MTok vs Sonnet's $3/$15 — 3x
+// cheaper at the same workload.
 //
-// User picked (b). Speed cost is real (live V27.9 measured Sonnet at
-// 2m+ per call against the 700-line system prompt) — mitigated by:
-//   - prompt caching on the system block: first batch writes the cache,
-//     subsequent batches in the 5-min window read at ~10% input cost
-//     AND reset the long-prefix processing latency. After warmup each
-//     call is bounded by output decode only.
-//   - effort: 'low' + thinking: { type: 'disabled' } (set below) — the
-//     official Anthropic "fast / instruction-following" recipe.
-//   - max_tokens 8192 sized to one full script payload, not larger.
-//   - 6 calls fire in parallel; Sonnet 4.6 tier-1 limits (50 RPM /
-//     30k input TPM / 8k output TPM) are not hit even on a cold batch.
+// To go bigger (quality > speed): set
+//   ANTHROPIC_SCRIPT_MODEL=claude-sonnet-4-6  (or claude-opus-4-7)
+// in Vercel env. The wrapper will detect the non-Haiku id and re-emit
+// output_config.effort automatically.
 //
-// Sonnet 4.6 takes the bare model id (no YYYYMMDD suffix). Override
-// via ANTHROPIC_SCRIPT_MODEL if you want to A/B against Opus 4.7
-// (quality++ / cost 5x) or Haiku 4.5 (speed++ but ONLY if you also
-// patch this wrapper to drop output_config.effort for Haiku).
-const DEFAULT_MODEL = 'claude-sonnet-4-6';
+// V27.10.3 — Haiku 4.5 needs the explicit YYYYMMDD pin on Anthropic's
+// API; the alias-style `claude-haiku-4-5` returns "model not found".
+const DEFAULT_MODEL = 'claude-haiku-4-5-20251001';
 
 // Effort default. Sonnet 4.6 defaults to "high" which silently turns
 // on adaptive thinking and adds 10-30s thinking-phase latency before
@@ -199,6 +199,13 @@ export async function anthropicStructuredCall<T>({
 
   // V26.11 — transparent single retry on transient (network / 5xx)
   // failures inside the first 15s. Mirrors the openai client's policy.
+  //
+  // V27.10.7 — `output_config.effort` is reasoning-capable-models only
+  // (Sonnet 4.6 / Opus 4.7). Haiku 4.5 returns 400 invalid_request_error
+  // if it's present. Detect by id prefix and drop the field for Haiku.
+  // `thinking: disabled` IS accepted by Haiku (the field exists but the
+  // model has no extended-thinking phase to disable).
+  const isHaikuModel = modelId.startsWith('claude-haiku');
   const response = await withRetry(
     () =>
       client().messages.create({
@@ -209,10 +216,9 @@ export async function anthropicStructuredCall<T>({
         // Disable adaptive thinking. With effort:high (the API default
         // when not set), Sonnet 4.6 thinks for 10-30s before emitting
         // any output — overkill for instruction-following on a
-        // pre-constrained task and a major source of the 2-min wall
-        // clock we hit on the first deploy. See DEFAULT_EFFORT comment.
+        // pre-constrained task. See DEFAULT_EFFORT comment.
         thinking: { type: 'disabled' },
-        output_config: { effort: resolvedEffort },
+        ...(isHaikuModel ? {} : { output_config: { effort: resolvedEffort } }),
       }),
     { label: 'anthropic.messages', earlyFailWindowMs: 15_000 },
   );
