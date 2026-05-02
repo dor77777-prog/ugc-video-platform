@@ -28,19 +28,39 @@
 import OpenAI from 'openai';
 import { withRetry } from '@/lib/utils/retry';
 
-// V27.10.18 — gpt-5.4 (full) is the default. V27.10.15 set
-// 'gpt-5.5-mini' per the migration guide, but that id returns 400
-// model_not_found in the user's account — gpt-5.5 family isn't yet
-// rolled out region-wide. The user explicitly asked for the full
-// gpt-5.4 (not the mini) for higher script-gen quality. The new
-// Responses-API params we added (reasoning.effort, text.verbosity)
-// all work on gpt-5.4 too — same shape, slightly less aggressive
-// concision on `verbosity: 'low'` per the migration guide.
+// V27.11.PR2 — DEFAULT flipped back to gpt-5.4-mini.
 //
-// Cost: gpt-5.4 is ~3x more expensive than gpt-5.4-mini ($2.5/$10
-// vs $0.75/$4.5 per MTok). A 6-script batch lands ~$0.30 instead of
-// ~$0.10. Quality lift comes from larger model + better Hebrew nuance.
-const DEFAULT_MODEL = 'gpt-5.4';
+// V27.10.18 had set this to full `gpt-5.4` for "higher script-gen
+// quality". The diagnose audit (.planning/debug/v27-script-quality-
+// audit.md) showed that even with the full model, scripts came back
+// poor — the bottleneck is prompt entropy + schema bloat + uncached
+// Product Intelligence injection, NOT model size. Flipping to mini
+// is bottleneck #4 from the audit ("highest-EV after #1+#2+#3 land").
+//
+// Cost: $0.75 / $4.5 per MTok (mini) vs $2.5 / $10 (full). A 6-script
+// batch drops from ~$0.30 to ~$0.10 — ~3x cheaper.
+// Latency: mini is faster on long Hebrew JSON (smaller decode cost).
+//
+// Override (no redeploy):
+//   OPENAI_SCRIPT_MODEL=gpt-5.4               (full — when quality A/B is wanted)
+//   OPENAI_SCRIPT_MODEL=gpt-5.5-mini          (when rolled out region-wide)
+//   OPENAI_REASONING_EFFORT=medium|high|xhigh
+//   OPENAI_VERBOSITY=medium|high
+//
+// SCRIPT_QUALITY_MODE=balanced (default mini) | premium (full gpt-5.4)
+// is read first so the operator can flip with one env without knowing
+// the model id. OPENAI_SCRIPT_MODEL still wins if both are set.
+const DEFAULT_MODEL = 'gpt-5.4-mini';
+const PREMIUM_MODEL = 'gpt-5.4';
+
+function resolveDefaultModel(): string {
+  // Explicit pin always wins.
+  if (process.env.OPENAI_SCRIPT_MODEL?.trim()) return process.env.OPENAI_SCRIPT_MODEL.trim();
+  const mode = process.env.SCRIPT_QUALITY_MODE?.trim().toLowerCase();
+  if (mode === 'premium') return PREMIUM_MODEL;
+  // 'balanced' or unset → mini.
+  return DEFAULT_MODEL;
+}
 
 type ReasoningEffort = 'none' | 'low' | 'medium' | 'high' | 'xhigh';
 type Verbosity = 'low' | 'medium' | 'high';
@@ -124,10 +144,14 @@ export async function openaiStructuredCall<T>({
   systemInstruction,
   userPrompt,
   responseSchema,
-  model: modelId = DEFAULT_MODEL,
+  model: modelId,
   reasoningEffort,
   verbosity,
 }: OpenAiStructuredCallOptions): Promise<OpenAiStructuredCallResult<T>> {
+  // Resolve at call time so SCRIPT_QUALITY_MODE / OPENAI_SCRIPT_MODEL
+  // env changes take effect without restarting the worker. Explicit
+  // `model` argument always wins.
+  const resolvedModel = modelId ?? resolveDefaultModel();
   const schemaForCall = passThrough(responseSchema) as Record<string, unknown>;
   const effort = reasoningEffort ?? resolveReasoningEffort();
   const verb = verbosity ?? resolveVerbosity();
@@ -139,7 +163,7 @@ export async function openaiStructuredCall<T>({
   // TypeScript can still type-check our own composition above.
   // V26.9 / V26.11 — Responses API + cache-friendly prefix + withRetry.
   const requestPayload = {
-    model: modelId,
+    model: resolvedModel,
     instructions: systemInstruction,
     input: userPrompt,
     reasoning: { effort: effort },
@@ -184,7 +208,7 @@ export async function openaiStructuredCall<T>({
     parsed,
     raw: content,
     usage: {
-      model: modelId,
+      model: resolvedModel,
       inputTokens: response.usage?.input_tokens ?? 0,
       outputTokens: response.usage?.output_tokens ?? 0,
       thoughtsTokens: 0,
@@ -192,4 +216,6 @@ export async function openaiStructuredCall<T>({
   };
 }
 
-export const OPENAI_DEFAULT_SCRIPT_MODEL = DEFAULT_MODEL;
+/** Resolved at import-time so callers can read the live default that
+ *  honors `OPENAI_SCRIPT_MODEL` and `SCRIPT_QUALITY_MODE` envs. */
+export const OPENAI_DEFAULT_SCRIPT_MODEL = resolveDefaultModel();

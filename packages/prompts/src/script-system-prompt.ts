@@ -626,36 +626,7 @@ V27.9 — מתי המוצר חייב להיכנס לפריים, מתי לא
 ⚠ **pain / setup הם לא comparison**. אם הסצנה מציגה כאב יומיומי בלי להזכיר את המוצר כעדיין הפתרון → \`pure_setup\`, מוצר לא מופיע. אסור לדחוף את המוצר לסצנת כאב; זה מרגיש כפוי ומוריד את ה-emotional_trigger.
 
 ═══════════════════════════════════════════
-בדיקה עצמית סופית לפני החזרת JSON
+בדיקה עצמית סופית
 ═══════════════════════════════════════════
 
-1. ✅ 6 תסריטים, אחד לכל פריימוורק, בסדר המבוקש?
-2. ✅ לכל תסריט creative_strategy מלא ולא גנרי?
-3. ✅ 3 hook_options שונים, selected_hook מאחד מהם, hook_reason של משפט?
-4. ✅ אין ביטוי מהבלאק־ליסט בלי הקשר מוצדק?
-5. ✅ כל תסריט מזכיר ≥2 פרטים מוצריים קונקרטיים?
-6. ✅ כל סצנה: scene_goal + spoken_text + caption + visual + camera + performance + duration + scene_generation_type + face_visibility + requires_lip_sync + primary_subject + must_show_product + product_visibility_priority + camera_focus + show_face?
-7. ✅ ה-spoken_text TTS-נקי (מספרים במילים, ללא סימנים, ללא אנגלית)?
-8. ✅ quality_score: overall כן (לא מנופח) + weakness_note משפט ספציפי?
-9. ✅ כל פריימוורק מרגיש שונה במבנה — לא אותה מודעה עם כיתוב אחר?
-10. ✅ visual_prompt_english לא מתאר את הדמות (גיל, שיער, עור) — רק setting/action/camera/lighting/outfit?
-11. ✅ **לפחות 3/5 סצנות product-first** (primary_subject ∈ product/product_in_use/product_with_avatar/hands)?
-12. ✅ **לכל היותר 2 סצנות עם requires_lip_sync=true** — לעולם לא יותר?
-13. ✅ **לפחות 2 סצנות "מוצר בשימוש"** (product_demo / hands_only / before_after / closeup_product)?
-14. ✅ **must_show_product=true ב-4/5 סצנות, product_visibility_priority=high ב-3/5 סצנות**?
-15. ✅ עקביות בין שדות: requires_lip_sync=true רק כש-scene_generation_type ∈ talking-head משפחה? primary_subject != avatar בסצנות product_demo/hands_only/closeup_product/cta_visual/before_after?
-16. ✅ **5 hook_options שונים** מ-archetype-ים שונים (לא 5 וריאציות של אותו hook)?
-17. ✅ **לכל סצנה: environment_type + environment_style + israeli_environment_required + local_realism_notes + why_this_scene_exists**?
-18. ✅ **creative_strategy.big_idea / specific_situation / product_role / proof_moment / why_this_is_different_from_other_scripts** ספציפיים — לא גנריים?
-19. ✅ creative_strategy.why_this_is_different_from_other_scripts — מסביר מה שונה בתסריט הזה מהאחרים ב-batch?
-21. ✅ ה-visual_prompt_english מזכיר במפורש Israeli interior cues (Israeli outlets, apartment proportions, Hebrew/neutral text, modern OR practical Israeli home)?
-22. ✅ **V6 register lock** — אם תקריא את spoken_text_hebrew ל-3 ישראליות, האם הן יאמינו שהן עצמן כותבות ככה? אם לא — rewrite.
-23. ✅ **V6 genre** — בחרת אחד מ-6 הז'אנרים והוא תואם ל-framework?
-24. ✅ **V6 voice_profile** — בחרת אחד מ-8 פרופילי קול שמתאים למין/גיל/טון?
-25. ✅ **V6 israeli_setting_cue per scene** — לכל סצנה, אחד מ-8 הקנוניים או null?
-27. ✅ **V27.9 narrative_link_from_previous** — לכל סצנה חוץ מ-scene_order=0, משפט אחד ספציפי שמסביר איך הסצנה ממשיכה / מגיבה / משלמת את הקודמת? לא גנרי? לא null שלא בסצנה הראשונה?
-28. ✅ **V27.9 קריאה ברצף** — קראת את spoken_text_hebrew של כל הסצנות אחת אחרי השנייה ברצף? במקום שעצרת או הרגשת "non-sequitur" — תכתוב מחדש את הסצנה?
-29. ✅ **V27.9 תקינות עברית** — לכל spoken_text_hebrew: התאמה דקדוקית (נושא+פועל+תיאור באותו מין/מספר), מילות חיבור תקינות (אין "כי ש" כפולים, אין "אבל ש" שבור), ה' הידיעה עקבית, אין שבר־מחשבה? קראת בקול ולא עצרת?
-30. ✅ **V27.9 frame_strategy עקבי עם must_show_product**: pure_setup → must_show_product=false; כל השאר → true. comparison_split → product_visibility_priority=high והמוצר הספציפי מופיע, לא שמפו גנרי. pain/hook לפני מוצר אינם נדחקים עם המוצר?
-
-החזר אך ורק JSON שתואם לסכמה. שום טקסט מסביב.`;
+לפני שאתה מחזיר את ה-JSON: קרא את spoken_text_hebrew של כל הסצנות ברצף בקול רם. אם עצרת בגלל register, דקדוק, "non-sequitur" בין סצנות, או רגשת שזה לא נשמע כמו אינפלואנסר ישראלי באמת — תכתוב מחדש את הסצנה הבעייתית. החזר אך ורק JSON תואם לסכמה. שום טקסט מסביב.`;

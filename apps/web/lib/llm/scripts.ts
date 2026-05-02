@@ -426,6 +426,26 @@ export async function generateScripts(
   // persisted" to the user instead of pretending success.
   let persistFailures = 0;
 
+  // V27.11.PR2 — Product Intelligence MOVED into systemInstruction so
+  // it lands in the provider's prefix-cached prefix instead of the
+  // per-call user prompt. Pre-PR2: PI block (~6-10K chars / ~2-3K
+  // tokens) was rebuilt into every framework's user prompt, defeating
+  // the cache 6 times per batch. Post-PR2: PI is built ONCE here and
+  // passed identically to all 6 parallel calls — same shared prefix
+  // string → cache hit on calls 2-6 (writes on call 1; reads at ~10%
+  // of input rate after).
+  //
+  // Anthropic + Gemini cache the system block; OpenAI Responses API
+  // caches `instructions`. All three accept whatever string we put in
+  // the systemInstruction param. The exact dispatch is below.
+  //
+  // The PI block is hard-grounded ("USE THIS, NOT THE LEAN FIELDS
+  // ABOVE") so even though it's in `system`, the model treats it as
+  // authoritative project context for all 6 framework calls.
+  const sharedSystemInstruction = buildSystemInstructionWithIntelligence(
+    input.intelligence ?? null,
+  );
+
   // V27.10.1 — REVERTED V27.10's warmup-first dispatch.
   //
   // The theory: cold-cache contention when 6 calls fire parallel,
@@ -453,7 +473,7 @@ export async function generateScripts(
         const { parsed: parsedRegen, usage } =
           provider === 'anthropic'
             ? await anthropicStructuredCall<LlmRegenResponse>({
-                systemInstruction: SCRIPT_SYSTEM_PROMPT,
+                systemInstruction: sharedSystemInstruction,
                 userPrompt,
                 responseSchema: SINGLE_SCRIPT_JSON_SCHEMA,
                 model,
@@ -461,13 +481,13 @@ export async function generateScripts(
             : provider === 'gemini'
               ? await geminiStructuredCall<LlmRegenResponse>({
                   // V26.1 — no `temperature` override on Gemini 3.
-                  systemInstruction: SCRIPT_SYSTEM_PROMPT,
+                  systemInstruction: sharedSystemInstruction,
                   userPrompt,
                   responseSchema: SINGLE_SCRIPT_JSON_SCHEMA,
                   model,
                 })
               : await openaiStructuredCall<LlmRegenResponse>({
-                  systemInstruction: SCRIPT_SYSTEM_PROMPT,
+                  systemInstruction: sharedSystemInstruction,
                   userPrompt,
                   responseSchema: SINGLE_SCRIPT_JSON_SCHEMA,
                   model,
@@ -613,14 +633,12 @@ function buildSingleFrameworkPrompt(
     `תקציב מילים בעברית לכל הסקריפט: יעד ${mode.totalSpokenWordsTarget} מילים, hard max ${mode.totalSpokenWordsHardMax}.`,
     `אסור לחרוג מ-${mode.maxTotalDurationMs / 1000}s — הסכום של duration_seconds לכל הסצנות חייב להיות ב-[${mode.minTotalDurationMs / 1000}, ${mode.maxTotalDurationMs / 1000}]s.`,
   ].join('\n');
-  // V11 — Product Intelligence block. When present, this is the
-  // authoritative input the LLM grounds every script in: dossier,
-  // visual analysis, audience inference. The lean ProductInput
-  // fields below are kept for back-compat but the LLM is told to
-  // PREFER the intelligence block when both are present.
-  const intelligenceBlock = p.intelligence
-    ? buildIntelligencePromptBlock(p.intelligence)
-    : null;
+  // V27.11.PR2 — Product Intelligence is no longer rebuilt per-call.
+  // It now lives in the shared `systemInstruction` (built once at the
+  // top of `generateScripts` and re-used across all 6 parallel calls)
+  // so providers' prefix-cache fires on calls 2-6. See the
+  // `sharedSystemInstruction` comment in `generateScripts` and
+  // `buildSystemInstructionWithIntelligence` below.
 
   // V27.10.11 — FEATURE FOCUS block PROMOTED to the top of the prompt
   // and reformatted as a HARD RULE. Old position (mid-prompt, soft
@@ -667,7 +685,6 @@ function buildSingleFrameworkPrompt(
     'תיאור המוצר:',
     p.description,
     '',
-    intelligenceBlock,
     p.categoryLabel || p.categoryGuidance
       ? [
           `קטגוריה: ${p.categoryLabel ?? p.categoryId ?? 'unknown'}`,
@@ -798,12 +815,33 @@ function toGenerated(s: LlmScript, regenerated: boolean): GeneratedScript {
   };
 }
 
-// V11 — render the Product Intelligence bundle into a structured user
-// prompt block. This is the single biggest creative-quality lever:
-// the LLM grounds every script in dossier.painPoints,
-// audience.dailyUseMoments, visualAnalysis.activePart, and the
-// must-show / must-avoid lists. Scenes that contradict the dossier's
-// proof requirements are now visible to the model up front.
+// V27.11.PR2 — build the systemInstruction string shared by all 6
+// parallel framework calls. PRE-PR2 the system was just
+// SCRIPT_SYSTEM_PROMPT and the per-call user prompt carried the PI
+// block (~6-10K chars per call × 6 calls = ~36-60K chars of duplicated
+// context fighting prefix-cache 6x per batch). POST-PR2 the system
+// is `SCRIPT_SYSTEM_PROMPT + PI block` once, and per-call user prompts
+// only carry the framework / mode / avatar / category / feature focus
+// — small, framework-specific, and intentionally diff per call.
+//
+// The PI block is gated on `intel != null` so legacy projects without
+// V11 intelligence still get a clean SCRIPT_SYSTEM_PROMPT only.
+//
+// Important: the resulting string MUST be byte-identical across the 6
+// parallel calls in one batch. That's what gives the prefix cache its
+// hit. The function is pure of `framework` etc — by design.
+export function buildSystemInstructionWithIntelligence(
+  intel: import('@/lib/product-intelligence').ProductIntelligence | null,
+): string {
+  if (!intel) return SCRIPT_SYSTEM_PROMPT;
+  return `${SCRIPT_SYSTEM_PROMPT}\n\n${buildIntelligencePromptBlock(intel)}`;
+}
+
+// V11 — render the Product Intelligence bundle into a structured
+// prompt block. PRE-V27.11.PR2 this lived in the per-call user
+// prompt; POST-PR2 it's appended to SCRIPT_SYSTEM_PROMPT (via
+// `buildSystemInstructionWithIntelligence` above) so it lands in the
+// provider's prefix cache.
 function buildIntelligencePromptBlock(
   intel: import('@/lib/product-intelligence').ProductIntelligence,
 ): string {
