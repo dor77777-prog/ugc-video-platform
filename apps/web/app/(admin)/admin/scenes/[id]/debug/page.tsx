@@ -79,6 +79,9 @@ export default async function AdminSceneDebugPage({ params }: PageProps) {
     return match?.israeli_setting_cue ?? null;
   })();
   // V14 PR2/PR4 — pull the V14 brief fields from imageBriefJson when persisted.
+  // V27.11.PR1 — also pull comparisonGuardApplied + comparisonGuardReasons so
+  // the admin can see whether the universal SINGLE-FRAME RULE bridge fired
+  // on this scene's brief.
   const briefV14 = (() => {
     if (!scene.imageBriefJson || typeof scene.imageBriefJson !== 'object') return null;
     const b = scene.imageBriefJson as Record<string, unknown>;
@@ -94,6 +97,59 @@ export default async function AdminSceneDebugPage({ params }: PageProps) {
         b.variationDiversity && typeof b.variationDiversity === 'object'
           ? (b.variationDiversity as Record<string, { distinct: number; total: number }>)
           : null,
+      // V27.11.PR1 — comparison-guard surface. Null when the brief
+      // pre-dates PR1 (older scenes don't have these keys).
+      comparisonGuardApplied:
+        typeof b.comparisonGuardApplied === 'boolean'
+          ? b.comparisonGuardApplied
+          : null,
+      comparisonGuardReasons: Array.isArray(b.comparisonGuardReasons)
+        ? (b.comparisonGuardReasons as string[])
+        : null,
+    };
+  })();
+
+  // V27.11.PR3 — detect "legacy schema" rawJson: scripts saved before
+  // PR3 still carry the 4 dropped meta-fields (israeli_environment_required,
+  // local_realism_notes, why_this_scene_exists, narrative_link_from_previous).
+  // Surface a small banner so the admin sees this is pre-PR3 data.
+  // V27.11.PR4 — also detect deprecated enum values: scene_generation_type=
+  // 'before_after' or frame_strategy='comparison_split'. Same purpose.
+  const v2711LegacyFlags = (() => {
+    const scenes =
+      (scriptRaw as {
+        scenes?: Array<{
+          scene_order?: number;
+          scene_generation_type?: string;
+          frame_strategy?: string;
+          israeli_environment_required?: unknown;
+          local_realism_notes?: unknown;
+          why_this_scene_exists?: unknown;
+          narrative_link_from_previous?: unknown;
+        }>;
+      } | null)?.scenes;
+    if (!Array.isArray(scenes)) return null;
+    const match = scenes.find((s) => s.scene_order === scene.sceneOrder);
+    if (!match) return null;
+    const droppedFieldsPresent: string[] = [];
+    if (match.israeli_environment_required != null)
+      droppedFieldsPresent.push('israeli_environment_required');
+    if (match.local_realism_notes != null)
+      droppedFieldsPresent.push('local_realism_notes');
+    if (match.why_this_scene_exists != null)
+      droppedFieldsPresent.push('why_this_scene_exists');
+    if (match.narrative_link_from_previous != null)
+      droppedFieldsPresent.push('narrative_link_from_previous');
+    const deprecatedValues: string[] = [];
+    if (match.scene_generation_type === 'before_after')
+      deprecatedValues.push("scene_generation_type='before_after'");
+    if (match.frame_strategy === 'comparison_split')
+      deprecatedValues.push("frame_strategy='comparison_split'");
+    return {
+      hasPr3DroppedFields: droppedFieldsPresent.length > 0,
+      pr3DroppedFields: droppedFieldsPresent,
+      hasPr4DeprecatedEnum: deprecatedValues.length > 0,
+      pr4DeprecatedEnum: deprecatedValues,
     };
   })();
 
@@ -224,6 +280,80 @@ export default async function AdminSceneDebugPage({ params }: PageProps) {
               V14 PR4 variationDiversity (across earlier scenes in this script)
             </p>
             <PrettyJson value={briefV14.variationDiversity} />
+          </div>
+        )}
+      </DebugSection>
+
+      {/* ── V27.11 — anti-collage + schema state ───────────────────── */}
+      <DebugSection title="V27.11 — anti-collage + schema state">
+        <KeyValueGrid
+          rows={[
+            // PR1 — comparison-guard bridge
+            [
+              'V27.11.PR1 comparisonGuardApplied',
+              briefV14?.comparisonGuardApplied == null
+                ? '— (brief pre-PR1)'
+                : String(briefV14.comparisonGuardApplied),
+            ],
+            [
+              'V27.11.PR1 comparisonGuardReasons',
+              briefV14?.comparisonGuardReasons?.length
+                ? briefV14.comparisonGuardReasons.join('; ')
+                : '—',
+            ],
+            // PR3 — legacy meta fields detection
+            [
+              'V27.11.PR3 legacy meta fields in rawJson',
+              v2711LegacyFlags?.hasPr3DroppedFields
+                ? v2711LegacyFlags.pr3DroppedFields.join(', ')
+                : '—',
+            ],
+            // PR4 — deprecated enum values detection
+            [
+              'V27.11.PR4 deprecated enum values in rawJson',
+              v2711LegacyFlags?.hasPr4DeprecatedEnum
+                ? v2711LegacyFlags.pr4DeprecatedEnum.join(', ')
+                : '—',
+            ],
+          ]}
+        />
+        {briefV14?.comparisonGuardApplied === true && (
+          <div className="mt-3 rounded border border-amber-300 bg-amber-50 p-3">
+            <p className="text-xs font-semibold text-amber-900">
+              ⚠ V27.11.PR1 comparison-guard fired
+            </p>
+            <p className="mt-1 text-xs text-amber-800">
+              ה-image-brief זיהה signal של comparison/before-after בסצנה הזו והוסיף את
+              ה-COMPARISON_GUARD_RULE_BLOCK ו-13 collage-specific negatives ל-finalImagePrompt.
+              ה-SINGLE-FRAME RULE ב-scene-image-prompts.ts ידחה layout של panels בכל מקרה.
+            </p>
+          </div>
+        )}
+        {v2711LegacyFlags?.hasPr3DroppedFields && (
+          <div className="mt-3 rounded border border-zinc-300 bg-zinc-50 p-3">
+            <p className="text-xs font-semibold text-zinc-700">
+              ℹ legacy script (pre-V27.11.PR3)
+            </p>
+            <p className="mt-1 text-xs text-zinc-600">
+              התסריט הזה נוצר לפני PR3 ועדיין מחזיק meta-fields שנמחקו מהסכמה
+              ({v2711LegacyFlags.pr3DroppedFields.join(', ')}). ה-runtime mapper
+              לא קורא אותם — תסריטים חדשים לא יכילו אותם, parsing של תסריטים
+              ישנים עדיין עובד.
+            </p>
+          </div>
+        )}
+        {v2711LegacyFlags?.hasPr4DeprecatedEnum && (
+          <div className="mt-3 rounded border border-amber-300 bg-amber-50 p-3">
+            <p className="text-xs font-semibold text-amber-900">
+              ⚠ V27.11.PR4 deprecated enum values present
+            </p>
+            <p className="mt-1 text-xs text-amber-800">
+              סצנה זו מכילה {v2711LegacyFlags.pr4DeprecatedEnum.join(', ')}. NEW
+              scripts לא יכולים לבחור את הערכים האלה (הסכמה דחתה אותם), אבל
+              legacy DB scripts כן. ה-PR1 bridge מפעיל COMPARISON GUARD על
+              סצנות עם scene_generation_type='before_after' אוטומטית — ראה את
+              comparisonGuardApplied למעלה.
+            </p>
           </div>
         )}
       </DebugSection>

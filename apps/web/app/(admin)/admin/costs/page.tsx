@@ -214,6 +214,32 @@ export default async function AdminUsagePage() {
   const estimatedMarginPct =
     estimatedRevenue30d > 0 ? (estimatedMargin30d / estimatedRevenue30d) * 100 : 0;
 
+  // V27.11 — surface the active script engine config so the admin can
+  // see at-a-glance which engine mode + provider + model are live in
+  // production. All four envs are read once per render (server-side);
+  // the values change only when env is updated in Vercel/Railway.
+  const scriptProvider = (
+    process.env.LLM_SCRIPT_PROVIDER?.trim().toLowerCase() || 'openai'
+  );
+  const scriptModel =
+    process.env.OPENAI_SCRIPT_MODEL?.trim() ||
+    (process.env.SCRIPT_QUALITY_MODE?.trim().toLowerCase() === 'premium'
+      ? 'gpt-5.4 (premium)'
+      : 'gpt-5.4-mini (balanced)');
+  const engineMode =
+    process.env.SCRIPT_ENGINE_MODE?.trim().toLowerCase() === 'concept_first'
+      ? 'concept_first'
+      : 'legacy_full_batch';
+  const conceptTopN = (() => {
+    const raw = process.env.SCRIPT_CONCEPT_TOP_N?.trim();
+    const n = raw ? Number.parseInt(raw, 10) : NaN;
+    if (!Number.isFinite(n)) return 3;
+    return Math.max(1, Math.min(6, n));
+  })();
+  const qualityMode = (
+    process.env.SCRIPT_QUALITY_MODE?.trim().toLowerCase() || 'balanced'
+  );
+
   return (
     <div className="p-6 md:p-10 max-w-7xl space-y-6">
       <div className="space-y-1">
@@ -224,6 +250,33 @@ export default async function AdminUsagePage() {
           רענן את הדף לערכים עדכניים.
         </p>
       </div>
+
+      {/* V27.11 — script engine config strip. Read-only; reflects current
+          env on the server. Operators flip these in Vercel/Railway env. */}
+      <Card className="tier-surface">
+        <CardContent className="flex flex-wrap items-center gap-3 p-4 text-sm">
+          <span className="kicker-muted font-mono text-[10px] uppercase">
+            Script Engine
+          </span>
+          <Badge variant={engineMode === 'concept_first' ? 'default' : 'secondary'}>
+            mode: {engineMode}
+          </Badge>
+          {engineMode === 'concept_first' && (
+            <Badge variant="outline">topN: {conceptTopN}</Badge>
+          )}
+          <Badge variant="outline">provider: {scriptProvider}</Badge>
+          <Badge variant="outline">model: {scriptModel}</Badge>
+          <Badge variant={qualityMode === 'premium' ? 'default' : 'outline'}>
+            quality: {qualityMode}
+          </Badge>
+          <span className="text-xs text-muted-foreground ml-auto">
+            envs: <code className="font-mono">SCRIPT_ENGINE_MODE</code> ·{' '}
+            <code className="font-mono">SCRIPT_QUALITY_MODE</code> ·{' '}
+            <code className="font-mono">LLM_SCRIPT_PROVIDER</code> ·{' '}
+            <code className="font-mono">OPENAI_SCRIPT_MODEL</code>
+          </span>
+        </CardContent>
+      </Card>
 
       {/* V13.2 — KPI tiles poll /api/admin/costs/summary every 20s. The
           SSR pass seeds the initial values so the dashboard renders
