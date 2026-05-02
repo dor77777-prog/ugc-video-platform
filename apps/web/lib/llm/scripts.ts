@@ -514,6 +514,36 @@ export async function generateScripts(
     FRAMEWORK_ORDER.map((framework, index) => buildOneCall(framework, index)),
   );
 
+  // V27.10.11 — single-shot retry of any framework that returned null
+  // in the first batch. Live observation: roughly 1 of 6 Anthropic
+  // calls fails per project (timeout, transient 429, etc.), so users
+  // saw 5/6 scripts. The wrapper's withRetry only retries within the
+  // first 15s — a slow framework that errors at 60s gets no retry.
+  // Here we re-issue ONLY the failed indexes; runs in parallel; one
+  // round, no recursive retries (avoids tail-latency runaway).
+  const failedIndexes = results
+    .map((r, i) => (r === null ? i : -1))
+    .filter((i) => i !== -1);
+  if (failedIndexes.length > 0 && failedIndexes.length < FRAMEWORK_ORDER.length) {
+    console.warn(
+      `[scripts] ${failedIndexes.length}/${FRAMEWORK_ORDER.length} frameworks failed in first batch, retrying once: ${failedIndexes
+        .map((i) => FRAMEWORK_ORDER[i])
+        .join(', ')}`,
+    );
+    const retryResults = await Promise.all(
+      failedIndexes.map((i) => {
+        const fw = FRAMEWORK_ORDER[i];
+        return fw ? buildOneCall(fw, i) : Promise.resolve(null);
+      }),
+    );
+    for (let r = 0; r < failedIndexes.length; r++) {
+      const idx = failedIndexes[r];
+      if (idx !== undefined && retryResults[r] !== null && retryResults[r] !== undefined) {
+        results[idx] = retryResults[r] ?? null;
+      }
+    }
+  }
+
   const successful = results.filter((r): r is GeneratedScript => r !== null);
   if (successful.length === 0) {
     throw new Error('All 6 framework generations failed — check the LLM logs for details.');
@@ -584,7 +614,42 @@ function buildSingleFrameworkPrompt(
     ? buildIntelligencePromptBlock(p.intelligence)
     : null;
 
+  // V27.10.11 — FEATURE FOCUS block PROMOTED to the top of the prompt
+  // and reformatted as a HARD RULE. Old position (mid-prompt, soft
+  // sentence) was being ignored — Haiku live results showed scripts
+  // that mentioned "the product" generically without citing any of
+  // the user-picked features. Sonnet should follow this stricter form.
+  // Per-scene requirement + final-checklist line forces feature recall
+  // through the whole creative process.
+  const featureFocusBlock =
+    p.selectedFeatures && p.selectedFeatures.length > 0
+      ? [
+          '═══════════════════════════════════════════',
+          '🎯 FEATURE FOCUS — חוק קשיח (HARD RULE)',
+          '═══════════════════════════════════════════',
+          'המשתמש בחר את התכונות הבאות בשלב הקודם של ה-wizard. **הסרטון כולו חייב להיות מעוגן רק בהן.** אל תזכיר תכונות אחרות מהתיאור גם אם הן נראות אטרקטיביות.',
+          '',
+          ...p.selectedFeatures.map(
+            (f, i) =>
+              `${i + 1}. **${f.title}**${f.hook ? `\n   זווית/הוק: ${f.hook}` : ''}`,
+          ),
+          '',
+          'דרישות אכיפה:',
+          `• ה-selected_hook חייב לצטט במפורש לפחות אחת מהתכונות (במילים שלך) — לא ביטוי גנרי כמו "המוצר הזה".`,
+          `• ב-creative_strategy.product_role: לכתוב איזו תכונה מבין הנבחרות מובילה את התסריט הזה ולמה.`,
+          `• לפחות 2 סצנות (מתוך 4-5) חייבות לצטט תכונה ספציפית מהרשימה ב-spoken_text_hebrew או ב-on_screen_caption_hebrew.`,
+          `• visual_prompt_english של סצנת ה-product_demo / hands_only / closeup_product צריכה להראות בויזואלית את התכונה הספציפית בפעולה.`,
+          `• ה-CTA יכול להיות "סגור 30%" או "מלאי אחרון" אבל הוא חייב להכיל רמיזה לתכונה ראשית מבין הנבחרות.`,
+          `• אל תכתוב סצנות שמדברות על "מוצר באופן כללי" / "פתרון מהפכני" / "אני אוהבת את זה". כל מילה חייבת לעבוד את אחת מהתכונות שלמעלה.`,
+          '═══════════════════════════════════════════',
+          '',
+        ].join('\n')
+      : null;
+
   const lines: (string | null)[] = [
+    // V27.10.11 — feature focus opens the prompt so it's the first
+    // thing the model sees, not buried mid-context.
+    featureFocusBlock,
     `שם המוצר: ${p.productName}`,
     p.brand ? `מותג: ${p.brand}` : null,
     p.targetAudience ? `קהל יעד עיקרי: ${p.targetAudience}` : null,
@@ -617,27 +682,14 @@ function buildSingleFrameworkPrompt(
           '',
         ].join('\n')
       : null,
-    // V26.18 — FEATURE FOCUS block. The user picked these in the new
-    // wizard step (between Avatar and Script). The LLM is instructed
-    // to anchor the ad on them — NOT to enumerate everything from
-    // the description. This is the load-bearing fix for "scripts
-    // feel industrial / non-human / very AI-y".
-    p.selectedFeatures && p.selectedFeatures.length > 0
-      ? [
-          '',
-          '🎯 **תכונות מוצר שעליהן הסרטון חייב להתמקד (FEATURE FOCUS):**',
-          ...p.selectedFeatures.map(
-            (f, i) => `${i + 1}. ${f.title}${f.hook ? ` — ${f.hook}` : ''}`,
-          ),
-          '',
-          'אל תכלול תכונות אחרות מהמוצר. הסרטון בנוי סביב התכונות שלמעלה בלבד. כל hook, כל סצנה, וה-CTA — חייבים לחזור לתכונות האלו, ספציפית. אל תפזר את התשומת לב על "המוצר באופן כללי".',
-          '',
-        ].join('\n')
-      : null,
     `🎯 **ה-framework לתסריט הזה: ${framework}**`,
     `הנחיה לפריימוורק: ${FRAMEWORK_BRIEF_HEBREW[framework]}`,
     '',
-    'הפק עכשיו תסריט אחד בודד בפורמט { "script": {...} } תואם לסכמה — לפי ה-framework שצוין. creative_strategy מלא, 5 hook_options, quality_score עם 12 צירים, וכל סצנה עם המטא-דאטה החדש (environment_type / environment_style / primary_subject / וכו\').',
+    p.selectedFeatures && p.selectedFeatures.length > 0
+      ? '🔁 **תזכורת אחרונה לפני שאתה כותב**: כל מילה בתסריט הזה חייבת לעבוד את ה-FEATURE FOCUS שבראש הפרומפט. אם הסצנה הראשונה שלך לא רומזת לאחת מהתכונות הנבחרות — תכתוב אותה מחדש לפני שתמשיך לסצנה הבאה.'
+      : null,
+    '',
+    'הפק עכשיו תסריט אחד בודד בפורמט { "script": {...} } תואם לסכמה — לפי ה-framework שצוין. creative_strategy מלא, 5 hook_options, quality_score (overall + weakness_note), וכל סצנה עם המטא-דאטה (environment_type / environment_style / primary_subject / וכו\').',
   ];
   return lines.filter((l): l is string => l !== null).join('\n');
 }

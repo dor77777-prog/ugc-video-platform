@@ -34,6 +34,13 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { withRetry } from '@/lib/utils/retry';
 
+// V27.10.11 — Sonnet 4.6 default. Haiku 4.5 was tried (V27.10.7) for
+// speed but live results showed broken Hebrew grammar, weak creative
+// concept, and one-of-six failures. Quality > speed for this workload.
+// The wrapper's existing `isHaikuModel` branch (below) keeps Haiku
+// callable via env override (drops effort param if you set
+// ANTHROPIC_SCRIPT_MODEL=claude-haiku-4-5-20251001).
+//
 // V27.10.7 — back to Haiku 4.5 with a conditional drop of
 // `output_config.effort` (Haiku doesn't accept it).
 //
@@ -65,9 +72,11 @@ import { withRetry } from '@/lib/utils/retry';
 // in Vercel env. The wrapper will detect the non-Haiku id and re-emit
 // output_config.effort automatically.
 //
-// V27.10.3 — Haiku 4.5 needs the explicit YYYYMMDD pin on Anthropic's
-// API; the alias-style `claude-haiku-4-5` returns "model not found".
-const DEFAULT_MODEL = 'claude-haiku-4-5-20251001';
+// V27.10.11 — Sonnet 4.6 takes the bare model id (no YYYYMMDD suffix).
+// To override (Opus 4.7 for max quality, Haiku 4.5 for speed-experiment),
+// set ANTHROPIC_SCRIPT_MODEL in the env. The wrapper detects Haiku ids
+// by prefix and drops output_config.effort automatically.
+const DEFAULT_MODEL = 'claude-sonnet-4-6';
 
 // Effort default. Sonnet 4.6 defaults to "high" which silently turns
 // on adaptive thinking and adds 10-30s thinking-phase latency before
