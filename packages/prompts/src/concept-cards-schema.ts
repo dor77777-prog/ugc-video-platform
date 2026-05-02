@@ -1,29 +1,26 @@
-// V27.11.PR5 — Concept-cards schema. Phase 1 of the concept-first
-// architecture (gated behind SCRIPT_ENGINE_MODE=concept_first).
+// V27.11.PR6 — Concept-cards schema (interactive mode).
 //
-// The phase-1 LLM call returns 6 short concept cards — one per
-// framework — in a single roundtrip. Each card commits to the
-// CREATIVE concept (big_idea, specific_situation, hook, emotional
-// trigger, persuasion angle, why_this_is_different) plus a 4-5
-// bullet scene outline + a self-rated quality score. NO full
-// spoken_text_hebrew, NO visual_prompt_english, NO full
-// creative_strategy block.
+// Replaces PR5's lighter auto-pick schema. PR6's interactive UX
+// shows these cards to the USER for human selection (1-3 to expand
+// into full scripts), so each card carries a richer creative/audience/
+// proof breakdown than PR5 had:
+//   - selected_hook + hook_direction         (creative angle)
+//   - target_audience_moment                 (audience specificity)
+//   - product_proof_moment                   (the visual that converts)
+//   - why_it_fits_product / why_it_fits_audience (justification visible to user)
+//   - risk_notes                             (when the LLM flags a risk)
 //
-// Phase 2 picks top N concepts by `estimated_quality` and expands
-// each into a FULL script via the existing SINGLE_SCRIPT_JSON_SCHEMA
-// (same shape as the legacy_full_batch path).
+// Server-side wrapper (NOT in this schema, added at storage time
+// in concept-storage.ts): concept_id (UUID), slot_index, status,
+// regenerationCount, regeneratedFromConceptId.
 //
-// Cost math (vs legacy_full_batch):
-//   - Phase 1: 1 call × ~1.5K output tokens (6 cards × ~250 tokens)
-//   - Phase 2: 3 parallel calls × ~5K output tokens each
-//   - Net output: ~16.5K tokens vs legacy ~30K = ~45% cheaper.
-//   - Net latency: phase-1 wait + max(phase-2 calls) — slightly
-//     longer than legacy but the user can be shown phase-1 cards
-//     immediately as a "thinking" preview.
+// Phase 2 (expand) consumes the stored card directly via
+// buildExpansionPromptFragment in concept-engine.ts and produces a
+// full script via the existing SINGLE_SCRIPT_JSON_SCHEMA path.
 //
-// Token-cost trade: phase 1 still needs the system prompt + PI in
-// its input. Both providers cache the system block, so phase 1's
-// cache write also benefits phase 2 (within the 5-min cache window).
+// Anti-collage rules (PR1/PR4) and Israeli realism (V14) are
+// enforced at the system-prompt + image-brief layer — concept cards
+// don't repeat them.
 
 import { SCRIPT_FRAMEWORKS } from './script-json-schema';
 
@@ -33,67 +30,79 @@ const CONCEPT_CARD_SCHEMA = {
   required: [
     'framework',
     'big_idea',
-    'specific_situation',
     'selected_hook',
+    'hook_direction',
+    'target_audience_moment',
     'emotional_trigger',
-    'persuasion_angle',
-    'why_this_is_different_from_other_scripts',
+    'product_proof_moment',
     'scene_outline',
+    'why_it_fits_product',
+    'why_it_fits_audience',
     'estimated_quality',
-    'why_this_quality_score',
+    'risk_notes',
   ],
   properties: {
     framework: {
       type: 'string',
       enum: SCRIPT_FRAMEWORKS as unknown as string[],
       description:
-        'The ad framework this concept commits to. One of the 6 in FRAMEWORK_ORDER. Each card in the batch must use a different framework.',
+        'The ad framework this concept commits to. One of the 6 in FRAMEWORK_ORDER. Across the batch every framework must appear at least once if possible.',
     },
     big_idea: {
       type: 'string',
       description:
         'One Hebrew sentence — the creative concept of THIS ad. Not a benefits list. Specific, sharp, ownable. Drives every scene below.',
     },
-    specific_situation: {
-      type: 'string',
-      description:
-        'A concrete Israeli daily situation in 1-2 sentences (e.g. "ערב שישי, חמישה אורחים, הכיריים נראות כמו זירת פשע"). Must feel local — the hook of the entire script depends on it.',
-    },
     selected_hook: {
       type: 'string',
       description:
-        'The strongest opening line for this concept in spoken Israeli Hebrew, under ~12 words. The same register as the final spoken_text_hebrew will use — natural, influencer-coded, NOT translated.',
+        'Strongest opening line in spoken Israeli Hebrew, under ~12 words. Same register as the final spoken_text_hebrew — natural, influencer-coded, NOT translated.',
+    },
+    hook_direction: {
+      type: 'string',
+      description:
+        'One short Hebrew sentence describing the hook archetype: confession / frustration / mistake / curiosity / price_shock / wish_i_knew / i_stopped_doing / nobody_tells_you. Helps the user compare cards and avoids two cards picking the same hook flavor.',
+    },
+    target_audience_moment: {
+      type: 'string',
+      description:
+        'A concrete Israeli daily situation that THIS audience is in when they need the product. 1-2 short sentences. ("ערב שישי, חמישה אורחים, הכיריים נראות כמו זירת פשע" — not "אמהות עסוקות".) Drives every scene\'s grounding.',
     },
     emotional_trigger: {
       type: 'string',
       description:
-        'One of: frustration / relief / pride / FOMO / curiosity / vindication / soft anger. Pick one.',
+        'One of: frustration / relief / pride / FOMO / curiosity / vindication / soft anger. The single emotion this concept rides.',
     },
-    persuasion_angle: {
+    product_proof_moment: {
       type: 'string',
       description:
-        'One of: skeptic-converts / price-anchor / authority / social-proof / quick-win / loss-aversion. Pick one.',
-    },
-    why_this_is_different_from_other_scripts: {
-      type: 'string',
-      description:
-        'One short Hebrew sentence — what makes THIS concept structurally different from the other 5 in this batch (different hook archetype, different emotional trigger, different proof angle, different rhythm).',
+        'The visual moment that makes the product believable. What the viewer SEES that converts skepticism to interest. Specific (closeup, label, before-state vs result-state across two scenes, reaction). Cross-scene narrative — never a single-frame split.',
     },
     scene_outline: {
       type: 'array',
       description:
-        '4-5 ultra-short bullet sketches of how the script will unfold. Each item is one sentence in Hebrew describing what HAPPENS in that scene — NOT the spoken text, NOT the visual prompt. Just the narrative beat. Used by phase 2 to expand into full scenes that respect this outline.',
+        '4-5 ultra-short bullet sketches of how the script will unfold. Each item is one Hebrew sentence describing what HAPPENS in that scene — NOT the spoken text, NOT the visual prompt. Used by phase 2 to expand into full scenes respecting this skeleton.',
       items: { type: 'string' },
+    },
+    why_it_fits_product: {
+      type: 'string',
+      description:
+        'One short Hebrew sentence — why THIS concept fits THIS product specifically (not a generic ad). References the dossier, mechanism, or audience-pain.',
+    },
+    why_it_fits_audience: {
+      type: 'string',
+      description:
+        'One short Hebrew sentence — why THIS concept lands with the Israeli audience targeted by this product. References specific moments, register, or local realism.',
     },
     estimated_quality: {
       type: 'integer',
       description:
-        'LLM self-rating 1-10 of how strong THIS concept is. Be honest — phase 2 expands the highest-rated concepts first. Inflating the score doesn\'t improve the final ad, it just spends compute on weak concepts.',
+        'LLM self-rating 1-10 of how strong this concept is. Used to preselect top 3 in the UI; user can override. Be honest — inflating the score just hides weak concepts.',
     },
-    why_this_quality_score: {
-      type: 'string',
+    risk_notes: {
+      type: ['string', 'null'] as unknown as 'string',
       description:
-        'One short Hebrew sentence about the strengths or weaknesses that drove the estimated_quality value. Goes to admin debug.',
+        'When this concept has a known risk (cliché hook, weak proof moment, audience mismatch), one short Hebrew sentence describing it. null when no risk noted.',
     },
   },
 } as const;
@@ -106,7 +115,26 @@ export const CONCEPT_CARDS_JSON_SCHEMA = {
     concepts: {
       type: 'array',
       description:
-        'Exactly 6 concept cards, one per framework, in this order: problem_agitation_solution, skeptical_testimonial, demonstration_proof, price_alternative_anchor, relatable_israeli_moment, fast_direct_response.',
+        'Exactly 6 concept cards. The framework distribution should hit each of the 6 frameworks at least once when feasible; the model may double up only when a framework is genuinely unsuited to the product.',
+      items: CONCEPT_CARD_SCHEMA,
+    },
+  },
+} as const;
+
+/** V27.11.PR6 — schema for partial regeneration. The LLM receives
+ *  conceptsToKeep + conceptsToReplace context and must return EXACTLY
+ *  N replacement cards (N = conceptsToReplace.length), in slot order
+ *  matching the request. Server side stitches them back into the
+ *  pendingConcepts array preserving slot_index. */
+export const CONCEPT_REGEN_JSON_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['concepts'],
+  properties: {
+    concepts: {
+      type: 'array',
+      description:
+        'Replacement concept cards in the same order as requested. Each must use a hook archetype + framework + big_idea that does NOT duplicate any kept concept and does NOT repeat the weakness of the rejected concept it replaces.',
       items: CONCEPT_CARD_SCHEMA,
     },
   },

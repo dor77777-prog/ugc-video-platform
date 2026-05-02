@@ -46,7 +46,7 @@ Built **specifically** for the Israeli market:
 </tr>
 <tr>
 <td>3️⃣</td>
-<td><b>6 scripts in parallel</b><br/>Different angles — pain/solution, skeptical, demonstration, price anchor, relatable moment, direct response. Pick or edit.</td>
+<td><b>6 creative concepts → choose 1–3 → full scripts</b><br/>The AI proposes 6 lightweight angles (pain/solution, skeptical, demonstration, price anchor, relatable moment, direct response). Refresh weak ones one-at-a-time, then pick 1–3 to expand into full scripts. Only the chosen concepts are turned into full scripts — saving you time and credits.<br/><sup>(Behind <code>SCRIPT_ENGINE_MODE=concept_interactive</code>; defaults to legacy 6-scripts-immediately for backward compat.)</sup></td>
 </tr>
 <tr>
 <td>4️⃣</td>

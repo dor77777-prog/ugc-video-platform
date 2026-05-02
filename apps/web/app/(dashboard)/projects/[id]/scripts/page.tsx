@@ -20,6 +20,10 @@ import { ProjectHero } from '@/components/wizard/project-hero';
 import { GenerateButton } from './client-bits';
 import { ContinueButton } from './continue-button';
 import { StreamingScriptsGrid } from './streaming-scripts-grid';
+import { ConceptFlow } from './concept-flow';
+import { resolveScriptEngineMode } from '@/lib/llm/concept-engine';
+import { readPendingConcepts } from '@/lib/llm/concept-storage';
+import { PER_OPERATION_CREDITS } from '@/lib/plans';
 
 // V2: framework labels in Hebrew. Older scripts (pre-V2) won't have a `framework`
 // field — for those we fall back to the legacy angle label.
@@ -82,6 +86,9 @@ export default async function ScriptsPage({
         id: true,
         productName: true,
         selectedScriptId: true,
+        // V27.11.PR6 — read productData to recover pendingConcepts
+        // for concept_interactive mode. Legacy mode ignores it.
+        productData: true,
         scripts: {
           select: {
             id: true,
@@ -142,19 +149,46 @@ export default async function ScriptsPage({
 
         <Stepper current={4} done={[1, 2, 3]} projectId={projectId} />
 
-      {!hasScripts ? (
-        <Card className="border-dashed">
-          <CardContent className="p-12 text-center space-y-5">
-            <div className="text-5xl">✍️</div>
-            <h2 className="text-2xl font-bold">צור 6 תסריטים</h2>
-            <p className="text-sm text-muted-foreground max-w-md mx-auto">
-              נשלח את פרטי המוצר ל-AI ונקבל בחזרה 6 גרסאות שונות לתסריט קצר. עלות:{' '}
-              <strong>קרדיט אחד</strong> (יש לך {dbUser.creditsBalance}).
-            </p>
-            <GenerateButton projectId={projectId} />
-          </CardContent>
-        </Card>
-      ) : (
+      {(() => {
+        // V27.11.PR6 — engine-mode branching.
+        const engineMode = resolveScriptEngineMode();
+        const pendingConcepts = readPendingConcepts(project.productData);
+
+        // concept_interactive mode: when no scripts exist yet (or
+        // pendingConcepts is in 'draft' state), show the ConceptFlow
+        // picker. Once scripts exist, fall through to the legacy
+        // streaming-scripts-grid so the user picks one to continue.
+        if (engineMode === 'concept_interactive' && !hasScripts) {
+          return (
+            <ConceptFlow
+              projectId={projectId}
+              initialPendingConcepts={pendingConcepts}
+              creditsBalance={dbUser.creditsBalance}
+              expandCostPerScript={PER_OPERATION_CREDITS.script_batch}
+            />
+          );
+        }
+
+        // Legacy mode (or post-expansion in concept_interactive):
+        if (!hasScripts) {
+          return (
+            <Card className="border-dashed">
+              <CardContent className="p-12 text-center space-y-5">
+                <div className="text-5xl">✍️</div>
+                <h2 className="text-2xl font-bold">צור 6 תסריטים</h2>
+                <p className="text-sm text-muted-foreground max-w-md mx-auto">
+                  נשלח את פרטי המוצר ל-AI ונקבל בחזרה 6 גרסאות שונות לתסריט קצר. עלות:{' '}
+                  <strong>קרדיט אחד</strong> (יש לך {dbUser.creditsBalance}).
+                </p>
+                <GenerateButton projectId={projectId} />
+              </CardContent>
+            </Card>
+          );
+        }
+        return null;
+      })()}
+
+      {hasScripts && (
         <>
           {/* V27.10.10 — client-side streaming grid. Polls /api/scripts/list
               and renders cards from local state, bypassing the

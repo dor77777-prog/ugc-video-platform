@@ -1,37 +1,36 @@
-// V27.11.PR5 — Concept-first script engine.
+// V27.11.PR6 — Concept-first script engine (interactive mode).
 //
-// Flow (gated behind SCRIPT_ENGINE_MODE=concept_first):
-//   Phase 1: 1 LLM call returns 6 concept cards, one per framework.
-//            Each card commits to the creative concept (big_idea,
-//            specific_situation, hook, emotional_trigger, persuasion_
-//            angle, why_this_is_different) plus a 4-5 bullet scene
-//            outline + a self-rated estimated_quality score. NO full
-//            spoken text or visual prompts at this stage.
-//   Phase 2: pickTopConceptsByQuality() ranks by estimated_quality
-//            (with deterministic FRAMEWORK_ORDER as tie-breaker).
-//            Top N (default 3, env-tunable) get expanded in parallel
-//            using the existing SINGLE_SCRIPT_JSON_SCHEMA — same
-//            shape as the legacy_full_batch path.
+// Engine modes (SCRIPT_ENGINE_MODE):
+//   - legacy_full_batch (default) — 6 parallel SINGLE_SCRIPT calls,
+//     same as before V27.11. Always works, always shows 6 scripts.
+//   - concept_interactive — interactive UX:
+//       1. generateConceptCards     → 6 light concept cards
+//       2. user picks 1-3 + (optional) refresh weak ones
+//       3. regenerateSelectedConcepts replaces only chosen slots
+//       4. expandConceptCard expands one chosen card to full script
 //
-// Cost win on a typical batch (gpt-5.4-mini):
-//   legacy_full_batch: 6 × full script (~5K out each) = ~30K out
-//   concept_first:    1 × 6 cards (~1.5K) + 3 × full (~5K each) = ~16.5K
-//                     ≈ 45% fewer output tokens, ~$0.07 saved per batch.
+// Older `concept_first` (PR5 backend-only auto-pick) is silently
+// re-mapped to `legacy_full_batch` here to prevent the broken
+// "backend gives 3, UI expects 6" state that triggered the rollback.
+// The new interactive UX replaces it.
 //
-// Latency: phase 1 wall-clock ~10-12s, phase 2 wall-clock ~25s, total
-// ~35-40s. Slower than legacy ~25-30s wall, but the orchestrator can
-// surface phase-1 cards to the user as a "thinking preview" the
-// moment they arrive — perceived latency drops below legacy.
+// Cost (PR6 measured against legacy_full_batch on gpt-5.4-mini):
+//   Concept generation: 1 call, ~2K output tokens
+//   Concept refresh:    1 call per refresh, ~0.4K-1K output tokens
+//   Concept expansion:  1 call per chosen concept, ~5K output tokens
 //
-// Backwards-compat: legacy_full_batch (default) is unchanged. Setting
-// SCRIPT_ENGINE_MODE=concept_first opts in. The downstream
-// ScriptGenerationOutput shape is identical between modes — the only
-// observable difference is `scripts.length` (6 in legacy, N in
-// concept_first; default N=3).
+//   User picks 1 → ~7K output total vs legacy 30K (~75% cheaper)
+//   User picks 3 → ~17K output total vs legacy 30K (~45% cheaper)
+//
+// Backwards-compat: PR5's auto-pick path is replaced. The schema
+// changed (12 fields, including new ones); legacy DB scripts are
+// untouched. The legacy_full_batch mode is the safe rollback.
 
 import {
   CONCEPT_CARDS_JSON_SCHEMA,
+  CONCEPT_REGEN_JSON_SCHEMA,
   CONCEPT_SYSTEM_PROMPT,
+  CONCEPT_REGEN_SYSTEM_PROMPT,
   SINGLE_SCRIPT_JSON_SCHEMA,
 } from '@ugc-video/prompts';
 import {
@@ -46,115 +45,71 @@ import {
   geminiStructuredCall,
   GeminiConfigError,
 } from './gemini-client';
+import type { RawConceptCard, StoredConcept } from './concept-storage';
 
-export type ScriptEngineMode = 'legacy_full_batch' | 'concept_first';
+export type ScriptEngineMode = 'legacy_full_batch' | 'concept_interactive';
+export type ScriptProvider = 'openai' | 'anthropic' | 'gemini';
 
-/** V27.11.PR5 — env resolution.
- *  Default `legacy_full_batch` so PR5 ships with zero behavior change.
- *  Operators flip via `SCRIPT_ENGINE_MODE=concept_first` (no redeploy
- *  required, env vars are read at call time inside generateScripts). */
+/** V27.11.PR6 — env resolution.
+ *  Default `legacy_full_batch` so concept_interactive opt-in is
+ *  required. The legacy PR5 value `concept_first` is silently
+ *  remapped to legacy (the auto-pick UX that produced 3 forever-
+ *  spinning cards is permanently retired). */
 export function resolveScriptEngineMode(): ScriptEngineMode {
   const raw = process.env.SCRIPT_ENGINE_MODE?.trim().toLowerCase();
-  if (raw === 'concept_first') return 'concept_first';
+  if (raw === 'concept_interactive') return 'concept_interactive';
+  // V27.11.PR5 remap: 'concept_first' silently → legacy. The PR5 backend-
+  // only flow is gone; concept_interactive is the only opt-in.
   return 'legacy_full_batch';
 }
 
-/** V27.11.PR5 — number of concepts expanded into full scripts in
- *  phase 2. Default 3 (the audit's recommendation). Operators can
- *  override via `SCRIPT_CONCEPT_TOP_N` to e.g. 4 (more variety) or
- *  2 (faster + cheaper). Clamped to [1, 6]. */
-export function resolveConceptTopN(): number {
-  const raw = process.env.SCRIPT_CONCEPT_TOP_N?.trim();
-  const parsed = raw ? Number.parseInt(raw, 10) : NaN;
-  if (!Number.isFinite(parsed)) return 3;
-  return Math.max(1, Math.min(6, parsed));
-}
-
-/** V27.11.PR5 — concept card returned by phase 1. Mirror of the
- *  CONCEPT_CARD_SCHEMA in packages/prompts/src/concept-cards-schema.ts. */
-export interface ConceptCard {
-  framework: string;
-  big_idea: string;
-  specific_situation: string;
-  selected_hook: string;
-  emotional_trigger: string;
-  persuasion_angle: string;
-  why_this_is_different_from_other_scripts: string;
-  scene_outline: string[];
-  estimated_quality: number;
-  why_this_quality_score: string;
-}
+/** Re-exported for downstream typing. */
+export type { RawConceptCard, StoredConcept } from './concept-storage';
 
 interface ConceptBatchResponse {
-  concepts: ConceptCard[];
+  concepts: RawConceptCard[];
 }
 
 export interface GenerateConceptCardsInput {
   /** Built once via buildSystemInstructionWithIntelligence() in
-   *  scripts.ts and shared with phase 2 — same cache prefix. */
+   *  scripts.ts — the SAME shared system instruction phase 2 will
+   *  use for full-script expansion, so the cached prefix benefits
+   *  both phases on warm batches. */
   systemInstruction: string;
-  /** Per-batch product context. Phase 1 sees the same content as
-   *  phase 2's framework-specific prompt minus the framework brief. */
+  /** Per-batch product context. */
   userPrompt: string;
-  provider: 'openai' | 'anthropic' | 'gemini';
+  provider: ScriptProvider;
   model: string;
 }
 
 export interface GenerateConceptCardsOutput {
-  concepts: ConceptCard[];
+  concepts: RawConceptCard[];
   usage: {
     inputTokens: number;
     outputTokens: number;
   };
 }
 
-/** V27.11.PR5 — phase 1: dispatch to the same provider clients used by
- *  phase 2, but with the LIGHT system prompt + CONCEPT_CARDS_JSON_SCHEMA.
- *  The concept system prompt is short (~3.5K chars) — the heavy
- *  SCRIPT_SYSTEM_PROMPT (~38K chars) is reserved for phase 2 where
- *  full scripts are written. The PI block is in `systemInstruction`
- *  so phase 1 ALSO benefits from the cached prefix that phase 2 uses;
- *  cache hit is on the SCRIPT-LEVEL prefix only when phase 2's system
- *  block builds on the same provider. Phase 1's concept system prompt
- *  is a different cache slot, so it caches across multiple concept_first
- *  batches in the same 5-min window — orthogonal, also useful. */
+/** V27.11.PR6 — phase 1: generate 6 light concept cards in 1 LLM call.
+ *
+ *  Phase 1's "system" is the LIGHT concept prompt + (optional) PI
+ *  block. Heavy SCRIPT_SYSTEM_PROMPT prefix is stripped — overkill
+ *  for concept work and would defeat the cost win. */
 export async function generateConceptCards(
   input: GenerateConceptCardsInput,
 ): Promise<GenerateConceptCardsOutput> {
-  // Phase 1's "system" is the LIGHT concept prompt + (optional) PI
-  // block. We don't reuse SCRIPT_SYSTEM_PROMPT here — it's overkill
-  // for concept work and would defeat the cost win.
-  //
-  // PI block already lives in the `systemInstruction` we received —
-  // strip the heavy SCRIPT_SYSTEM_PROMPT prefix and keep only the PI
-  // append, so we attach it to the CONCEPT_SYSTEM_PROMPT instead.
   const piBlock = extractIntelligenceBlock(input.systemInstruction);
   const conceptSystem = piBlock
     ? `${CONCEPT_SYSTEM_PROMPT}\n\n${piBlock}`
     : CONCEPT_SYSTEM_PROMPT;
 
-  const { parsed, usage } =
-    input.provider === 'anthropic'
-      ? await anthropicStructuredCall<ConceptBatchResponse>({
-          systemInstruction: conceptSystem,
-          userPrompt: input.userPrompt,
-          responseSchema: CONCEPT_CARDS_JSON_SCHEMA,
-          model: input.model,
-        })
-      : input.provider === 'gemini'
-        ? await geminiStructuredCall<ConceptBatchResponse>({
-            systemInstruction: conceptSystem,
-            userPrompt: input.userPrompt,
-            responseSchema: CONCEPT_CARDS_JSON_SCHEMA,
-            model: input.model,
-          })
-        : await openaiStructuredCall<ConceptBatchResponse>({
-            systemInstruction: conceptSystem,
-            userPrompt: input.userPrompt,
-            responseSchema: CONCEPT_CARDS_JSON_SCHEMA,
-            model: input.model,
-            temperature: 0.7,
-          });
+  const { parsed, usage } = await dispatchStructuredCall<ConceptBatchResponse>({
+    provider: input.provider,
+    model: input.model,
+    systemInstruction: conceptSystem,
+    userPrompt: input.userPrompt,
+    responseSchema: CONCEPT_CARDS_JSON_SCHEMA,
+  });
 
   return {
     concepts: parsed.concepts,
@@ -165,107 +120,209 @@ export async function generateConceptCards(
   };
 }
 
-/** V27.11.PR5 — extract the Product Intelligence block out of the
- *  shared system instruction, so phase 1 can prepend it onto its
- *  own (smaller) concept system prompt instead of carrying the full
- *  SCRIPT_SYSTEM_PROMPT. The PI block starts with a dedicated marker
- *  emitted by buildIntelligencePromptBlock() in scripts.ts:
- *    `═══════════════════════════════════════════`
- *    `🧠 PRODUCT INTELLIGENCE — USE THIS, NOT THE LEAN FIELDS ABOVE.`
- *    `═══════════════════════════════════════════`
- *  Returns null when no PI block is present (legacy projects).
- *
- *  This function is forgiving: if the marker is absent or the layout
- *  changes, it returns null and phase 1 just runs without PI. Phase
- *  1 still has the user prompt with product info — null PI doesn't
- *  break the flow, it just means slightly weaker concept grounding. */
+export interface RegenerateConceptsInput {
+  systemInstruction: string;
+  /** Project context (same as the first-batch user prompt) — gives
+   *  the LLM the product / audience / mode constraints. */
+  userPrompt: string;
+  /** Concepts the user wants kept verbatim — the LLM must NOT
+   *  duplicate their angles. */
+  conceptsToKeep: StoredConcept[];
+  /** Concepts the user rejected — the LLM must NOT repeat their
+   *  weakness. The risk_notes field is the most useful signal here. */
+  conceptsToReplace: StoredConcept[];
+  /** Number of replacement cards to return (= conceptsToReplace.length). */
+  regenerateCount: number;
+  provider: ScriptProvider;
+  model: string;
+}
+
+export interface RegenerateConceptsOutput {
+  concepts: RawConceptCard[];
+  usage: {
+    inputTokens: number;
+    outputTokens: number;
+  };
+}
+
+/** V27.11.PR6 — partial regeneration of selected slots. The LLM
+ *  receives the kept concepts as "do not duplicate these" and the
+ *  rejected concepts as "do not repeat their weakness", and must
+ *  return EXACTLY `regenerateCount` replacement cards. */
+export async function regenerateSelectedConcepts(
+  input: RegenerateConceptsInput,
+): Promise<RegenerateConceptsOutput> {
+  const piBlock = extractIntelligenceBlock(input.systemInstruction);
+  // The regen system block stacks: CONCEPT_SYSTEM_PROMPT (rules of
+  // each card) + CONCEPT_REGEN_SYSTEM_PROMPT (delta rules for partial
+  // regen) + (optional) PI. The user prompt carries the kept/rejected
+  // payload + the project context.
+  const regenSystem = [
+    CONCEPT_SYSTEM_PROMPT,
+    CONCEPT_REGEN_SYSTEM_PROMPT,
+    piBlock,
+  ]
+    .filter((s): s is string => !!s)
+    .join('\n\n');
+
+  const regenUserPrompt = [
+    input.userPrompt,
+    '',
+    '═══════════════════════════════════════════',
+    `🔁 CONCEPT REGEN — replace exactly ${input.regenerateCount} concept(s)`,
+    '═══════════════════════════════════════════',
+    '',
+    `**conceptsToKeep (${input.conceptsToKeep.length})** — אסור לחזור על שום ממד שלהם (hook_direction, big_idea, product_proof_moment, framework אם אפשר):`,
+    ...input.conceptsToKeep.map((c, i) => formatConceptForPrompt(c, i, 'KEEP')),
+    '',
+    `**conceptsToReplace (${input.conceptsToReplace.length})** — נדחו ע"י המשתמש. אסור לחזור על החולשה שלהם (כתוב ב-risk_notes או הימנע מאותו hook archetype):`,
+    ...input.conceptsToReplace.map((c, i) =>
+      formatConceptForPrompt(c, i, 'REPLACE'),
+    ),
+    '',
+    `החזר ${input.regenerateCount} קונספטים חדשים בלבד, בפורמט { "concepts": [...] }. כל אחד עם 12 השדות לפי הסכמה.`,
+  ].join('\n');
+
+  const { parsed, usage } = await dispatchStructuredCall<ConceptBatchResponse>({
+    provider: input.provider,
+    model: input.model,
+    systemInstruction: regenSystem,
+    userPrompt: regenUserPrompt,
+    responseSchema: CONCEPT_REGEN_JSON_SCHEMA,
+  });
+
+  // Defensive: clamp/pad to expected count. The schema can't enforce
+  // an exact array length in OpenAI strict mode (no minItems/
+  // maxItems), so we trim or fail-soft here.
+  let cards = parsed.concepts;
+  if (cards.length > input.regenerateCount) {
+    cards = cards.slice(0, input.regenerateCount);
+  } else if (cards.length < input.regenerateCount) {
+    throw new Error(
+      `regen returned ${cards.length} concepts, expected ${input.regenerateCount}`,
+    );
+  }
+
+  return {
+    concepts: cards,
+    usage: {
+      inputTokens: usage.inputTokens,
+      outputTokens: usage.outputTokens,
+    },
+  };
+}
+
+function formatConceptForPrompt(
+  c: StoredConcept,
+  index: number,
+  tag: 'KEEP' | 'REPLACE',
+): string {
+  return [
+    `  [${tag} #${index + 1}, slot ${c.slot_index}, framework=${c.framework}]`,
+    `    big_idea: ${c.big_idea}`,
+    `    selected_hook: ${c.selected_hook}`,
+    `    hook_direction: ${c.hook_direction}`,
+    `    target_audience_moment: ${c.target_audience_moment}`,
+    `    emotional_trigger: ${c.emotional_trigger}`,
+    `    product_proof_moment: ${c.product_proof_moment}`,
+    `    estimated_quality: ${c.estimated_quality}`,
+    c.risk_notes ? `    risk_notes: ${c.risk_notes}` : '    risk_notes: null',
+  ].join('\n');
+}
+
+/** V27.11.PR5 → kept for PR6 — extract the Product Intelligence block
+ *  out of the shared system instruction so phase 1 can prepend it
+ *  onto its own (smaller) concept system prompt. */
 export function extractIntelligenceBlock(
   systemInstruction: string,
 ): string | null {
   const marker = '🧠 PRODUCT INTELLIGENCE';
   const idx = systemInstruction.indexOf(marker);
   if (idx < 0) return null;
-  // Walk back to the previous separator line to capture the full
-  // header block (the ═══ row above the marker).
   const before = systemInstruction.slice(0, idx);
-  const headerStart = before.lastIndexOf('═══════════════════════════════════════════');
+  const headerStart = before.lastIndexOf(
+    '═══════════════════════════════════════════',
+  );
   const start = headerStart >= 0 ? headerStart : idx;
   return systemInstruction.slice(start).trim();
 }
 
-/** V27.11.PR5 — pick the top-N concepts by estimated_quality, with
- *  the canonical FRAMEWORK_ORDER index as a deterministic tie-breaker.
- *  Pure function: same input → same output, no LLM calls.
- *
- *  Why deterministic tie-break: when 6 concepts all rate 8/10, we
- *  don't want to pick a random subset on each rerun. FRAMEWORK_ORDER
- *  reflects the canonical ad-mix priority (problem-solution first,
- *  fast-direct-response last) so the tie-break is editorially
- *  meaningful. */
-export function pickTopConceptsByQuality(
-  concepts: ConceptCard[],
-  topN: number,
-  frameworkOrder: readonly string[],
-): ConceptCard[] {
-  if (topN <= 0) return [];
-  if (concepts.length <= topN) return [...concepts];
-
-  const indexedConcepts = concepts.map((c, i) => ({
-    concept: c,
-    originalIndex: i,
-    frameworkRank: frameworkOrder.indexOf(c.framework),
-  }));
-
-  indexedConcepts.sort((a, b) => {
-    // Higher estimated_quality first.
-    const qDelta = (b.concept.estimated_quality ?? 0) - (a.concept.estimated_quality ?? 0);
-    if (qDelta !== 0) return qDelta;
-    // Then earlier frameworkRank first (canonical priority). Frameworks
-    // not in the order list (shouldn't happen, but be safe) sink to
-    // the end.
-    const aRank = a.frameworkRank < 0 ? Number.MAX_SAFE_INTEGER : a.frameworkRank;
-    const bRank = b.frameworkRank < 0 ? Number.MAX_SAFE_INTEGER : b.frameworkRank;
-    if (aRank !== bRank) return aRank - bRank;
-    // Final fallback: original arrival order.
-    return a.originalIndex - b.originalIndex;
-  });
-
-  return indexedConcepts.slice(0, topN).map((x) => x.concept);
-}
-
-/** V27.11.PR5 — build the user-prompt fragment that asks phase 2 to
+/** V27.11.PR6 — build the user-prompt fragment that asks phase 2 to
  *  EXPAND a chosen concept into the full SINGLE_SCRIPT_JSON_SCHEMA
  *  shape. Concatenated AFTER the existing per-framework user prompt
- *  built in scripts.ts → buildSingleFrameworkPrompt() so the
- *  framework brief is also visible. */
-export function buildExpansionPromptFragment(concept: ConceptCard): string {
+ *  built in scripts.ts → buildSingleFrameworkPrompt(). */
+export function buildExpansionPromptFragment(concept: StoredConcept): string {
   const lines: string[] = [
     '',
     '═══════════════════════════════════════════',
-    '🎯 EXPAND THIS CONCEPT (V27.11.PR5)',
+    '🎯 EXPAND THIS CONCEPT (V27.11.PR6 — concept_interactive)',
     '═══════════════════════════════════════════',
-    'הקונספט הבא נבחר בשלב 1 (concept_first mode). הרחב אותו לתסריט מלא תואם לסכמה.',
-    '**אסור לסטות** מ-big_idea, specific_situation, selected_hook, emotional_trigger, או persuasion_angle של הקונספט. הם הוחלטו ב-phase 1 ונבחרו על ידי הציון estimated_quality.',
-    'מותר לחדד hook ניסוח קל, אבל הרעיון נשאר זהה. scene_outline הוא הסקלטון של scenes — הרחב כל בולט לסצנה מלאה עם spoken_text_hebrew, visual_prompt_english, scene_generation_type, frame_strategy, וכל המטא-דאטה הסטנדרטית.',
+    'הקונספט הבא נבחר ע"י המשתמש מתוך 6 כיוונים שיוצרו בשלב 1. הרחב אותו לתסריט מלא תואם לסכמה.',
+    '**אסור לסטות** מ-big_idea, target_audience_moment, selected_hook, hook_direction, emotional_trigger, או product_proof_moment של הקונספט. הם נבחרו במפורש ע"י המשתמש.',
+    'מותר לחדד hook ניסוח קל; הרעיון נשאר זהה. scene_outline הוא הסקלטון של scenes — הרחב כל בולט לסצנה מלאה עם spoken_text_hebrew, visual_prompt_english, scene_generation_type, frame_strategy, וכל המטא-דאטה הסטנדרטית.',
+    '⚠ product_proof_moment חוצה סצנות (state ראשון בסצנה N, state שני בסצנה N+1). אל תבנה משהו לפאנל יחיד. ה-SINGLE-FRAME RULE ב-image-prompt wrapper דוחה את זה אוטומטית.',
     '',
     `framework: ${concept.framework}`,
     `big_idea: ${concept.big_idea}`,
-    `specific_situation: ${concept.specific_situation}`,
+    `target_audience_moment: ${concept.target_audience_moment}`,
     `selected_hook: ${concept.selected_hook}`,
+    `hook_direction: ${concept.hook_direction}`,
     `emotional_trigger: ${concept.emotional_trigger}`,
-    `persuasion_angle: ${concept.persuasion_angle}`,
-    `why_this_is_different_from_other_scripts: ${concept.why_this_is_different_from_other_scripts}`,
+    `product_proof_moment: ${concept.product_proof_moment}`,
+    `why_it_fits_product: ${concept.why_it_fits_product}`,
+    `why_it_fits_audience: ${concept.why_it_fits_audience}`,
     'scene_outline:',
     ...concept.scene_outline.map((b, i) => `  ${i}. ${b}`),
-    `(Concept self-rated estimated_quality: ${concept.estimated_quality}. הסבר: ${concept.why_this_quality_score})`,
+    `(Concept self-rated estimated_quality: ${concept.estimated_quality}.)`,
+    concept.risk_notes
+      ? `(Known risk noted at concept stage: ${concept.risk_notes} — address it in the expansion if possible.)`
+      : '',
     '',
     'הפק עכשיו תסריט אחד מלא שמכבד את הקונספט שלמעלה ועונה על ה-SINGLE_SCRIPT_JSON_SCHEMA. החזר { "script": {...} }.',
   ];
-  return lines.join('\n');
+  return lines.filter((l) => l !== '').join('\n');
+}
+
+/** V27.11.PR6 — provider-agnostic dispatcher. Used by
+ *  generateConceptCards + regenerateSelectedConcepts so both the
+ *  initial batch and the partial regen pick up the env-driven
+ *  provider/model in one place. */
+async function dispatchStructuredCall<T>(args: {
+  provider: ScriptProvider;
+  model: string;
+  systemInstruction: string;
+  userPrompt: string;
+  responseSchema: unknown;
+}): Promise<{
+  parsed: T;
+  usage: { inputTokens: number; outputTokens: number };
+}> {
+  if (args.provider === 'anthropic') {
+    return anthropicStructuredCall<T>({
+      systemInstruction: args.systemInstruction,
+      userPrompt: args.userPrompt,
+      responseSchema: args.responseSchema,
+      model: args.model,
+    });
+  }
+  if (args.provider === 'gemini') {
+    return geminiStructuredCall<T>({
+      systemInstruction: args.systemInstruction,
+      userPrompt: args.userPrompt,
+      responseSchema: args.responseSchema,
+      model: args.model,
+    });
+  }
+  return openaiStructuredCall<T>({
+    systemInstruction: args.systemInstruction,
+    userPrompt: args.userPrompt,
+    responseSchema: args.responseSchema,
+    model: args.model,
+    temperature: 0.7,
+  });
 }
 
 // Re-exports so scripts.ts can use these without importing the
-// individual module names. Schema export not re-exported here —
-// scripts.ts imports it directly from @ugc-video/prompts.
+// individual module names.
 export { SINGLE_SCRIPT_JSON_SCHEMA };
 export type { OpenAiConfigError, AnthropicConfigError, GeminiConfigError };

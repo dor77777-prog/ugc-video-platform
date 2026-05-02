@@ -19,16 +19,17 @@ import {
   ANTHROPIC_DEFAULT_SCRIPT_MODEL,
 } from './anthropic-script-client';
 import {
-  generateConceptCards,
-  pickTopConceptsByQuality,
-  buildExpansionPromptFragment,
   resolveScriptEngineMode,
-  resolveConceptTopN,
-  type ConceptCard,
   type ScriptEngineMode,
 } from './concept-engine';
 
-export type { ScriptEngineMode, ConceptCard } from './concept-engine';
+// V27.11.PR6 — generateScripts() handles legacy_full_batch only.
+// concept_interactive flow lives in apps/web/lib/llm/concept-actions.ts
+// (4 dedicated server actions: generateConcepts, regenerateSelected,
+// regenerateAll, expandPicked). The PR5 concept_first auto-pick branch
+// in this file was removed to avoid the broken "backend gives 3 / UI
+// expects 6" state.
+export type { ScriptEngineMode } from './concept-engine';
 
 // V27.10.12 — default flipped Anthropic Sonnet 4.6 → OpenAI gpt-5.4-mini.
 //
@@ -554,92 +555,27 @@ export async function generateScripts(
       }
   };
 
-  // V27.11.PR5 — engine-mode dispatch.
-  //
-  // legacy_full_batch (default): 6 parallel SINGLE_SCRIPT calls,
-  // one per framework, as before.
-  //
-  // concept_first: phase 1 generates 6 lightweight concept cards in
-  // ONE call, pickTopConceptsByQuality ranks by estimated_quality
-  // (deterministic FRAMEWORK_ORDER tie-break), top N (default 3,
-  // SCRIPT_CONCEPT_TOP_N) get expanded in parallel via the same
-  // buildOneCall path with a concept-expansion userPrompt fragment.
-  // Net cost win: ~45% fewer output tokens per batch.
+  // V27.11.PR6 — generateScripts() handles ONLY legacy_full_batch now.
+  // The concept_interactive flow has its own dedicated server actions
+  // in lib/llm/concept-actions.ts (generateConcepts, regenerateSelected,
+  // regenerateAll, expandPicked) — not routed through this function.
+  // The PR5 backend-only auto-pick branch was removed because it
+  // returned a count that didn't match the UI's expectation, leaving
+  // 3 concept cards forever-spinning. Don't reintroduce.
   const engineMode = resolveScriptEngineMode();
-  let results: (GeneratedScript | null)[] = [];
-
-  if (engineMode === 'concept_first') {
-    const topN = resolveConceptTopN();
-    console.log(
-      `[scripts] engineMode=concept_first topN=${topN} provider=${provider} model=${model}`,
-    );
-    let concepts: ConceptCard[] = [];
-    try {
-      const conceptOutput = await generateConceptCards({
-        systemInstruction: sharedSystemInstruction,
-        userPrompt: buildConceptBatchUserPrompt(input),
-        provider,
-        model,
-      });
-      totalInputTokens += conceptOutput.usage.inputTokens;
-      totalOutputTokens += conceptOutput.usage.outputTokens;
-      concepts = conceptOutput.concepts;
-      console.log(
-        `[scripts] phase1: ${concepts.length} concept(s) generated, qualities=[${concepts
-          .map((c) => `${c.framework}=${c.estimated_quality}`)
-          .join(', ')}]`,
-      );
-    } catch (err) {
-      if (
-        err instanceof GeminiConfigError ||
-        err instanceof OpenAiConfigError ||
-        err instanceof AnthropicConfigError
-      ) {
-        throw err;
-      }
-      console.error(
-        `[scripts] phase1 concept-cards call failed:`,
-        (err as Error).message,
-      );
-      // Fail-soft: when phase 1 errors, fall back to legacy_full_batch
-      // for this single batch instead of returning zero scripts. The
-      // env flag stays set so the next batch retries phase 1.
-      console.warn('[scripts] falling back to legacy_full_batch for this batch');
-      results = await Promise.all(
-        FRAMEWORK_ORDER.map((framework, idx) => buildOneCall(framework, idx)),
-      );
-      // Skip the concept_first phase-2 block below.
-      concepts = [];
-    }
-
-    if (concepts.length > 0) {
-      const top = pickTopConceptsByQuality(concepts, topN, FRAMEWORK_ORDER);
-      console.log(
-        `[scripts] phase2: expanding top ${top.length} concept(s): ${top
-          .map((c) => `${c.framework}(q=${c.estimated_quality})`)
-          .join(', ')}`,
-      );
-      results = await Promise.all(
-        top.map((concept, index) => {
-          const framework = concept.framework as ScriptFrameworkSlug;
-          // Combine the per-framework brief (mode block, avatar gender,
-          // category, framework brief, feature focus) with the concept
-          // expansion fragment so phase 2 has both the framework rails
-          // AND the locked concept.
-          const baseUserPrompt = buildSingleFrameworkPrompt(input, framework);
-          const customUserPrompt =
-            baseUserPrompt + buildExpansionPromptFragment(concept);
-          return buildOneCall(framework, index, customUserPrompt);
-        }),
-      );
-    }
-  } else {
-    // V27.10.1 — restored parallel dispatch. See comment block above
-    // for why the V27.10 warmup-first approach was reverted.
-    results = await Promise.all(
-      FRAMEWORK_ORDER.map((framework, index) => buildOneCall(framework, index)),
+  if (engineMode !== 'legacy_full_batch') {
+    // Defensive: a non-legacy mode reaching here means scripts/page.tsx
+    // didn't branch correctly. We'd rather log loud than serve a
+    // half-broken UI.
+    console.warn(
+      `[scripts] generateScripts called with engineMode=${engineMode} — falling through to legacy_full_batch. concept_interactive should route via concept-actions.ts.`,
     );
   }
+  // V27.10.1 — restored parallel dispatch. See comment block above
+  // for why the V27.10 warmup-first approach was reverted.
+  const results: (GeneratedScript | null)[] = await Promise.all(
+    FRAMEWORK_ORDER.map((framework, index) => buildOneCall(framework, index)),
+  );
 
   // V27.10.11 — single-shot retry of any framework that returned null
   // in the first batch. Live observation: roughly 1 of 6 Anthropic
@@ -649,12 +585,9 @@ export async function generateScripts(
   // Here we re-issue ONLY the failed indexes; runs in parallel; one
   // round, no recursive retries (avoids tail-latency runaway).
   //
-  // V27.11.PR5 — only retry in legacy_full_batch mode. concept_first
-  // mode has a smaller N (default 3) and the failure recovery would
-  // need access to the original ConceptCard list, which is scoped to
-  // the if-branch above. If a concept expansion fails in concept_first
-  // mode, we just return fewer scripts. The user can re-run.
-  if (engineMode === 'legacy_full_batch') {
+  // V27.10.11 — single-shot retry of any framework that returned null
+  // in the first batch.
+  {
     const failedIndexes = results
       .map((r, i) => (r === null ? i : -1))
       .filter((i) => i !== -1);
@@ -682,9 +615,7 @@ export async function generateScripts(
   const successful = results.filter((r): r is GeneratedScript => r !== null);
   if (successful.length === 0) {
     throw new Error(
-      engineMode === 'concept_first'
-        ? 'All concept expansions failed — check the LLM logs for details.'
-        : 'All 6 framework generations failed — check the LLM logs for details.',
+      'All 6 framework generations failed — check the LLM logs for details.',
     );
   }
 
@@ -738,7 +669,10 @@ const FRAMEWORK_BRIEF_HEBREW: Record<ScriptFrameworkSlug, string> = {
 // The PI block is NOT included here — it's already in the shared
 // systemInstruction passed via generateConceptCards(), which strips
 // SCRIPT_SYSTEM_PROMPT and prepends CONCEPT_SYSTEM_PROMPT instead.
-function buildConceptBatchUserPrompt(p: ProductInput): string {
+// V27.11.PR6 — exported so the new concept-actions.ts server action
+// can build a phase-1 prompt with the same project/mode/avatar context
+// the legacy generateScripts path uses.
+export function buildConceptBatchUserPrompt(p: ProductInput): string {
   const mode = resolveVideoMode(p.durationSeconds);
   const modeBlock = [
     `אורך הסרטון הסופי: ${mode.targetTotalDurationMs / 1000} שניות (mode = ${mode.mode}).`,
