@@ -14,7 +14,9 @@
     "test:scriptperf": "tsx scripts/test-script-perf-pr2.ts",
     "test:schematrim": "tsx scripts/test-schema-trim-pr3.ts",
     "test:anticollagepr4": "tsx scripts/test-anticollage-pr4.ts",
-    "test:conceptinteractive": "tsx scripts/test-concept-interactive-pr6.ts"
+    "test:conceptinteractive": "tsx scripts/test-concept-interactive-pr6.ts",
+    "eval:script-engine": "tsx scripts/eval/script-engine-eval.ts",
+    "eval:script-engine:bootstrap": "tsx scripts/eval/bootstrap-gold-set.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.92.0",

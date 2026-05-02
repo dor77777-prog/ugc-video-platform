@@ -15,14 +15,22 @@ last_updated: 2026-05-03
 
 Phase: 1 — Script Engine Quality v2
 Plan: `.planning/phases/01-script-engine-quality-v2/01-PLAN.md` (single consolidated plan, 6 sub-tasks)
-Status: Plan ready, awaiting execution
-Last activity: 2026-05-03 — Phase 1 plan written
+Status: Sub-task 1 (Eval Harness) shipping → next: Sub-task 2 (Baseline Run)
+Last activity: 2026-05-03 — Sub-task 1 eval harness built, smoke test passing on cosmetics-1
+
+## Smoke observations (Sub-task 1)
+
+The harness immediately validated both production failure modes the user described:
+- **Diversity collapse confirmed**: `big_idea_diversity = 0.395` on the very first product (low — concepts cluster heavily, matching "4 of 6 cards share big_idea")
+- **Register failure confirmed**: `casual_markers_per_scene = 0.00` with 4/4 non-CTA scenes containing zero of [תכל'ס/וואלה/סבבה/...] (matching "Hebrew is written, not spoken")
+
+Sub-task 2 will quantify this across the full 9-product gold set.
 
 ## Sub-task progress (update after each commit)
 
 | # | Sub-task | Status | SHA | Gate result |
 |---|----------|--------|-----|-------------|
-| 1 | Eval Harness | pending | — | — |
+| 1 | Eval Harness | shipping | (this commit) | smoke pass on cosmetics-1: big_idea_diversity=0.395, casual_markers=0/4 (foundation only — no gate) |
 | 2 | Baseline Run | pending | — | — (this is the BASELINE — no gate) |
 | 3 | Diversity Enforcement | pending | — | gate: big_idea_diversity >= baseline + 0.15 |
 | 4 | Register Hard Enforcement | pending | — | gate: casual_markers_per_scene >= 1.0 AND register_authenticity_score >= baseline + 1.5 |
