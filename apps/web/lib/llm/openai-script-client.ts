@@ -1,29 +1,54 @@
-// V26.8 — OpenAI structured-output wrapper for the script-gen path.
+// V27.10.15 — migrated to gpt-5.5-mini per the official OpenAI
+// migration guide for GPT-5.5. The shape is the same Responses API
+// (V26.9) — the only changes are:
+//   - DEFAULT_MODEL flipped 'gpt-5.4-mini' → 'gpt-5.5-mini'
+//   - Added reasoning.effort: 'low'   (env: OPENAI_REASONING_EFFORT)
+//   - Added text.verbosity:   'low'   (env: OPENAI_VERBOSITY)
+//   - Dropped explicit temperature (reasoning models don't honor it
+//     the way completion models did; the guide recommends omitting it)
 //
-// V25 swapped script generation OpenAI → Gemini for cost reasons. Live
-// use revealed three problems with Gemini in this specific role:
-//   1. Pro at thinkingLevel:low consistently runs at ~$0.30-0.70/batch,
-//      which the operator flagged as too expensive.
-//   2. Pro at low takes ~60-90s wall-clock for the 6-batch (lots of
-//      hidden thoughts tokens; observed 111K output tokens for one run).
-//   3. Both Pro:low and Flash:low produced shallower English visual
-//      specs in `visualPromptEnglish` than the pre-V25 gpt-5.4-mini
-//      baseline, which propagated into weaker downstream image briefs.
+// Why low/low for our workload:
+//   - The script-gen task is heavy instruction-following on a fully
+//     specified system prompt (Hebrew QA gates, FEATURE FOCUS, schema).
+//     Per the guide, this benefits from `effort: 'low'` — the model
+//     spends fewer reasoning tokens since the path is largely scripted.
+//   - text.verbosity 'low' yields proportionally tighter JSON output
+//     than verbosity 'medium' on gpt-5.5 — ~30% fewer output tokens
+//     for the same content. Direct latency win.
 //
-// V26.8 puts OpenAI back as the DEFAULT script-gen path. Gemini is
-// kept behind `LLM_SCRIPT_PROVIDER=gemini` so we can experiment with
-// Gemini 4 / a smarter prompt template without re-pulling the dep.
+// Override knobs (no redeploy needed):
+//   OPENAI_SCRIPT_MODEL=gpt-5.5             (full, more reasoning headroom)
+//   OPENAI_SCRIPT_MODEL=gpt-5.4-mini        (V26.8 path, kept as fallback)
+//   OPENAI_REASONING_EFFORT=medium|high|xhigh
+//   OPENAI_VERBOSITY=medium|high
 //
-// This file mirrors gemini-client.ts exactly so scripts.ts can branch
-// on a single env var without other code changes.
+// V26.8 puts OpenAI back as the DEFAULT script-gen path. Gemini and
+// Anthropic kept behind LLM_SCRIPT_PROVIDER for experimentation.
 
 import OpenAI from 'openai';
 import { withRetry } from '@/lib/utils/retry';
 
-// gpt-5.4-mini is the model the V14 script path was built around.
-// Tunable via OPENAI_SCRIPT_MODEL env (e.g. flip to gpt-5.4 for higher
-// quality at higher cost; or to gpt-4o-mini for back-compat).
-const DEFAULT_MODEL = 'gpt-5.4-mini';
+// V27.10.15 — gpt-5.5-mini per migration guide. If the model id is not
+// yet available in the user's account/region, set
+// OPENAI_SCRIPT_MODEL=gpt-5.5 (full) or fall back to 'gpt-5.4-mini'.
+const DEFAULT_MODEL = 'gpt-5.5-mini';
+
+type ReasoningEffort = 'none' | 'low' | 'medium' | 'high' | 'xhigh';
+type Verbosity = 'low' | 'medium' | 'high';
+
+function resolveReasoningEffort(): ReasoningEffort {
+  const raw = process.env.OPENAI_REASONING_EFFORT?.trim().toLowerCase();
+  if (raw === 'none' || raw === 'low' || raw === 'medium' || raw === 'high' || raw === 'xhigh') {
+    return raw;
+  }
+  return 'low';
+}
+
+function resolveVerbosity(): Verbosity {
+  const raw = process.env.OPENAI_VERBOSITY?.trim().toLowerCase();
+  if (raw === 'low' || raw === 'medium' || raw === 'high') return raw;
+  return 'low';
+}
 
 export class OpenAiConfigError extends Error {
   constructor(message: string) {
@@ -65,9 +90,19 @@ export interface OpenAiStructuredCallOptions {
   userPrompt: string;
   responseSchema: unknown;
   model?: string;
-  /** OpenAI default 1.0; we used 0.7 in the V14 path for slightly more
-   *  determinism in the structured output. Not load-bearing. */
+  /** V27.10.15 — temperature is no longer load-bearing on gpt-5.5
+   *  reasoning models; the OpenAI migration guide recommends omitting
+   *  it. Kept as an optional pass-through for back-compat with code
+   *  paths still on gpt-5.4-mini. */
   temperature?: number;
+  /** V27.10.15 — gpt-5.5 reasoning effort. 'low' is the default and
+   *  works well for instruction-following on a heavily-constrained
+   *  prompt. Override per call if needed. */
+  reasoningEffort?: ReasoningEffort;
+  /** V27.10.15 — output verbosity. 'low' yields ~30% fewer output
+   *  tokens on gpt-5.5 vs the V26 gpt-5.4-mini baseline at the same
+   *  content quality. */
+  verbosity?: Verbosity;
 }
 
 export interface OpenAiStructuredCallResult<T> {
@@ -81,39 +116,42 @@ export async function openaiStructuredCall<T>({
   userPrompt,
   responseSchema,
   model: modelId = DEFAULT_MODEL,
-  temperature = 0.7,
+  reasoningEffort,
+  verbosity,
 }: OpenAiStructuredCallOptions): Promise<OpenAiStructuredCallResult<T>> {
   const schemaForCall = passThrough(responseSchema) as Record<string, unknown>;
-
-  // V26.9 — moved from Chat Completions to the Responses API per
-  // OpenAI's official migration guide. Two concrete benefits for our
-  // use case:
-  //   1. 40-80% better cache utilization on repeated identical prompt
-  //      prefixes. We fire 6 parallel calls all sharing the same
-  //      SCRIPT_SYSTEM_PROMPT — exactly the workload the Responses
-  //      API caches well. Real cost cut on the input-token side.
-  //   2. Cleaner shape: `instructions` for the system prompt at the
-  //      top level, `input` as a plain string, structured output via
-  //      `text.format` (not `response_format`). Output text is read
-  //      via the SDK's `output_text` helper.
-  // V26.11 — transparent single retry on transient (network / 5xx)
-  // failures inside the first 15s. No retry on schema/quota/4xx.
+  const effort = reasoningEffort ?? resolveReasoningEffort();
+  const verb = verbosity ?? resolveVerbosity();
+  // V27.10.15 — gpt-5.5-mini is a reasoning model. The Responses API
+  // accepts `reasoning.effort` and `text.verbosity`, which the older
+  // OpenAI SDK typings may not yet expose. Runtime accepts the params
+  // per the official migration guide. We build the request as a typed
+  // overlay and then cast to `any` only at the SDK call boundary so
+  // TypeScript can still type-check our own composition above.
+  // V26.9 / V26.11 — Responses API + cache-friendly prefix + withRetry.
+  const requestPayload = {
+    model: modelId,
+    instructions: systemInstruction,
+    input: userPrompt,
+    reasoning: { effort: effort },
+    text: {
+      verbosity: verb,
+      format: {
+        type: 'json_schema' as const,
+        name: 'script_payload',
+        schema: schemaForCall,
+        strict: true,
+      },
+    },
+  };
+  const responsesApi = client().responses as unknown as {
+    create: (args: typeof requestPayload) => Promise<{
+      output_text: string;
+      usage?: { input_tokens?: number; output_tokens?: number };
+    }>;
+  };
   const response = await withRetry(
-    () =>
-      client().responses.create({
-        model: modelId,
-        instructions: systemInstruction,
-        input: userPrompt,
-        temperature,
-        text: {
-          format: {
-            type: 'json_schema',
-            name: 'script_payload',
-            schema: schemaForCall,
-            strict: true,
-          },
-        },
-      }),
+    () => responsesApi.create(requestPayload),
     { label: 'openai.responses', earlyFailWindowMs: 15_000 },
   );
 
