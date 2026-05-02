@@ -92,7 +92,7 @@ This expansion is deferred until user approves the baseline numbers (per house r
 | # | Sub-task | Status | SHA | Gate result |
 |---|----------|--------|-----|-------------|
 | 1 | Eval Harness | complete | 5191a89 | smoke pass + judges fix landed (judge auto-fallback Anthropic→OpenAI; loud failures; startup health check) |
-| 2 | Baseline Run | **STOPPED for approval** | (this commit) | both baselines captured. Sub-task 6: REQUIRED (fwm=0.778 < 0.80) |
+| 2 | Baseline Run | **STOPPED for approval** | 53b2452 | both baselines captured. Sub-task 6: REQUIRED (fwm=0.778 < 0.80) |
 | 3 | Diversity Enforcement | pending | — | gate: big_idea_diversity ≥ baseline + 0.15 (= ≥ 0.570) |
 | 4 | Register Hard Enforcement | pending | — | gate: casual_markers_per_scene ≥ 1.0 AND register_authenticity_score ≥ 9.17 |
 | 5 | Latency Reduction | pending | — | gate: wall_time_total ≤ baseline × 0.7 (= ≤ 438730 ms = 7.3 min) |
