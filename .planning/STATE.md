@@ -13,10 +13,37 @@ last_updated: 2026-05-03
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-05-03 — Milestone v28.0 started
+Phase: 1 — Script Engine Quality v2
+Plan: `.planning/phases/01-script-engine-quality-v2/01-PLAN.md` (single consolidated plan, 6 sub-tasks)
+Status: Plan ready, awaiting execution
+Last activity: 2026-05-03 — Phase 1 plan written
+
+## Sub-task progress (update after each commit)
+
+| # | Sub-task | Status | SHA | Gate result |
+|---|----------|--------|-----|-------------|
+| 1 | Eval Harness | pending | — | — |
+| 2 | Baseline Run | pending | — | — (this is the BASELINE — no gate) |
+| 3 | Diversity Enforcement | pending | — | gate: big_idea_diversity >= baseline + 0.15 |
+| 4 | Register Hard Enforcement | pending | — | gate: casual_markers_per_scene >= 1.0 AND register_authenticity_score >= baseline + 1.5 |
+| 5 | Latency Reduction | pending | — | gate: wall_time_total <= baseline * 0.7 |
+| 6 | Framework Validators (CONDITIONAL) | not-decided-until-st2 | — | gate: framework_signal_match >= 0.80 (only fires if baseline < 0.80) |
+
+## Baseline numbers
+
+(populated after Sub-task 2)
+
+```
+Baseline SHA: <pending>
+big_idea_diversity:           <pending>
+casual_markers_per_scene:     <pending>
+framework_signal_match:       <pending>
+register_authenticity_score:  <pending>
+pi_duration_ms:               <pending>
+concept_batch_duration_ms:    <pending>
+concept_expand_duration_ms:   <pending>
+wall_time_total:              <pending>
+```
 
 ## Accumulated Context
 
