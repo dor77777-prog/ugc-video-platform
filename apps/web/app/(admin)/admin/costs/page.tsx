@@ -18,6 +18,7 @@ import {
   effectiveCreditValueUsd,
 } from '@/lib/plans';
 import { fetchAllProviderBalances } from '@/lib/providers/balance';
+import { resolveScriptEngineMode } from '@/lib/llm/concept-engine';
 
 export const dynamic = 'force-dynamic';
 // Cache the live-balance section for 5 min. The earlier 60s window
@@ -226,16 +227,13 @@ export default async function AdminUsagePage() {
     (process.env.SCRIPT_QUALITY_MODE?.trim().toLowerCase() === 'premium'
       ? 'gpt-5.4 (premium)'
       : 'gpt-5.4-mini (balanced)');
-  const engineMode =
-    process.env.SCRIPT_ENGINE_MODE?.trim().toLowerCase() === 'concept_first'
-      ? 'concept_first'
-      : 'legacy_full_batch';
-  const conceptTopN = (() => {
-    const raw = process.env.SCRIPT_CONCEPT_TOP_N?.trim();
-    const n = raw ? Number.parseInt(raw, 10) : NaN;
-    if (!Number.isFinite(n)) return 3;
-    return Math.max(1, Math.min(6, n));
-  })();
+  // V28.0.ST4 — use the actual resolver (single source of truth) instead
+  // of duplicating the env-var parsing here. Earlier code checked for
+  // the deprecated PR5 value `concept_first` and ignored the live
+  // `concept_interactive` value, so the admin badge said legacy even
+  // when production was running concept mode. Fixed by importing the
+  // real function from concept-engine.ts.
+  const engineMode = resolveScriptEngineMode();
   const qualityMode = (
     process.env.SCRIPT_QUALITY_MODE?.trim().toLowerCase() || 'balanced'
   );
@@ -258,12 +256,9 @@ export default async function AdminUsagePage() {
           <span className="kicker-muted font-mono text-[10px] uppercase">
             Script Engine
           </span>
-          <Badge variant={engineMode === 'concept_first' ? 'default' : 'secondary'}>
+          <Badge variant={engineMode === 'concept_interactive' ? 'default' : 'secondary'}>
             mode: {engineMode}
           </Badge>
-          {engineMode === 'concept_first' && (
-            <Badge variant="outline">topN: {conceptTopN}</Badge>
-          )}
           <Badge variant="outline">provider: {scriptProvider}</Badge>
           <Badge variant="outline">model: {scriptModel}</Badge>
           <Badge variant={qualityMode === 'premium' ? 'default' : 'outline'}>

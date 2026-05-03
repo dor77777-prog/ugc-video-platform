@@ -1,13 +1,22 @@
 // V27.11.PR6 — Concept-first script engine (interactive mode).
 //
 // Engine modes (SCRIPT_ENGINE_MODE):
-//   - legacy_full_batch (default) — 6 parallel SINGLE_SCRIPT calls,
-//     same as before V27.11. Always works, always shows 6 scripts.
-//   - concept_interactive — interactive UX:
+//   - concept_interactive (DEFAULT post-V28.0.ST4) — interactive UX:
 //       1. generateConceptCards     → 6 light concept cards
 //       2. user picks 1-3 + (optional) refresh weak ones
 //       3. regenerateSelectedConcepts replaces only chosen slots
 //       4. expandConceptCard expands one chosen card to full script
+//   - legacy_full_batch (opt-in via env) — 6 parallel SINGLE_SCRIPT
+//     calls, same as pre-V27.11. Available as emergency rollback
+//     and as the eval baseline. Set SCRIPT_ENGINE_MODE=legacy_full_batch
+//     to force.
+//
+// V28.0.ST4 default flip: concept_interactive is now the production
+// default. Previously it was opt-in via env var; production was
+// already running it (env set in Vercel). Flipping the default removes
+// the dependency on the env var so concept mode runs even if env is
+// dropped, and matches what the user has been testing/iterating on
+// for several sub-tasks.
 //
 // Older `concept_first` (PR5 backend-only auto-pick) is silently
 // re-mapped to `legacy_full_batch` here to prevent the broken
@@ -51,17 +60,19 @@ import type { RawConceptCard, StoredConcept } from './concept-storage';
 export type ScriptEngineMode = 'legacy_full_batch' | 'concept_interactive';
 export type ScriptProvider = 'openai' | 'anthropic' | 'gemini';
 
-/** V27.11.PR6 — env resolution.
- *  Default `legacy_full_batch` so concept_interactive opt-in is
- *  required. The legacy PR5 value `concept_first` is silently
- *  remapped to legacy (the auto-pick UX that produced 3 forever-
- *  spinning cards is permanently retired). */
+/** V28.0.ST4 — env resolution. Default flipped to `concept_interactive`
+ *  per user direction ("we moved to concept mode several iterations
+ *  ago — should be default"). legacy_full_batch is now opt-in via
+ *  explicit env var (kept for emergency rollback + eval baseline).
+ *  The legacy PR5 value `concept_first` is silently remapped to
+ *  `concept_interactive` (PR5's broken auto-pick UX is permanently
+ *  retired; PR6's interactive picker is the replacement). */
 export function resolveScriptEngineMode(): ScriptEngineMode {
   const raw = process.env.SCRIPT_ENGINE_MODE?.trim().toLowerCase();
-  if (raw === 'concept_interactive') return 'concept_interactive';
-  // V27.11.PR5 remap: 'concept_first' silently → legacy. The PR5 backend-
-  // only flow is gone; concept_interactive is the only opt-in.
-  return 'legacy_full_batch';
+  if (raw === 'legacy_full_batch') return 'legacy_full_batch';
+  // Default + 'concept_interactive' explicit + PR5 'concept_first' remap
+  // all collapse to concept_interactive.
+  return 'concept_interactive';
 }
 
 /** Re-exported for downstream typing. */

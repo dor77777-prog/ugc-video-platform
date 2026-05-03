@@ -104,19 +104,19 @@ function makeRaw(
   };
 }
 
-// ── 1. resolveScriptEngineMode default ───────────────────────────────
+// ── 1. resolveScriptEngineMode default (V28.0.ST4 — flipped) ─────────
 {
   const before = process.env.SCRIPT_ENGINE_MODE;
   delete process.env.SCRIPT_ENGINE_MODE;
   assert(
-    resolveScriptEngineMode() === 'legacy_full_batch',
-    '[PR6.1] No env → legacy_full_batch (default unchanged)',
+    resolveScriptEngineMode() === 'concept_interactive',
+    '[PR6.1] No env → concept_interactive (V28.0.ST4 default flip — was legacy_full_batch)',
   );
   if (before === undefined) delete process.env.SCRIPT_ENGINE_MODE;
   else process.env.SCRIPT_ENGINE_MODE = before;
 }
 
-// ── 2. concept_interactive flag + legacy concept_first remap ────────
+// ── 2. SCRIPT_ENGINE_MODE values + PR5 concept_first remap ──────────
 {
   const before = process.env.SCRIPT_ENGINE_MODE;
   process.env.SCRIPT_ENGINE_MODE = 'concept_interactive';
@@ -129,11 +129,18 @@ function makeRaw(
     resolveScriptEngineMode() === 'concept_interactive',
     '[PR6.2b] case-insensitive resolution',
   );
-  // Legacy PR5 value silently remaps to legacy_full_batch.
-  process.env.SCRIPT_ENGINE_MODE = 'concept_first';
+  // V28.0.ST4 — legacy_full_batch is now opt-in via explicit env.
+  process.env.SCRIPT_ENGINE_MODE = 'legacy_full_batch';
   assert(
     resolveScriptEngineMode() === 'legacy_full_batch',
-    '[PR6.2c] PR5 legacy "concept_first" silently → legacy_full_batch (broken UX retired)',
+    '[PR6.2c] SCRIPT_ENGINE_MODE=legacy_full_batch → "legacy_full_batch" (opt-in rollback)',
+  );
+  // V28.0.ST4 — PR5 legacy `concept_first` value now remaps to
+  // concept_interactive (NEW DEFAULT). Was legacy_full_batch pre-ST4.
+  process.env.SCRIPT_ENGINE_MODE = 'concept_first';
+  assert(
+    resolveScriptEngineMode() === 'concept_interactive',
+    '[PR6.2d] PR5 legacy "concept_first" silently → concept_interactive (V28.0.ST4 — follows new default)',
   );
   if (before === undefined) delete process.env.SCRIPT_ENGINE_MODE;
   else process.env.SCRIPT_ENGINE_MODE = before;
@@ -141,7 +148,7 @@ function makeRaw(
   const valid: ScriptEngineMode = 'concept_interactive';
   assert(
     valid === 'concept_interactive',
-    '[PR6.2d] ScriptEngineMode union compiles with concept_interactive',
+    '[PR6.2e] ScriptEngineMode union compiles with concept_interactive',
   );
 }
 
