@@ -62,8 +62,12 @@ apps/web/public/uploads/
 # version history, business model math, deep architecture notes)
 # that we don't want exposed in the public repo. They stay LOCAL
 # for context across coding sessions but are not tracked.
+# V28.0.ST4 — .claude/CLAUDE.md REMOVED from this list per user
+# direction. Now tracked so multi-dev pulls keep context in sync.
+# Repo visibility implication: implementation details are now in git
+# history. If this becomes a concern, restore the .claude/CLAUDE.md
+# entry below + git rm --cached.
 STATUS.md
 BUSINESS_MODEL.md
 DEPLOYMENT.md
-.claude/CLAUDE.md
 docs/v14/
