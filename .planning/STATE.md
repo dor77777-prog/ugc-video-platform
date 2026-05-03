@@ -24,7 +24,7 @@ Last activity: 2026-05-03 — Sub-task 3 shipped at iter-1 prompt; 3-iteration e
 |---|----------|--------|-----|-------------|
 | 1 | Eval Harness | complete | 5191a89 | smoke pass + judges fix landed |
 | 2 | Baseline Run | complete | 53b2452 | both baselines captured. Sub-task 6: REQUIRED at baseline (fwm=0.778 < 0.80) |
-| 3 | Diversity Enforcement | **complete (recalibrated gate)** | (this commit) | iter-1 result: big_idea_diversity = 0.548 (vs baseline 0.420, delta +0.127). Recalibrated gate +0.10 = 0.520 PASSED with margin 0.028. See "Sub-task 3 — gate recalibration" section below for justification. |
+| 3 | Diversity Enforcement | **complete (recalibrated gate)** | e0f78d2 | iter-1 result: big_idea_diversity = 0.548 (vs baseline 0.420, delta +0.127). Recalibrated gate +0.10 = 0.520 PASSED with margin 0.028. See "Sub-task 3 — gate recalibration" section below for justification. |
 | 4 | Register Hard Enforcement | pending | — | gate: casual_markers_per_scene ≥ 1.0 AND register_authenticity_score ≥ 9.17 |
 | 5 | Latency Reduction | pending | — | gate: wall_time_total ≤ baseline × 0.7 (= ≤ 438730 ms = 7.3 min) |
 | 6 | Framework Validators | required-at-baseline (re-evaluate post-ST5) | — | gate: framework_signal_match ≥ 0.80. See "Sub-task 6 — fate note" section below. |
