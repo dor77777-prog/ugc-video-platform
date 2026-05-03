@@ -304,9 +304,20 @@ npm run eval:script-engine -- --compare=.planning/eval/baselines/v27.11.PR6.json
 
 ## Sub-task 4 — Register Hard Enforcement
 
-**Requirements:** REG-01, REG-02, REG-03, REG-04
+**Requirements:** REG-01, REG-02, REG-03, REG-04, REG-05 (added iter 2)
+
+> **⚠ STATUS NOTICE (2026-05-03, post-iter-3):** This sub-task is PAUSED mid-iteration. Code shipped in commit `4cd710b` — REG-01..05 validator infrastructure + iter-3 sparse-markers redesign. **The detailed scope below documents iter-1 design (over-saturated). Iter-3 inverts it.** Final eval has not been run yet. Reading order if you're picking this up:
+>
+> 1. STATE.md "Sub-task 4 — Register Hard Enforcement" row + "Decisions" section
+> 2. The iter-3 prompt section in `packages/prompts/src/script-system-prompt.ts` (search for `V28.0.ST4 iter 3 — CASUAL MARKERS: SPARSE`)
+> 3. The iter-3 validator in `apps/web/lib/llm/register-validator.ts` (`MIN_MARKERS_PER_SCRIPT = 1`, `MAX_MARKERS_PER_SCRIPT = 3`, `MAX_MARKERS_PER_SCENE = 1`)
+> 4. The iter-3 captures in `.planning/eval/runs/st4-iter1-manual-review/iter3-sparse-markers/`
+>
+> **Pivot in flight:** user proposed providing 20-25 reference scripts; we'll wire them as few-shot examples + extract patterns into the system prompt. Reference-driven generation becomes the load-bearing quality lever; the iter-3 sparse-marker validator stays as safety net. See "Reference scripts pivot" section at the end of this PLAN.
 
 > **Carry-forward from Sub-task 3 (CORRECTED, READ FIRST):** iter 1 (the shipped version) shows `casual_markers_per_scene` REGRESSED vs baseline (0.079 vs 0.144 = −0.065). The orthogonality framing alone does NOT improve register naturally. The +70% observed in iter 3 was an artifact of the slot-pinning prompt, which we discarded due to framework_signal regression. **Sub-task 4 starts at the post-Sub-task-3 SHIPPED value (0.079), not at baseline. Gap to the ≥ 1.0 gate is ~13×. This is the harder of the remaining sub-tasks. Plan accordingly.**
+>
+> **Update 2026-05-03 (iter 3):** the `≥ 1.0 per scene` gate itself was wrong — it forced 5+ markers in a 5-scene script, which native-speaker review rejected as fake. New iter-3 gate: `0.2 ≤ avg ≤ 0.5 per scene` (= 1-2.5 markers per WHOLE script, sparse + natural).
 >
 > **Design implication (mechanism observation from Sub-task 3 iterations):** soft prompt-level instructions caused attention narrowing — iter 1's "make 6 distinct angles" prompt pulled the LLM's focus to that goal and dropped casual markers below baseline. Hard schema-level constraints had the opposite effect — iter 3's mechanical pinning expanded creative search and produced more markers as a side effect. **For Sub-task 4: prefer the schema-level approach (REG-01: required `casual_markers_used` with `minItems: 1`) over prompt-only instructions.** Schema-level constraints expand the model's search space; prompt-level constraints narrow it. The original PLAN already specifies schema-level — this observation reinforces that choice and warns against shortcuts to prompt-only enforcement.
 >
@@ -617,6 +628,55 @@ npm run eval:script-engine -- --compare=.planning/eval/baselines/v27.11.PR6.json
 - If all three fail: **roll back to Sub-task 5 SHA**. Sub-task 6 is the last sub-task — there's nothing after it to break. Mark `framework_signal_match` as a known baseline gap in STATE.md and ship the milestone without it. The diversity + register + latency wins still apply (the user's named pain) — framework_signal_match is more of a "polish" metric.
 
 **Why this sub-task can be skipped at the milestone level if it fails:** the user's stated pain (3 problems) doesn't include "frameworks don't read distinct". framework_signal_match is a quality metric that surfaced from the audit's open recommendation E + the Sub-task 2 baseline gap. Worth pursuing; not worth blocking the milestone close.
+
+---
+
+## Reference scripts pivot (NEW, mid-Sub-task-4, 2026-05-03 — pending user delivery)
+
+**Status: planned, awaiting user input.** Discovered mid-Sub-task-4 iter-3 review when validator + retry approach hit diminishing returns. User proposed providing 20-25 hand-written gold scripts as the architecture for quality. Approved in principle; format/categories TBD next session.
+
+**Why this matters more than continued REG-* iteration:**
+
+Iter-1 (require markers everywhere) → over-saturated, fake-sounding scripts.
+Iter-2 (Hebrew-purity rules) → fixed English contamination but markers still over-saturated.
+Iter-3 (sparse markers redesign) → markers sparse but the system was over-correcting to ZERO.
+
+Each iter relies on **abstract rules in a 50K-char prompt** to guide an LLM. The fundamental problem: there are NO concrete examples of "what good looks like for this user." The Sonnet judge in eval is the only ground truth, and it's a noisy signal.
+
+**Reference scripts solve this directly:**
+- 20-25 user-validated scripts = concrete ground truth
+- LLM sees 2-3 category-matched references in EVERY call → in-context learning
+- LLM imitates structure + register + flow + marker density
+- The judge will rate matches higher because they look like the references
+
+**Architecture (to implement next session):**
+
+1. **Storage:** `packages/prompts/src/reference-scripts/` — one markdown file per script with frontmatter (id, category, duration_seconds, framework, optional notes) + scene-by-scene spoken text.
+2. **Index:** `packages/prompts/src/reference-scripts/index.ts` — exports `loadReferenceScripts({ category, duration, count })` returning N matching scripts.
+3. **Distillation:** `packages/prompts/src/reference-script-patterns.ts` — extracted patterns I write in a one-shot session after reading all 25 scripts. Lives in the system prompt → 0 marginal cost per call.
+4. **Few-shot injection:**
+   - `apps/web/lib/llm/scripts.ts` → `buildSingleFrameworkPrompt()` appends 2-3 category-matched references to the user prompt as "REFERENCE SCRIPTS — emulate this style + flow".
+   - `apps/web/lib/llm/concept-engine.ts` → `buildExpansionPromptFragment()` does the same.
+5. **Cost impact:** ~$0.005-0.015 extra per call (3-5K extra user-prompt tokens). Per-batch: ~$0.05-0.15 extra. Worth it.
+6. **Validator role demoted:** REG-01..05 validators stay wired but become safety nets — they catch occasional slips. References do the heavy lift.
+
+**Open questions for user (next session):**
+
+- Format: markdown files in repo OR paste in chat?
+- Categories: cosmetics / electronics / food / fashion / home / fitness — which apply to user's product range?
+- Duration mix: ideally ~10 of each (15s + 30s) but flexible
+- Standard or aspirational: are the scripts "minimum acceptable quality" or "the ideal"? (Aspirational preferred — LLM will imitate the ceiling, not the floor)
+
+**DoD:**
+
+- [ ] `packages/prompts/src/reference-scripts/` populated with 20-25 user-provided scripts (parsed format)
+- [ ] `packages/prompts/src/reference-script-patterns.ts` written from one-shot Claude reading
+- [ ] `loadReferenceScripts()` matcher implemented
+- [ ] Wired into `buildSingleFrameworkPrompt` + `buildExpansionPromptFragment`
+- [ ] Capture 5 fresh scripts → user blind review (no eval first)
+- [ ] If user approves quality → run iter-4-with-refs eval → confirm Sub-task 4 gates pass → ship
+
+**Commit boundary:** single squash commit `feat(script-engine): reference-script few-shot + distilled patterns (sub-task 4 final)`. Rollback target: `4cd710b` (Sub-task 4 iters 1-3).
 
 ---
 

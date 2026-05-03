@@ -15,8 +15,17 @@ last_updated: 2026-05-03
 
 Phase: 1 — Script Engine Quality v2
 Plan: `.planning/phases/01-script-engine-quality-v2/01-PLAN.md`
-Status: Sub-task 3 (Diversity Enforcement) complete with **recalibrated gate** → next: Sub-task 4 (Register Hard Enforcement)
-Last activity: 2026-05-03 — Sub-task 3 shipped at iter-1 prompt; 3-iteration empirical evidence supported gate recalibration from +0.15 to +0.10
+Status: **Sub-task 4 PAUSED mid-iteration** — code shipped (REG-01..05 + iter 3 sparse-markers redesign) but no full eval run on iter 3 yet. Pivoting architecture to **reference-scripts (user-provided gold corpus)** before next eval — the user will provide 20-25 reference scripts in the next session, which will become the load-bearing quality lever (validators stay as safety nets).
+Last activity: 2026-05-03 — Sub-task 4 iter 3 (sparse markers redesign) committed (4cd710b). User reviewed iter-2 captures, identified register over-saturation + Hebrew quality issues. Iter-3 redesign reverses "more markers = better" framing. Reference-scripts pivot proposed and approved in principle; format/categories TBD next session.
+
+## ⚠ Heads-up to anyone pulling between sessions
+
+The iter-1/2/3 work in commit `4cd710b` (Sub-task 4) is shipped but the eval gates have NOT been run against iter-3 code. Don't claim Sub-task 4 complete from the existing eval JSONs — iter-2 numbers are stale (apply to over-saturated marker code, since reverted in iter-3). Next planned action: receive user's reference scripts → wire as few-shot examples → re-run iter-3+refs eval.
+
+The captures in `.planning/eval/runs/st4-iter1-manual-review/` are organized by iteration:
+- `set-a-varied/` + `set-b-clustered/` — iter-1 (over-saturated markers; rejected by user)
+- `iter2-hebrew-quality/` — iter-2 (Hebrew-purity ON but still over-saturated; rejected)
+- `iter3-sparse-markers/` — iter-3 (sparse markers WORKING; user reviewed positively; pending reference-scripts pivot before final eval)
 
 ## Sub-task progress
 
@@ -25,7 +34,7 @@ Last activity: 2026-05-03 — Sub-task 3 shipped at iter-1 prompt; 3-iteration e
 | 1 | Eval Harness | complete | 5191a89 | smoke pass + judges fix landed |
 | 2 | Baseline Run | complete | 53b2452 | both baselines captured. Sub-task 6: REQUIRED at baseline (fwm=0.778 < 0.80) |
 | 3 | Diversity Enforcement | **complete (recalibrated gate)** | e0f78d2 | iter-1 result: big_idea_diversity = 0.548 (vs baseline 0.420, delta +0.127). Recalibrated gate +0.10 = 0.520 PASSED with margin 0.028. See "Sub-task 3 — gate recalibration" section below for justification. |
-| 4 | Register Hard Enforcement | pending | — | gate: casual_markers_per_scene ≥ 1.0 AND register_authenticity_score ≥ 9.17 |
+| 4 | Register Hard Enforcement | **PAUSED mid-iteration** | 4cd710b | code: REG-01..05 + iter-3 sparse-markers redesign shipped. Eval: pending reference-scripts pivot. Original gate `≥1.0` revised to BAND `0.2-0.5 per scene` (= 1-2.5 per 5-scene script). |
 | 5 | Latency Reduction | pending | — | gate: wall_time_total ≤ baseline × 0.7 (= ≤ 438730 ms = 7.3 min) |
 | 6 | Framework Validators | required-at-baseline (re-evaluate post-ST5) | — | gate: framework_signal_match ≥ 0.80. See "Sub-task 6 — fate note" section below. |
 | 6.5 | GPT-5.4 Prompting Guide cleanup | planned (post-ST5) | — | non-gated; cost/efficiency cleanup of 4 legacy chat.completions call sites |
@@ -126,6 +135,9 @@ Two patterns from Sub-task 3 to carry forward:
 - V27.11.PR6 is the baseline (production starting point); PR6 merge/UAT is out of scope
 - **Sub-task 3 gate recalibrated to `baseline + 0.10` based on 3-iteration empirical evidence** (added 2026-05-03)
 - **GPT-5.4 prompting guide audit landed in PLAN as Sub-task 6.5** (post-ST5 cleanup; non-gated; ~$3/month cost win + Responses API migration of 4 legacy call sites)
+- **Sub-task 4 gate REVERSED iter 1 → iter 3** based on native-speaker review: original `casual_markers_per_scene >= 1.0` (= 5 markers per 5-scene script) was wrong direction; produced over-saturated scripts that read as fake. New gate: `0.2 <= avg <= 0.5` (= 1-2.5 markers per script). Schema field stays but `minItems: 1` removed; per-script enforcement (1-3 total) replaces per-scene enforcement (≥1 each).
+- **Reference scripts pivot (NEW, pending user delivery)**: user will provide 20-25 hand-written gold scripts. We'll do (a) distillation into a system-prompt patterns block + (b) category-matched few-shot injection (2-3 references per call). Reference-driven generation becomes the load-bearing quality lever for Sub-task 4; REG-01..05 validators stay as safety nets but are no longer the primary enforcement.
+- **Hebrew-purity (REG-05) is hard-rule**: spoken_text_hebrew = Hebrew script only. Validator regex-checks for Latin sequences (≥2 chars) + digit sequences. Tolerance ≤1 single Latin char per scene (e.g. "ויטמין C"). Brand names + tech terms must be transliterated.
 
 ## Blockers
 
