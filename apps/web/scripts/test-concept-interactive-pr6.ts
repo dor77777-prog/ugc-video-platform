@@ -55,9 +55,12 @@ function assert(cond: boolean, name: string, detail = '') {
   else fail(name, detail);
 }
 
+// V28.0.ST3 — schema evolved: estimated_quality removed, big_idea_axis
+// added. Field count stays at 12.
 const REQUIRED_FIELDS = [
   'framework',
   'big_idea',
+  'big_idea_axis',
   'selected_hook',
   'hook_direction',
   'target_audience_moment',
@@ -66,14 +69,29 @@ const REQUIRED_FIELDS = [
   'scene_outline',
   'why_it_fits_product',
   'why_it_fits_audience',
-  'estimated_quality',
   'risk_notes',
 ];
 
-function makeRaw(framework: string, label = 'a'): RawConceptCard {
+// V28.0.ST3 — axis cycles through 6 BIG_IDEA_AXES so makeRaw produces
+// distinct axes when called for different slots in a 6-card mock batch.
+const TEST_AXES = [
+  'convenience',
+  'proof',
+  'price',
+  'emotion',
+  'mechanism',
+  'social_validation',
+];
+
+function makeRaw(
+  framework: string,
+  label = 'a',
+  axisIndex = 0,
+): RawConceptCard {
   return {
     framework,
     big_idea: `[${label}] big idea for ${framework}`,
+    big_idea_axis: TEST_AXES[axisIndex % TEST_AXES.length] ?? 'convenience',
     selected_hook: `[${label}] hook ${framework}`,
     hook_direction: 'frustration',
     target_audience_moment: `[${label}] audience moment`,
@@ -82,7 +100,6 @@ function makeRaw(framework: string, label = 'a'): RawConceptCard {
     scene_outline: ['scene 0', 'scene 1', 'scene 2', 'scene 3'],
     why_it_fits_product: `[${label}] product fit`,
     why_it_fits_audience: `[${label}] audience fit`,
-    estimated_quality: 8,
     risk_notes: null,
   };
 }
@@ -163,7 +180,7 @@ function makeRaw(framework: string, label = 'a'): RawConceptCard {
 // ── 4. wrapRawConceptsForStorage assigns IDs + slot indices ─────────
 {
   const raw = ['problem_agitation_solution', 'skeptical_testimonial', 'demonstration_proof'].map(
-    (f, i) => makeRaw(f, `r${i}`),
+    (f, i) => makeRaw(f, `r${i}`, i),
   );
   const stored = wrapRawConceptsForStorage(raw);
   assert(
@@ -197,7 +214,7 @@ function makeRaw(framework: string, label = 'a'): RawConceptCard {
 // ── 5. replaceSlots preserves kept slots byte-identical ─────────────
 {
   const raw6 = ['a', 'b', 'c', 'd', 'e', 'f'].map((l, i) =>
-    makeRaw(`fw_${i}`, l),
+    makeRaw(`fw_${i}`, l, i),
   );
   const stored = wrapRawConceptsForStorage(raw6);
 
@@ -455,7 +472,147 @@ function makeRaw(framework: string, label = 'a'): RawConceptCard {
   );
 }
 
-// ── 16. Diagnostic dump ─────────────────────────────────────────────
+// ── 16. V28.0.ST3 — big_idea_axis schema + validator + UI assertions ──
+{
+  const card = (CONCEPT_CARDS_JSON_SCHEMA.properties.concepts.items as unknown as {
+    properties: Record<string, { enum?: string[] }>;
+    required: string[];
+  });
+  assert(
+    card.required.includes('big_idea_axis'),
+    '[ST3.1] big_idea_axis is required in concept card schema',
+  );
+  assert(
+    !card.required.includes('estimated_quality'),
+    '[ST3.2] estimated_quality REMOVED from required fields',
+  );
+  const axisProp = card.properties.big_idea_axis;
+  assert(
+    !!axisProp && Array.isArray(axisProp.enum) && axisProp.enum.length === 6,
+    '[ST3.3] big_idea_axis enum has 6 values',
+  );
+  const expected = ['convenience', 'proof', 'price', 'emotion', 'mechanism', 'social_validation'];
+  for (const ax of expected) {
+    assert(
+      axisProp?.enum?.includes(ax) ?? false,
+      `[ST3.4] big_idea_axis enum includes "${ax}"`,
+    );
+  }
+  // System prompt explicitly mentions all 6 axes by name.
+  for (const ax of expected) {
+    assert(
+      CONCEPT_SYSTEM_PROMPT.includes(ax),
+      `[ST3.5] CONCEPT_SYSTEM_PROMPT mentions "${ax}" axis`,
+    );
+  }
+  // Hard rule mention.
+  assert(
+    CONCEPT_SYSTEM_PROMPT.includes('big_idea_axis'),
+    '[ST3.6] CONCEPT_SYSTEM_PROMPT mentions big_idea_axis directly',
+  );
+  // Regen prompt mentions forbidden_axes contract.
+  assert(
+    CONCEPT_REGEN_SYSTEM_PROMPT.includes('forbidden_axes') ||
+      CONCEPT_REGEN_SYSTEM_PROMPT.includes('big_idea_axis'),
+    '[ST3.7] CONCEPT_REGEN_SYSTEM_PROMPT explains axis ban-list',
+  );
+}
+
+// ── 17. V28.0.ST3 — validateAxisDiversity helper behavior ─────────────
+{
+  // Import here so the test file's top of file doesn't grow with a
+  // V28-only import on what's still labeled "PR6 verification".
+  const { validateAxisDiversity } = require('../lib/llm/concept-engine');
+
+  // 6 distinct axes → null (pass)
+  const clean6 = TEST_AXES.map((ax, i) => ({
+    ...makeRaw(`fw_${i}`, `c${i}`, i),
+    big_idea_axis: ax,
+  }));
+  assert(
+    validateAxisDiversity(clean6) === null,
+    '[ST3.8] 6 distinct axes pass validateAxisDiversity',
+  );
+
+  // 6 cards but two share an axis → fail with details
+  const dupBatch = TEST_AXES.map((ax, i) => ({
+    ...makeRaw(`fw_${i}`, `c${i}`, i),
+    big_idea_axis: ax,
+  }));
+  dupBatch[3]!.big_idea_axis = 'proof'; // slots 1 and 3 both 'proof'
+  const result = validateAxisDiversity(dupBatch);
+  assert(result !== null, '[ST3.9] duplicate axes fail validateAxisDiversity');
+  assert(
+    result.duplicateAxes.includes('proof'),
+    '[ST3.10] duplicate axis name surfaced in violation report',
+  );
+  assert(
+    Array.isArray(result.unusedAxes) && result.unusedAxes.length >= 1,
+    '[ST3.11] unusedAxes list provided so retry prompt knows what to swap to',
+  );
+
+  // Empty array → null (degenerate, no duplicates possible)
+  assert(
+    validateAxisDiversity([]) === null,
+    '[ST3.12] empty card array is technically valid',
+  );
+
+  // Two cards, same axis → fail (smaller batch still validated)
+  const tinyDup = [
+    { ...makeRaw('fw_0', 'a', 0), big_idea_axis: 'proof' },
+    { ...makeRaw('fw_1', 'b', 1), big_idea_axis: 'proof' },
+  ];
+  assert(
+    validateAxisDiversity(tinyDup) !== null,
+    '[ST3.13] tiny batch with duplicate axes still flagged',
+  );
+}
+
+// ── 18. V28.0.ST3 — concept-storage legacy normalization ──────────────
+{
+  // Legacy blob (pre-ST3) — has estimated_quality, no big_idea_axis.
+  const legacyBlob = {
+    pendingConcepts: {
+      version: 1,
+      scriptEngineMode: 'concept_interactive',
+      status: 'draft',
+      generatedAt: '2026-04-01T00:00:00Z',
+      lastUpdatedAt: '2026-04-01T00:00:00Z',
+      selectedConceptIds: [],
+      expandedConceptIds: [],
+      concepts: [
+        {
+          // Note: NO big_idea_axis. Has estimated_quality (legacy).
+          framework: 'problem_agitation_solution',
+          big_idea: 'legacy big idea',
+          selected_hook: 'legacy hook',
+          hook_direction: 'frustration',
+          target_audience_moment: 'legacy moment',
+          emotional_trigger: 'frustration',
+          product_proof_moment: 'legacy proof',
+          scene_outline: ['s0', 's1'],
+          why_it_fits_product: 'legacy product fit',
+          why_it_fits_audience: 'legacy audience fit',
+          estimated_quality: 9, // legacy field
+          risk_notes: null,
+          concept_id: 'legacy-uuid-0',
+          slot_index: 0,
+          generated_at: '2026-04-01T00:00:00Z',
+          regenerationCount: 0,
+          regeneratedFromConceptId: null,
+        },
+      ],
+    },
+  };
+  const parsed = readPendingConcepts(legacyBlob);
+  assert(parsed !== null, '[ST3.14] legacy blob still parses through readPendingConcepts');
+  assert(
+    parsed?.concepts[0]?.big_idea_axis === 'unknown',
+    '[ST3.15] legacy card normalized to big_idea_axis="unknown"',
+  );
+}
+
+// ── 19. Diagnostic dump ─────────────────────────────────────────────
 console.log('\n─── PR6 measurements ───');
 console.log(`CONCEPT_SYSTEM_PROMPT chars: ${CONCEPT_SYSTEM_PROMPT.length}`);
 console.log(`CONCEPT_REGEN_SYSTEM_PROMPT chars: ${CONCEPT_REGEN_SYSTEM_PROMPT.length}`);

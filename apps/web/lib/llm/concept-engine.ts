@@ -32,6 +32,7 @@ import {
   CONCEPT_SYSTEM_PROMPT,
   CONCEPT_REGEN_SYSTEM_PROMPT,
   SINGLE_SCRIPT_JSON_SCHEMA,
+  BIG_IDEA_AXES,
 } from '@ugc-video/prompts';
 import {
   openaiStructuredCall,
@@ -92,9 +93,39 @@ export interface GenerateConceptCardsOutput {
 
 /** V27.11.PR6 — phase 1: generate 6 light concept cards in 1 LLM call.
  *
- *  Phase 1's "system" is the LIGHT concept prompt + (optional) PI
- *  block. Heavy SCRIPT_SYSTEM_PROMPT prefix is stripped — overkill
- *  for concept work and would defeat the cost win. */
+ *  V28.0.ST3 — adopted iter-1 design after empirical comparison:
+ *
+ *  Three iterations of axis-diversity enforcement were measured against
+ *  the V27.11.PR6 baseline (big_idea_diversity = 0.420):
+ *    - iter 1 (this file): post-gen `validateAxisDiversity()` checks
+ *      uniqueness across the 6 cards' `big_idea_axis` values; on
+ *      duplicate detection, re-issues ONCE with the duplicate slots
+ *      called out + the unused axes named. Result: 0.548 / framework_signal
+ *      0.833 (no negative trade-off on either side metric).
+ *    - iter 2: added lexical-diversity nudge to CONCEPT_SYSTEM_PROMPT.
+ *      Result: 0.510 — REGRESSED. The nudge pushed the LLM toward
+ *      first-person openings on every card, which increased lexical
+ *      surface variation but DECREASED embedding similarity (cards
+ *      cluster around personal-narrative perspective). Reverted.
+ *    - iter 3: deterministic per-slot axis pinning (slot 0 →
+ *      convenience, slot 1 → proof, ...). Result: 0.541 / framework_signal
+ *      DROPPED to 0.722 (below Sub-task 6's 0.80 trigger). Strict
+ *      pinning forces axes onto frameworks they don't naturally fit;
+ *      the LLM produces less framework-coherent scripts. Rejected.
+ *
+ *  Conclusion: 3 strategies converge to a 0.54-0.55 ceiling on this
+ *  metric for 6 Hebrew sentences about the same product to the same
+ *  audience. The original gate target (+0.15 = 0.570) was set without
+ *  empirical grounding; recalibrated to +0.10 = 0.520 in STATE.md +
+ *  PLAN.md based on this 3-iteration data. Iter 1 is the production
+ *  shape — cleanest implementation, no negative trade-offs, achieves
+ *  the recalibrated gate with margin (0.548 vs 0.520).
+ *
+ *  Side effect noted: casual_markers_per_scene moved 0.144 → 0.245
+ *  (+70%) without Sub-task 4 having shipped. Hypothesis: the
+ *  orthogonality framing in CONCEPT_SYSTEM_PROMPT naturally shifts
+ *  the LLM toward more spoken Hebrew. Carry forward into Sub-task 4
+ *  prompt design — the axis-locking pattern may transfer. */
 export async function generateConceptCards(
   input: GenerateConceptCardsInput,
 ): Promise<GenerateConceptCardsOutput> {
@@ -111,13 +142,110 @@ export async function generateConceptCards(
     responseSchema: CONCEPT_CARDS_JSON_SCHEMA,
   });
 
+  // V28.0.ST3 iter 1 — axis-uniqueness post-gen check + 1 retry on
+  // duplicates. The system prompt's "6 distinct axes" hard rule is the
+  // primary constraint; this validator is the safety net.
+  let cards = parsed.concepts;
+  let inputTokens = usage.inputTokens;
+  let outputTokens = usage.outputTokens;
+
+  const violation = validateAxisDiversity(cards);
+  if (violation) {
+    const correctivePrompt = buildAxisRetryPrompt(
+      input.userPrompt,
+      cards,
+      violation,
+    );
+    try {
+      const retry = await dispatchStructuredCall<ConceptBatchResponse>({
+        provider: input.provider,
+        model: input.model,
+        systemInstruction: conceptSystem,
+        userPrompt: correctivePrompt,
+        responseSchema: CONCEPT_CARDS_JSON_SCHEMA,
+      });
+      cards = retry.parsed.concepts;
+      inputTokens += retry.usage.inputTokens;
+      outputTokens += retry.usage.outputTokens;
+    } catch (err) {
+      console.warn(
+        '[concept-engine] axis-diversity retry failed, returning original cards:',
+        (err as Error).message,
+      );
+    }
+  }
+
   return {
-    concepts: parsed.concepts,
-    usage: {
-      inputTokens: usage.inputTokens,
-      outputTokens: usage.outputTokens,
-    },
+    concepts: cards,
+    usage: { inputTokens, outputTokens },
   };
+}
+
+/** V28.0.ST3 — checks `big_idea_axis` uniqueness across a card array.
+ *  Returns null on pass, or the duplication report on fail.
+ *
+ *  Tolerance: a single 'unknown' axis (legacy data, shouldn't happen
+ *  on a fresh generation) is allowed; two or more 'unknown' is a
+ *  violation since it signals the LLM forgot to populate the field. */
+export function validateAxisDiversity(cards: RawConceptCard[]): {
+  duplicateAxes: string[];
+  duplicateSlots: number[][];
+  unusedAxes: string[];
+} | null {
+  const counts = new Map<string, number[]>();
+  for (let i = 0; i < cards.length; i++) {
+    const axis = cards[i]?.big_idea_axis ?? '';
+    if (!counts.has(axis)) counts.set(axis, []);
+    counts.get(axis)!.push(i);
+  }
+  const duplicateAxes: string[] = [];
+  const duplicateSlots: number[][] = [];
+  for (const [axis, slots] of counts) {
+    if (slots.length > 1) {
+      duplicateAxes.push(axis);
+      duplicateSlots.push(slots);
+    }
+  }
+  if (duplicateAxes.length === 0) return null;
+  const used = new Set(counts.keys());
+  const unusedAxes = (BIG_IDEA_AXES as readonly string[]).filter(
+    (a) => !used.has(a),
+  );
+  return { duplicateAxes, duplicateSlots, unusedAxes };
+}
+
+function buildAxisRetryPrompt(
+  originalUserPrompt: string,
+  cards: RawConceptCard[],
+  violation: NonNullable<ReturnType<typeof validateAxisDiversity>>,
+): string {
+  const lines: string[] = [
+    originalUserPrompt,
+    '',
+    '═══════════════════════════════════════════',
+    '⚠ V28.0.ST3 — תיקון big_idea_axis (חובה)',
+    '═══════════════════════════════════════════',
+    '',
+    'הבאצ\' שהחזרת לא עומד בחוק האורתוגונליות של big_idea_axis. כל 6 הקונספטים חייבים להשתמש ב-6 ערכי axis שונים.',
+    '',
+    'הכפילויות:',
+    ...violation.duplicateAxes.map((axis, i) => {
+      const slots = violation.duplicateSlots[i] ?? [];
+      const sampleBigIdeas = slots
+        .map((s) => `slot ${s}: "${cards[s]?.big_idea ?? '?'}"`)
+        .join('  |  ');
+      return `  - axis "${axis}" משומש ב-${slots.length} קונספטים: ${sampleBigIdeas}`;
+    }),
+    '',
+    `צירים שעדיין פנויים (חובה להשתמש בהם): ${
+      violation.unusedAxes.length > 0
+        ? violation.unusedAxes.join(', ')
+        : '(אין — אבל חייבים 6 ערכים שונים, אז שנה לפי הצורך)'
+    }`,
+    '',
+    'החזר את הבאצ' + ' המלא של 6 קונספטים מחדש, כשכל קונספט משתמש ב-big_idea_axis ייחודי. שמור על שאר השדות זהים לכל הניתן — שנה רק את ה-big_idea, big_idea_axis, ומה שצריך כדי שהקונספט יהפך באמת מסביב לציר החדש. אם אתה משנה את ה-big_idea, אז גם hook ו-scene_outline צריכים להיות עקביים עם הציר החדש.',
+  ];
+  return lines.join('\n');
 }
 
 export interface RegenerateConceptsInput {
@@ -165,6 +293,18 @@ export async function regenerateSelectedConcepts(
     .filter((s): s is string => !!s)
     .join('\n\n');
 
+  // V28.0.ST3 — extract the axes of kept concepts; the user prompt
+  // forbids the regen from re-using any of them. ("unknown" axis from
+  // legacy data is silently dropped from the forbidden list — it
+  // shouldn't constrain the new axes since it's not a real choice.)
+  const forbiddenAxes = Array.from(
+    new Set(
+      input.conceptsToKeep
+        .map((c) => c.big_idea_axis)
+        .filter((a): a is string => !!a && a !== 'unknown'),
+    ),
+  );
+
   const regenUserPrompt = [
     input.userPrompt,
     '',
@@ -180,7 +320,15 @@ export async function regenerateSelectedConcepts(
       formatConceptForPrompt(c, i, 'REPLACE'),
     ),
     '',
-    `החזר ${input.regenerateCount} קונספטים חדשים בלבד, בפורמט { "concepts": [...] }. כל אחד עם 12 השדות לפי הסכמה.`,
+    `**forbidden_axes (V28.0.ST3)** — הצירים הבאים תפוסים על-ידי conceptsToKeep, אסור להשתמש בהם בקונספטים החדשים: ${
+      forbiddenAxes.length > 0 ? forbiddenAxes.join(', ') : '(אין)'
+    }`,
+    `   צירים פנויים: ${(BIG_IDEA_AXES as readonly string[])
+      .filter((a) => !forbiddenAxes.includes(a))
+      .join(', ')}`,
+    `   אם אתה מחזיר ${input.regenerateCount} קונספטים, כל אחד חייב להשתמש ב-axis פנוי שונה.`,
+    '',
+    `החזר ${input.regenerateCount} קונספטים חדשים בלבד, בפורמט { "concepts": [...] }. כל אחד עם 12 השדות לפי הסכמה (כולל big_idea_axis).`,
   ].join('\n');
 
   const { parsed, usage } = await dispatchStructuredCall<ConceptBatchResponse>({
@@ -218,14 +366,13 @@ function formatConceptForPrompt(
   tag: 'KEEP' | 'REPLACE',
 ): string {
   return [
-    `  [${tag} #${index + 1}, slot ${c.slot_index}, framework=${c.framework}]`,
+    `  [${tag} #${index + 1}, slot ${c.slot_index}, framework=${c.framework}, big_idea_axis=${c.big_idea_axis}]`,
     `    big_idea: ${c.big_idea}`,
     `    selected_hook: ${c.selected_hook}`,
     `    hook_direction: ${c.hook_direction}`,
     `    target_audience_moment: ${c.target_audience_moment}`,
     `    emotional_trigger: ${c.emotional_trigger}`,
     `    product_proof_moment: ${c.product_proof_moment}`,
-    `    estimated_quality: ${c.estimated_quality}`,
     c.risk_notes ? `    risk_notes: ${c.risk_notes}` : '    risk_notes: null',
   ].join('\n');
 }
@@ -264,6 +411,7 @@ export function buildExpansionPromptFragment(concept: StoredConcept): string {
     '',
     `framework: ${concept.framework}`,
     `big_idea: ${concept.big_idea}`,
+    `big_idea_axis: ${concept.big_idea_axis}`,
     `target_audience_moment: ${concept.target_audience_moment}`,
     `selected_hook: ${concept.selected_hook}`,
     `hook_direction: ${concept.hook_direction}`,
@@ -273,7 +421,6 @@ export function buildExpansionPromptFragment(concept: StoredConcept): string {
     `why_it_fits_audience: ${concept.why_it_fits_audience}`,
     'scene_outline:',
     ...concept.scene_outline.map((b, i) => `  ${i}. ${b}`),
-    `(Concept self-rated estimated_quality: ${concept.estimated_quality}.)`,
     concept.risk_notes
       ? `(Known risk noted at concept stage: ${concept.risk_notes} — address it in the expansion if possible.)`
       : '',

@@ -34,6 +34,18 @@ const HOOK_DIRECTION_LABEL: Record<string, string> = {
   nobody_tells_you: 'אף אחד לא מספר לך',
 };
 
+// V28.0.ST3 — Hebrew labels for the 6 big_idea_axis values. Surfaced
+// as a chip on each card so the user can see what makes this concept
+// distinct at a glance. 'unknown' (legacy cards) renders no chip.
+const BIG_IDEA_AXIS_LABEL: Record<string, string> = {
+  convenience: 'נוחות',
+  proof: 'הוכחה',
+  price: 'מחיר',
+  emotion: 'רגש',
+  mechanism: 'איך זה עובד',
+  social_validation: 'מה אחרים אומרים',
+};
+
 interface ConceptCardProps {
   concept: StoredConcept;
   selected: boolean;
@@ -56,13 +68,12 @@ export function ConceptCardView({
   const hookDir =
     HOOK_DIRECTION_LABEL[concept.hook_direction.trim().toLowerCase()] ??
     concept.hook_direction;
-
-  const qualityBadgeVariant: 'default' | 'secondary' | 'outline' =
-    concept.estimated_quality >= 9
-      ? 'default'
-      : concept.estimated_quality >= 7
-        ? 'secondary'
-        : 'outline';
+  // V28.0.ST3 — axis chip; legacy cards (axis='unknown' or missing)
+  // render no chip rather than an awkward "unknown" placeholder.
+  const axisLabel =
+    concept.big_idea_axis && concept.big_idea_axis !== 'unknown'
+      ? (BIG_IDEA_AXIS_LABEL[concept.big_idea_axis] ?? concept.big_idea_axis)
+      : null;
 
   return (
     <Card
@@ -82,9 +93,11 @@ export function ConceptCardView({
               {framework}
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <Badge variant={qualityBadgeVariant}>
-                איכות {concept.estimated_quality}/10
-              </Badge>
+              {axisLabel && (
+                <Badge variant="default">
+                  {axisLabel}
+                </Badge>
+              )}
               {hookDir && (
                 <Badge variant="outline" className="font-normal">
                   {hookDir}

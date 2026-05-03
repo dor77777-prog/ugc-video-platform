@@ -56,14 +56,36 @@ type FlowStatus =
   | 'expanding'
   | 'error';
 
-/** V27.11.PR6 — initial selection auto-preselects top-3-by-quality
- *  with deterministic tie-break on slot_index. The user can override. */
+/** V27.11.PR6 + V28.0.ST3 — initial selection auto-preselects 3 concepts.
+ *
+ *  PR6 used `estimated_quality` (LLM self-rated 8-9 on every card → no
+ *  signal). ST3 dropped that field. New strategy: prefer the 3 axes
+ *  with highest conversion intuition (proof, emotion, mechanism) when
+ *  present; fall back to slot_index order for the rest.
+ *
+ *  Rationale: the 6-card batch already enforces 6 distinct axes, so
+ *  ANY 3-pick is automatically diverse. The preselect ordering only
+ *  affects what's CHECKED on first render — the user re-picks freely. */
+const PREFERRED_AXIS_ORDER = [
+  'proof',
+  'emotion',
+  'mechanism',
+  'price',
+  'social_validation',
+  'convenience',
+];
+
 function autoPreselect(concepts: StoredConcept[]): string[] {
   if (concepts.length === 0) return [];
+  // Sort by preferred axis order; ties broken by slot_index. Legacy
+  // concepts with axis='unknown' sort to the end via Infinity.
   return [...concepts]
     .sort((a, b) => {
-      const q = (b.estimated_quality ?? 0) - (a.estimated_quality ?? 0);
-      if (q !== 0) return q;
+      const aRank = PREFERRED_AXIS_ORDER.indexOf(a.big_idea_axis);
+      const bRank = PREFERRED_AXIS_ORDER.indexOf(b.big_idea_axis);
+      const aR = aRank === -1 ? Infinity : aRank;
+      const bR = bRank === -1 ? Infinity : bRank;
+      if (aR !== bR) return aR - bR;
       return a.slot_index - b.slot_index;
     })
     .slice(0, 3)

@@ -9,10 +9,25 @@
 
 import { randomUUID } from 'node:crypto';
 
-/** V27.11.PR6 — exact LLM-returned shape per CONCEPT_CARD_SCHEMA. */
+/** V27.11.PR6 + V28.0.ST3 — exact LLM-returned shape per CONCEPT_CARD_SCHEMA.
+ *
+ *  V28.0.ST3 changes:
+ *  - ADDED big_idea_axis (one of 6 enum values; uniqueness enforced
+ *    across the 6-card batch by concept-engine.ts post-gen validator).
+ *  - REMOVED estimated_quality (LLM rated 8-9 on every card; gating
+ *    on it was meaningless per Sub-task 2 baseline review).
+ *
+ *  Legacy DB blobs (pre-ST3) had estimated_quality but no big_idea_axis.
+ *  Read path in readPendingConcepts() normalizes them: missing axis →
+ *  'unknown' (UI hides chip; validator treats as ungated). estimated_
+ *  quality on legacy blobs is silently ignored (TS doesn't see it). */
 export interface RawConceptCard {
   framework: string;
   big_idea: string;
+  /** V28.0.ST3 — orthogonal axis. One of BIG_IDEA_AXES from
+   *  packages/prompts. 'unknown' is reserved for legacy data only;
+   *  newly-generated cards must use one of the 6 enum values. */
+  big_idea_axis: string;
   selected_hook: string;
   hook_direction: string;
   target_audience_moment: string;
@@ -21,7 +36,6 @@ export interface RawConceptCard {
   scene_outline: string[];
   why_it_fits_product: string;
   why_it_fits_audience: string;
-  estimated_quality: number;
   risk_notes: string | null;
 }
 
@@ -129,7 +143,15 @@ export function replaceSlots(
 
 /** V27.11.PR6 — read pendingConcepts from Project.productData. Returns
  *  null when the blob is missing or shape is wrong (forward-compat
- *  with future versions). */
+ *  with future versions).
+ *
+ *  V28.0.ST3 — adds backwards-compat normalization for the
+ *  pre-ST3 schema:
+ *    - cards without `big_idea_axis` get `'unknown'` (UI hides the
+ *      chip; engine treats as ungated).
+ *    - cards with `estimated_quality` are passed through without
+ *      coercion (the field is no longer in the type but JSON parse
+ *      tolerates extra keys; TS readers just ignore it). */
 export function readPendingConcepts(
   productData: unknown,
 ): PendingConcepts | null {
@@ -141,6 +163,16 @@ export function readPendingConcepts(
   if (v.scriptEngineMode !== 'concept_interactive') return null;
   if (v.status !== 'draft' && v.status !== 'expanded') return null;
   if (!Array.isArray(v.concepts)) return null;
+  // V28.0.ST3 — normalize legacy cards in-place. Mutating a fresh
+  // array (Array.isArray confirms above) is safe — the original DB
+  // blob is untouched until a writePendingConcepts() round-trip.
+  v.concepts = (v.concepts as Array<Record<string, unknown>>).map((c) => ({
+    ...c,
+    big_idea_axis:
+      typeof c.big_idea_axis === 'string' && c.big_idea_axis.length > 0
+        ? c.big_idea_axis
+        : 'unknown',
+  }));
   return v as unknown as PendingConcepts;
 }
 

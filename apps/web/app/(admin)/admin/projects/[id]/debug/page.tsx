@@ -449,7 +449,7 @@ export default async function AdminProjectDebugPage({ params }: PageProps) {
           description={`generated ${fmtRelative(pendingConcepts.generatedAt)} · last update ${fmtRelative(pendingConcepts.lastUpdatedAt)} · selected ${pendingConcepts.selectedConceptIds.length} · expanded ${pendingConcepts.expandedConceptIds.length}`}
           info={{
             whatItIs:
-              '6 כרטיסי קונספט קלים שהמשתמש בוחר מהם 1-3 להרחבה לתסריט מלא. כל כרטיס: framework + big_idea + selected_hook + hook_direction + target_audience_moment + emotional_trigger + product_proof_moment + scene_outline (4-5 בולטים) + why_it_fits_product/audience + estimated_quality + risk_notes. שדות wrapper שרת-ניהוליים: concept_id (UUID) / slot_index (0-5) / regenerationCount / regeneratedFromConceptId.',
+              '6 כרטיסי קונספט קלים שהמשתמש בוחר מהם 1-3 להרחבה לתסריט מלא. כל כרטיס: framework + big_idea + big_idea_axis (V28.0.ST3 — אורתוגונליות, 6 ערכים שונים בבאצ\') + selected_hook + hook_direction + target_audience_moment + emotional_trigger + product_proof_moment + scene_outline (4-5 בולטים) + why_it_fits_product/audience + risk_notes. שדות wrapper שרת-ניהוליים: concept_id (UUID) / slot_index (0-5) / regenerationCount / regeneratedFromConceptId. (V28.0.ST3 הסיר estimated_quality — היה self-rated 8-9 תמיד, חסר ערך.)',
             pipelineStage:
               'V27.11.PR6 concept_interactive flow. Phase 1 (generateConceptsAction) יוצר את 6 הכרטיסים. Phase 2 (expandPickedConceptsAction) מרחיב 1-3 שנבחרו לתסריטים מלאים. ביניהם המשתמש יכול לרענן (regenerateSelectedConceptsAction) או להחליף את כולם (regenerateAllConceptsAction).',
             sourceFiles: [
@@ -479,9 +479,9 @@ export default async function AdminProjectDebugPage({ params }: PageProps) {
                     <Badge variant="outline" className="font-mono text-[10px]">
                       slot {c.slot_index}
                     </Badge>
-                    <Badge variant={c.estimated_quality >= 8 ? 'default' : 'secondary'}>
-                      איכות {c.estimated_quality}/10
-                    </Badge>
+                    {c.big_idea_axis && c.big_idea_axis !== 'unknown' && (
+                      <Badge variant="default">{c.big_idea_axis}</Badge>
+                    )}
                     <span className="text-sm font-mono text-zinc-600">{c.framework}</span>
                     {pendingConcepts.selectedConceptIds.includes(c.concept_id) && (
                       <Badge>בחור להרחבה</Badge>
@@ -499,6 +499,7 @@ export default async function AdminProjectDebugPage({ params }: PageProps) {
                   <KeyValueGrid
                     rows={[
                       ['concept_id', <code key="cid">{c.concept_id.slice(0, 8)}...</code>],
+                      ['big_idea_axis', c.big_idea_axis || '— missing —'],
                       ['hook_direction', c.hook_direction],
                       ['emotional_trigger', c.emotional_trigger],
                       ['selected_hook', `"${c.selected_hook}"`],

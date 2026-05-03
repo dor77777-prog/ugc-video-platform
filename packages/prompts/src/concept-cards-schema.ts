@@ -1,14 +1,21 @@
-// V27.11.PR6 — Concept-cards schema (interactive mode).
+// V27.11.PR6 / V28.0.ST3 — Concept-cards schema (interactive mode).
 //
-// Replaces PR5's lighter auto-pick schema. PR6's interactive UX
-// shows these cards to the USER for human selection (1-3 to expand
-// into full scripts), so each card carries a richer creative/audience/
-// proof breakdown than PR5 had:
-//   - selected_hook + hook_direction         (creative angle)
-//   - target_audience_moment                 (audience specificity)
-//   - product_proof_moment                   (the visual that converts)
-//   - why_it_fits_product / why_it_fits_audience (justification visible to user)
-//   - risk_notes                             (when the LLM flags a risk)
+// Schema evolved at V28.0.ST3 (Diversity Enforcement) per the
+// milestone audit:
+//   - ADDED:    big_idea_axis (enum, required) — orthogonality lever.
+//               6 axes; the LLM MUST use 6 distinct axes across the
+//               batch (post-gen validation + retry in concept-engine.ts).
+//   - REMOVED:  estimated_quality (LLM self-rated 8-9 on every card;
+//               gating on it was meaningless — see baseline review
+//               in .planning/STATE.md). Replaced as the preselection
+//               signal by axis coverage.
+//   - KEPT:     risk_notes (free-text "I see a risk" ≠ self-quality;
+//               this remains useful for the user's review).
+//
+// Backwards compat: legacy pendingConcepts blobs in DB persisted with
+// estimated_quality but without big_idea_axis are normalized at read
+// time in concept-storage.ts (axis defaults to 'unknown', which the UI
+// renders without a chip and the validator treats as ungated).
 //
 // Server-side wrapper (NOT in this schema, added at storage time
 // in concept-storage.ts): concept_id (UUID), slot_index, status,
@@ -24,12 +31,29 @@
 
 import { SCRIPT_FRAMEWORKS } from './script-json-schema';
 
+/** V28.0.ST3 — orthogonal axes the LLM commits to per concept card.
+ *  Sub-task 3's load-bearing diversity lever: the prompt + post-gen
+ *  validator together enforce that the 6-card batch uses 6 distinct
+ *  axis values, so two concepts can't share a "big_idea direction"
+ *  even when they pick different frameworks/hooks. */
+export const BIG_IDEA_AXES = [
+  'convenience',         // saves time / effort / clicks / steps
+  'proof',               // visible result / before-after across scenes / demo
+  'price',               // value / anchor against alternative cost
+  'emotion',             // relief / pride / vindication / soft anger lands
+  'mechanism',           // HOW it works (ingredient / engineering / design)
+  'social_validation',   // others use it / community / trust signal
+] as const;
+
+export type BigIdeaAxis = (typeof BIG_IDEA_AXES)[number];
+
 const CONCEPT_CARD_SCHEMA = {
   type: 'object',
   additionalProperties: false,
   required: [
     'framework',
     'big_idea',
+    'big_idea_axis',
     'selected_hook',
     'hook_direction',
     'target_audience_moment',
@@ -38,7 +62,6 @@ const CONCEPT_CARD_SCHEMA = {
     'scene_outline',
     'why_it_fits_product',
     'why_it_fits_audience',
-    'estimated_quality',
     'risk_notes',
   ],
   properties: {
@@ -52,6 +75,12 @@ const CONCEPT_CARD_SCHEMA = {
       type: 'string',
       description:
         'One Hebrew sentence — the creative concept of THIS ad. Not a benefits list. Specific, sharp, ownable. Drives every scene below.',
+    },
+    big_idea_axis: {
+      type: 'string',
+      enum: BIG_IDEA_AXES as unknown as string[],
+      description:
+        'V28.0.ST3 — the orthogonal axis this big_idea rides. One of 6: convenience (saves time/effort), proof (visible result/demo), price (value/anchor), emotion (relief/pride/vindication), mechanism (HOW it works), social_validation (others use it/trust). EVERY card in the 6-card batch MUST use a DIFFERENT axis. The system prompt enforces this at generation time; the engine validates post-generation and retries on duplicates.',
     },
     selected_hook: {
       type: 'string',
@@ -94,11 +123,6 @@ const CONCEPT_CARD_SCHEMA = {
       description:
         'One short Hebrew sentence — why THIS concept lands with the Israeli audience targeted by this product. References specific moments, register, or local realism.',
     },
-    estimated_quality: {
-      type: 'integer',
-      description:
-        'LLM self-rating 1-10 of how strong this concept is. Used to preselect top 3 in the UI; user can override. Be honest — inflating the score just hides weak concepts.',
-    },
     risk_notes: {
       type: ['string', 'null'] as unknown as 'string',
       description:
@@ -134,7 +158,7 @@ export const CONCEPT_REGEN_JSON_SCHEMA = {
     concepts: {
       type: 'array',
       description:
-        'Replacement concept cards in the same order as requested. Each must use a hook archetype + framework + big_idea that does NOT duplicate any kept concept and does NOT repeat the weakness of the rejected concept it replaces.',
+        'Replacement concept cards in the same order as requested. Each must use a hook archetype + framework + big_idea that does NOT duplicate any kept concept and does NOT repeat the weakness of the rejected concept it replaces. V28.0.ST3: each replacement must use a big_idea_axis NOT used by any conceptsToKeep — the user prompt carries the forbidden axis list.',
       items: CONCEPT_CARD_SCHEMA,
     },
   },
