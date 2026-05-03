@@ -262,6 +262,16 @@ const SCENE_ITEM_SCHEMA = {
     // need it dominant; pain scenes shouldn't have it at all.
     // (PR4 will revisit `comparison_split` per the anti-collage audit.)
     'frame_strategy',
+    // V28.0.ST4 — register hard enforcement. Every scene MUST list
+    // the casual Hebrew markers (תכל'ס/וואלה/סבבה/פשוט/בכלל/אחותי/
+    // תקשיבי/תקשיב/לא נורמלי) it actually used in spoken_text_hebrew.
+    // Schema-level constraint per the Sub-task 3 mechanism observation:
+    // hard schema constraints expand the model's creative search,
+    // soft prompt instructions narrow attention. minItems: 1 forces
+    // the LLM to commit to ≥1 marker per scene (incl. CTA — markers
+    // like תכל'ס fit CTA naturally; the post-gen validator excludes
+    // decision_push from the gate average per the user's spec).
+    'casual_markers_used',
   ],
   properties: {
     scene_order: {
@@ -380,6 +390,12 @@ const SCENE_ITEM_SCHEMA = {
       enum: FRAME_STRATEGIES as unknown as string[],
       description:
         'V27.11.PR4 — what does this frame DO with the product? Decouples "is product visible" (must_show_product) from "how prominent" (product_visibility_priority) by answering a third question. pure_setup = pain/hook before product is introduced (must_show_product=false). product_reveal = first time the product appears, frame composed around it. product_in_use = demo / hands. product_focus = closeup / detail. comparison_focus = the scene positions the product against an alternative — the product is sharply lit and dominant; if any alternative appears in-frame it is desaturated / soft / in the background, NEVER a second panel beside the hero. The frame is still ONE continuous photograph — splits, side-by-sides, and before-after panels are forbidden by the universal SINGLE-FRAME RULE. reaction_shot = creator reacting to a result; product peripheral. cta_close = final decision push; product is hero. Drives the deterministic image-brief-builder downstream.',
+    },
+    casual_markers_used: {
+      type: 'array',
+      items: { type: 'string' },
+      description:
+        'V28.0.ST4 iter 3 — SPARSE casual markers (REVISED from iter 1). List the casual Israeli markers from [תכל\'ס / וואלה / סבבה / פשוט / בכלל / אחותי / תקשיבי / תקשיב / לא נורמלי] that you ACTUALLY used in this scene\'s spoken_text_hebrew. **Empty array IS allowed** — the rule is 1-2 markers ACROSS THE WHOLE SCRIPT (not per scene). Most scenes will have an empty array. Saturating every scene with a marker reads as fake/forced and breaks register; sparse + natural placement is the target. Per-scene max = 1 marker. The list must reference markers that actually appear in the text — lying triggers a rewrite retry.',
     },
   },
 } as const;

@@ -65,6 +65,11 @@ import {
 import { OPENAI_DEFAULT_SCRIPT_MODEL } from '@/lib/llm/openai-script-client';
 import { ANTHROPIC_DEFAULT_SCRIPT_MODEL } from '@/lib/llm/anthropic-script-client';
 import { GEMINI_DEFAULT_MODEL } from '@/lib/llm/gemini-client';
+import {
+  validateScriptRegister,
+  buildRegisterRetryPrompt,
+  type RegisterValidatorScript,
+} from '@/lib/llm/register-validator';
 import { checkRateLimit, RateLimitedError } from '@/lib/usage/rate-limit';
 import { checkSpendCap, SpendCapExceededError } from '@/lib/usage/spend-cap';
 import { findAvatar, describeAvatar } from '@/lib/avatars/catalog';
@@ -713,28 +718,82 @@ export async function expandPickedConceptsAction(
           buildConceptBatchUserPrompt(ctx.productInput) +
           buildExpansionPromptFragment(concept);
         const responseSchema = SINGLE_SCRIPT_JSON_SCHEMA;
-        const { parsed, usage } =
-          provider === 'anthropic'
-            ? await anthropicStructuredCall<{ script: Record<string, unknown> }>({
-                systemInstruction: ctx.sharedSystemInstruction,
-                userPrompt,
-                responseSchema,
-                model,
-              })
-            : provider === 'gemini'
-              ? await geminiStructuredCall<{ script: Record<string, unknown> }>({
-                  systemInstruction: ctx.sharedSystemInstruction,
-                  userPrompt,
-                  responseSchema,
-                  model,
-                })
-              : await openaiStructuredCall<{ script: Record<string, unknown> }>({
-                  systemInstruction: ctx.sharedSystemInstruction,
-                  userPrompt,
-                  responseSchema,
-                  model,
-                  temperature: 0.7,
-                });
+
+        // V28.0.ST4 — wrap the LLM call so we can re-run with a
+        // corrective prompt if the register validator fails. Per-script
+        // retry budget = 1 (matches Sub-task 3 retry policy).
+        const callOnce = async (
+          promptForThisCall: string,
+        ): Promise<{
+          parsed: { script: Record<string, unknown> };
+          usage: { inputTokens: number; outputTokens: number };
+        }> => {
+          if (provider === 'anthropic') {
+            return anthropicStructuredCall<{ script: Record<string, unknown> }>({
+              systemInstruction: ctx.sharedSystemInstruction,
+              userPrompt: promptForThisCall,
+              responseSchema,
+              model,
+            });
+          }
+          if (provider === 'gemini') {
+            return geminiStructuredCall<{ script: Record<string, unknown> }>({
+              systemInstruction: ctx.sharedSystemInstruction,
+              userPrompt: promptForThisCall,
+              responseSchema,
+              model,
+            });
+          }
+          return openaiStructuredCall<{ script: Record<string, unknown> }>({
+            systemInstruction: ctx.sharedSystemInstruction,
+            userPrompt: promptForThisCall,
+            responseSchema,
+            model,
+            temperature: 0.7,
+          });
+        };
+
+        let { parsed, usage } = await callOnce(userPrompt);
+
+        // V28.0.ST4 — register validator + 1 retry on failure. The
+        // schema's casual_markers_used minItems: 1 catches some failures
+        // upstream, but the LLM can still produce empty-content scenes
+        // or lie about which markers it used (claim ['תכל\'ס'] but write
+        // text without it). The validator regex-checks the actual
+        // spoken_text_hebrew and triggers a corrective rewrite if needed.
+        let registerRetried = false;
+        let registerFinalPass = true;
+        try {
+          const draftScript = parsed.script as unknown as RegisterValidatorScript;
+          const v1 = validateScriptRegister(draftScript);
+          if (!v1.pass || v1.liedSceneOrders.length > 0) {
+            // Re-issue ONCE with corrective prompt naming the failed scenes.
+            const retryPrompt = buildRegisterRetryPrompt(
+              userPrompt,
+              v1,
+              draftScript,
+            );
+            const retry = await callOnce(retryPrompt);
+            parsed = retry.parsed;
+            usage = {
+              inputTokens: usage.inputTokens + retry.usage.inputTokens,
+              outputTokens: usage.outputTokens + retry.usage.outputTokens,
+            };
+            registerRetried = true;
+            // Re-validate retry result for telemetry; if still failing,
+            // we ship anyway (best-effort, never block the user).
+            const v2 = validateScriptRegister(
+              parsed.script as unknown as RegisterValidatorScript,
+            );
+            registerFinalPass = v2.pass;
+          }
+        } catch (err) {
+          // Validator should be pure + safe; log but don't block.
+          console.warn(
+            '[concept-actions] register validator threw, shipping draft as-is:',
+            (err as Error).message,
+          );
+        }
 
         // Convert + persist the expanded script. Reuse existing helpers
         // by importing the toGenerated mapping and persistOneScript-like
@@ -743,6 +802,18 @@ export async function expandPickedConceptsAction(
         const generated = mapLlmScriptToGenerated(parsed.script as Record<string, unknown>);
         const created = await persistExpandedScript(projectId, generated);
         expandedScriptIds.push(created.id);
+
+        // Annotate the ApiCall row so /admin/scenes/[id]/debug surfaces
+        // register-retry events for forensics. Doesn't affect the user.
+        if (callId && registerRetried) {
+          // The metadata column on ApiCall is JSON; we can't update it
+          // here without expanding recordApiCallComplete's surface. For
+          // now, log to console — admin debug can derive from the
+          // pattern. Future: add a metadata-merge param to recordApiCallComplete.
+          console.log(
+            `[concept-actions] register retry: scriptId=${created.id} retried=${registerRetried} finalPass=${registerFinalPass}`,
+          );
+        }
 
         const cost = costForTextCall(provider, model, usage);
         if (callId) {

@@ -58,8 +58,8 @@ export const PRODUCT_FIXTURES: ProductFixture[] = [
     id: 'cosmetics-1',
     category: 'cosmetics',
     productData: {
-      productName: 'סרום ויטמין C מוקצף',
-      brand: 'Glow Lab',
+      productName: 'סרום ויטמין סי מוקצף',
+      brand: 'גלו לאב',
       description:
         'סרום פנים יומי המבוסס על ויטמין C יציב בריכוז 15%, חומצה היאלורונית ופרוביוטיקה. מיועד לעור עייף, להפחתת כתמי שמש, חידוש קולגן והבהרה כללית. מתאים לבוקר, מתחת לקרם לחות. בקבוקון 30 מ"ל.',
       features: [
@@ -89,7 +89,7 @@ export const PRODUCT_FIXTURES: ProductFixture[] = [
     category: 'cosmetics',
     productData: {
       productName: 'מסכת שיער טיפוח עמוק עם שמן ארגן',
-      brand: 'Sahara Hair',
+      brand: 'סהרה הייר',
       description:
         'מסכת שיער שבועית עם שמן ארגן מרוקאי וקרטין צמחי. משקמת שיער יבש, פגום וצבוע. שימוש: 10 דקות פעם בשבוע אחרי שמפו. צנצנת 250 מ"ל.',
       features: [
@@ -119,7 +119,7 @@ export const PRODUCT_FIXTURES: ProductFixture[] = [
     category: 'cosmetics',
     productData: {
       productName: 'קרם ידיים אנטי-אייג\'ינג',
-      brand: 'Soft Touch',
+      brand: 'סופט טאץ׳',
       description:
         'קרם ידיים יומי עם רטינול קל, חומצה היאלורונית וקולגן. מטפל בכתמי גיל בידיים, מחזק את העור ומונע יובש. נספג מהר, לא משאיר שכבה דביקה. שפופרת 75 מ"ל.',
       features: [
@@ -150,7 +150,7 @@ export const PRODUCT_FIXTURES: ProductFixture[] = [
     category: 'electronics',
     productData: {
       productName: 'אוזניות בלוטות\' עם ביטול רעשים',
-      brand: 'AudioMax',
+      brand: 'אודיומקס',
       description:
         'אוזניות אלחוטיות עם ביטול רעשים אקטיבי, סוללה ל-30 שעות, חיבור Bluetooth 5.3 וקצף זיכרון. מתאימות לעבודה, נסיעות ופעילות ספורטיבית. מגיעות עם נרתיק טעינה ומוט שדרוג.',
       features: [
@@ -179,8 +179,8 @@ export const PRODUCT_FIXTURES: ProductFixture[] = [
     id: 'electronics-2',
     category: 'electronics',
     productData: {
-      productName: 'מטען נייד 20,000mAh',
-      brand: 'PowerCore',
+      productName: 'מטען נייד עשרים אלף אמ-איי-אייץ',
+      brand: 'פאוורקור',
       description:
         'סוללת גיבוי נייידת לטלפון/טאבלט עם תפוקה של 20,000mAh, 2 חיבורי USB-A ו-USB-C, טעינה מהירה (PD 22.5W) ומסך LCD המציג את אחוזי הסוללה. שוקלת 350 גרם.',
       features: [
@@ -210,7 +210,7 @@ export const PRODUCT_FIXTURES: ProductFixture[] = [
     category: 'electronics',
     productData: {
       productName: 'מצלמת רחוב חכמה לרכב',
-      brand: 'RoadEye',
+      brand: 'רואדאיי',
       description:
         'מצלמת דאש קאם 4K לרכב עם זיהוי תאונות אוטומטי, חיישן G, GPS וצילום לילה משופר. מתחברת ל-Wi-Fi וצופים בלייב מהאפליקציה. מתאימה לכל סוגי הרכב, התקנה עצמית בלי כבלים.',
       features: [
@@ -241,7 +241,7 @@ export const PRODUCT_FIXTURES: ProductFixture[] = [
     category: 'food',
     productData: {
       productName: 'גרנולה עם פרוטאין צמחי',
-      brand: 'Wholesome',
+      brand: 'הולסום',
       description:
         'גרנולה אפויה ידנית עם 18 גרם חלבון לקופסה, חופן שקדים, סירופ תמרים וקקאו גולמי. ללא תוספת סוכר, ללא גלוטן, ללא חומרים משמרים. שקית 350 גרם.',
       features: [
@@ -271,7 +271,7 @@ export const PRODUCT_FIXTURES: ProductFixture[] = [
     category: 'food',
     productData: {
       productName: 'קוביות תה לימון-זנגביל בכוסיות',
-      brand: 'Tea Pop',
+      brand: 'טי פופ',
       description:
         'קוביות תה תמציתיות במכלים יחידים. ממיסים בכוס מים חמים וקיבלת תה לימון-זנגביל מוכן. ללא תוספת סוכר, מתוק טבעי מסטיביה. אריזה של 12 כוסיות.',
       features: [
@@ -301,7 +301,7 @@ export const PRODUCT_FIXTURES: ProductFixture[] = [
     category: 'food',
     productData: {
       productName: 'חטיפי אנרגיה מתמרים ושקדים',
-      brand: 'BarBox',
+      brand: 'בר בוקס',
       description:
         'חטיפי אנרגיה טבעיים מתמרים, שקדים, גרעיני דלעת ואגוזי קשיו. ללא קמח, ללא תוספת סוכר, פטיש שקדים בלבד. מתאים לרוכבי אופניים, מטיילים, סטודנטים. 60 גרם.',
       features: [

@@ -383,19 +383,20 @@ function assert(cond: boolean, name: string, detail = '') {
 
 // ── 10. Schema invariants: required[] count + properties{} match ──────
 {
-  // PR3 dropped 4 fields; PR4 doesn't change the count, just the
-  // contents of the 2 enums. Required list stays at 20 per scene.
+  // PR3 dropped 4 fields (24 → 20); PR4 doesn't change the count, just
+  // the contents of the 2 enums. V28.0.ST4 added casual_markers_used
+  // (REG-01 register enforcement) → 21.
   const sceneSchema = ((SCRIPT_JSON_SCHEMA as unknown) as {
     properties: { scripts: { items: { properties: { scenes: { items: { required: readonly string[]; properties: Record<string, unknown> } } } } } };
   }).properties.scripts.items.properties.scenes.items;
   assert(
-    sceneSchema.required.length === 20,
-    `[PR4.10a] SCENE_ITEM_SCHEMA.required count unchanged at 20 (PR4 changed enum contents, not field count)`,
+    sceneSchema.required.length === 21,
+    `[PR4.10a] SCENE_ITEM_SCHEMA.required count = 21 post-V28.0.ST4 (24 pre-PR3 → 20 post-PR3 → 21 post-ST4)`,
     `actual: ${sceneSchema.required.length}`,
   );
   assert(
-    Object.keys(sceneSchema.properties).length === 20,
-    `[PR4.10b] SCENE_ITEM_SCHEMA.properties count unchanged at 20`,
+    Object.keys(sceneSchema.properties).length === 21,
+    `[PR4.10b] SCENE_ITEM_SCHEMA.properties count = 21 post-V28.0.ST4`,
     `actual: ${Object.keys(sceneSchema.properties).length}`,
   );
 }

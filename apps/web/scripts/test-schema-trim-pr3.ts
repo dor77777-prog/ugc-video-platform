@@ -142,19 +142,20 @@ for (const field of KEEP_LIST) {
   );
 }
 
-// ── 4. Required-fields count went from 24 → 20 (per scene) ──────────────
+// ── 4. Required-fields count: PR3 dropped 4 (24→20). V28.0.ST4 added
+//      casual_markers_used (20→21). Net post-ST4: 21. ──────────────────
 {
   const required = batchSceneSchema.required.length;
   assert(
-    required === 20,
-    `[PR3.4a] SCENE_ITEM_SCHEMA.required has exactly 20 fields (was 24 pre-PR3, dropped 4)`,
+    required === 21,
+    `[PR3.4a] SCENE_ITEM_SCHEMA.required has exactly 21 fields (24 pre-PR3 → 20 post-PR3 → 21 post-V28.0.ST4 with casual_markers_used)`,
     `actual: ${required}`,
   );
-  // properties count drops the same way.
+  // properties count tracks the same way.
   const properties = Object.keys(batchSceneSchema.properties).length;
   assert(
-    properties === 20,
-    `[PR3.4b] SCENE_ITEM_SCHEMA.properties has exactly 20 keys (matches required[] count)`,
+    properties === 21,
+    `[PR3.4b] SCENE_ITEM_SCHEMA.properties has exactly 21 keys (matches required[] count)`,
     `actual: ${properties}`,
   );
   // required and properties match (OpenAI strict mode invariant).
@@ -285,6 +286,8 @@ for (const field of KEEP_LIST) {
     environment_style: 'modern_israeli_apartment',
     israeli_setting_cue: 'kitchen_with_morning_light',
     frame_strategy: 'pure_setup',
+    // V28.0.ST4 — casual_markers_used added (REG-01 register enforcement).
+    casual_markers_used: ['תכל\'ס'],
     // No israeli_environment_required, no local_realism_notes,
     // no why_this_scene_exists, no narrative_link_from_previous.
   };

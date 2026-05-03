@@ -159,22 +159,30 @@ function makeProductInput(intel: ProductIntelligence | null): ProductInput {
   );
 }
 
-// ── 2. SCRIPT_SYSTEM_PROMPT got meaningfully shorter ────────────────────
+// ── 2. SCRIPT_SYSTEM_PROMPT growth contained relative to pre-PR2 ─────
+// Growth history:
+//   pre-PR2: 661 lines / ~40K chars (with 30-item self-checklist)
+//   post-PR2: ~628 lines / ~37K chars (checklist removed)
+//   post-V28.0.ST4 iter 1: ~680 lines / ~42K chars
+//     (+ casual_markers requirement section + register anti-examples)
+//   post-V28.0.ST4 iter 2: ~761 lines / ~46K chars
+//     (+ Pure Hebrew rules + Grammar/Syntax self-check section)
+// The user's milestone-level pain is Hebrew quality. The growth
+// reflects load-bearing rules: register markers (REG-04), pure Hebrew
+// (REG-05), and grammar/syntax self-check. Each is justified by
+// production failures captured in eval runs.
 {
-  // We removed ~33 lines / ~3000 chars from the tail. The exact savings
-  // depend on the tail format; assert a conservative floor.
   const lines = SCRIPT_SYSTEM_PROMPT.split('\n').length;
   const chars = SCRIPT_SYSTEM_PROMPT.length;
-  // Pre-PR2 the prompt was 661 lines / ~40K chars (per the diagnose
-  // audit). After dropping the 30-item checklist the tail block ought
-  // to land between 600-640 lines, well under the original.
+  // V28.0.ST4 iter 2 — relaxed line cap from <750 to <850
   assert(
-    lines < 660,
-    `[PR2.2a] SCRIPT_SYSTEM_PROMPT line count below pre-PR2 baseline (was 661, now ${lines})`,
+    lines < 850,
+    `[PR2.2a] SCRIPT_SYSTEM_PROMPT line count under +29% ceiling vs pre-PR2 baseline (was 661, now ${lines})`,
   );
+  // V28.0.ST4 iter 2 — relaxed char cap from <44K to <50K (post-iter-2 actual ~46K)
   assert(
-    chars < 39_000,
-    `[PR2.2b] SCRIPT_SYSTEM_PROMPT char count below pre-PR2 baseline (~40K → ${chars})`,
+    chars < 50_000,
+    `[PR2.2b] SCRIPT_SYSTEM_PROMPT char count under +25% ceiling vs pre-PR2 baseline (~40K → ${chars})`,
   );
   // Sanity floor — if we accidentally truncated the prompt entirely
   // we'd get a tiny string. The pre-PR2 prompt had REGISTER LOCK +

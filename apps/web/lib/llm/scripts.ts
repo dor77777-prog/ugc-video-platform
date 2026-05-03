@@ -22,6 +22,11 @@ import {
   resolveScriptEngineMode,
   type ScriptEngineMode,
 } from './concept-engine';
+import {
+  validateScriptRegister,
+  buildRegisterRetryPrompt,
+  type RegisterValidatorScript,
+} from './register-validator';
 
 // V27.11.PR6 — generateScripts() handles legacy_full_batch only.
 // concept_interactive flow lives in apps/web/lib/llm/concept-actions.ts
@@ -476,6 +481,39 @@ export async function generateScripts(
   // streaming). Restoring parallel dispatch.
   //
   // Per-call timing log preserved so future regressions surface.
+  // V28.0.ST4 — extracted so it can be called twice (initial + register
+  // retry). Returns the structured-output payload.
+  const dispatchScriptCall = async (
+    promptForThisCall: string,
+  ): Promise<{
+    parsed: LlmRegenResponse;
+    usage: { inputTokens: number; outputTokens: number };
+  }> => {
+    if (provider === 'anthropic') {
+      return anthropicStructuredCall<LlmRegenResponse>({
+        systemInstruction: sharedSystemInstruction,
+        userPrompt: promptForThisCall,
+        responseSchema: SINGLE_SCRIPT_JSON_SCHEMA,
+        model,
+      });
+    }
+    if (provider === 'gemini') {
+      return geminiStructuredCall<LlmRegenResponse>({
+        systemInstruction: sharedSystemInstruction,
+        userPrompt: promptForThisCall,
+        responseSchema: SINGLE_SCRIPT_JSON_SCHEMA,
+        model,
+      });
+    }
+    return openaiStructuredCall<LlmRegenResponse>({
+      systemInstruction: sharedSystemInstruction,
+      userPrompt: promptForThisCall,
+      responseSchema: SINGLE_SCRIPT_JSON_SCHEMA,
+      model,
+      temperature: 0.7,
+    });
+  };
+
   const buildOneCall = async (
     framework: ScriptFrameworkSlug,
     index: number,
@@ -487,31 +525,40 @@ export async function generateScripts(
       const userPrompt = customUserPrompt ?? buildSingleFrameworkPrompt(input, framework);
       const callStartedAt = Date.now();
       try {
-        // V14 — dispatch on the env-driven provider. Same prompt +
-        // schema feeds all three paths; usage shape is identical.
-        const { parsed: parsedRegen, usage } =
-          provider === 'anthropic'
-            ? await anthropicStructuredCall<LlmRegenResponse>({
-                systemInstruction: sharedSystemInstruction,
+        let { parsed: parsedRegen, usage } = await dispatchScriptCall(userPrompt);
+
+        // V28.0.ST4 — register validator + 1 retry on failure. Mirrors
+        // the concept-actions pattern. Catches LLM lying about
+        // casual_markers_used or producing low-marker spoken text the
+        // schema's minItems: 1 didn't fully prevent.
+        if (parsedRegen.script) {
+          try {
+            const draftScript =
+              parsedRegen.script as unknown as RegisterValidatorScript;
+            const v1 = validateScriptRegister(draftScript);
+            if (!v1.pass || v1.liedSceneOrders.length > 0) {
+              const retryPrompt = buildRegisterRetryPrompt(
                 userPrompt,
-                responseSchema: SINGLE_SCRIPT_JSON_SCHEMA,
-                model,
-              })
-            : provider === 'gemini'
-              ? await geminiStructuredCall<LlmRegenResponse>({
-                  // V26.1 — no `temperature` override on Gemini 3.
-                  systemInstruction: sharedSystemInstruction,
-                  userPrompt,
-                  responseSchema: SINGLE_SCRIPT_JSON_SCHEMA,
-                  model,
-                })
-              : await openaiStructuredCall<LlmRegenResponse>({
-                  systemInstruction: sharedSystemInstruction,
-                  userPrompt,
-                  responseSchema: SINGLE_SCRIPT_JSON_SCHEMA,
-                  model,
-                  temperature: 0.7, // V14 baseline determinism
-                });
+                v1,
+                draftScript,
+              );
+              const retry = await dispatchScriptCall(retryPrompt);
+              if (retry.parsed.script) {
+                parsedRegen = retry.parsed;
+                usage = {
+                  inputTokens: usage.inputTokens + retry.usage.inputTokens,
+                  outputTokens: usage.outputTokens + retry.usage.outputTokens,
+                };
+              }
+            }
+          } catch (err) {
+            console.warn(
+              `[scripts] register validator threw on framework ${framework}, shipping draft as-is:`,
+              (err as Error).message,
+            );
+          }
+        }
+
         totalInputTokens += usage.inputTokens;
         totalOutputTokens += usage.outputTokens;
         if (!parsedRegen.script) return null;
